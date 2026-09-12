@@ -1,7 +1,9 @@
 export const MEMBERS = Object.freeze([
-  { id: 'bella', name: '贝拉', uid: 672353429, room: 22632424 },
-  { id: 'eileen', name: '乃琳', uid: 672342685, room: 22625027 },
-  { id: 'diana', name: '嘉然', uid: 672328094, room: 22637261 },
+  { id: 'bella', name: '贝拉', uid: 672353429, room: 22632424, color: '#b97259' },
+  { id: 'diana', name: '嘉然', uid: 672328094, room: 22637261, color: '#c7829c' },
+  { id: 'eileen', name: '乃琳', uid: 672342685, room: 22625027, color: '#7b85ad' },
+  { id: 'xinyi', name: '心宜', uid: '3537115310721181', room: 30849777, color: '#c93773' },
+  { id: 'sinuo', name: '思诺', uid: '3537115310721781', room: 30858592, color: '#7252c0' },
 ]);
 
 export const DEFAULT_SHORTCUT = Object.freeze({

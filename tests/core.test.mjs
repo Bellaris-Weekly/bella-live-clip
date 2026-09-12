@@ -56,3 +56,19 @@ test('时间轴放大固定光标位置，覆盖长场与短片',async()=>{
  assert.deepEqual(zoomWindow(after,total,100),before);
  }
 });
+
+test('新增成员按配置查询回放并保留 UID、直播间与姓名',async()=>{
+ const {MEMBERS}=await import('../src/core.js');
+ for(const [id,uid,room,name,color] of [
+  ['xinyi','3537115310721181',30849777,'心宜','#c93773'],
+  ['sinuo','3537115310721781',30858592,'思诺','#7252c0'],
+ ]){
+  const member=MEMBERS.find(m=>m.id===id);
+  assert.deepEqual(member,{id,uid,room,name,color});
+  let requested;
+  const api=new BiliApi(async url=>{requested=new URL(url);return {data:JSON.stringify({code:0,data:{replay_info:[{live_key:'987654321098765432',start_time:100,end_time:200,room_id:room,live_info:{title:'回放'}}],pagination:{total:1}}})};});
+  const records=await api.history(member);
+  assert.equal(requested.searchParams.get('live_uid'),uid);
+  assert.equal(records[0].uid,uid);assert.equal(records[0].room,room);assert.equal(records[0].member,name);
+ }
+});
