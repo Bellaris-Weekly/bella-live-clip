@@ -26,4 +26,4 @@ Good: a dual show supplies two participant avatars, independent of the room owne
 
 ## Wrong vs Correct
 Wrong: `record.title = event.summary; duration = event.duration`.
-Correct: retain `record.title` and `record.end - record.start`; attach only `record.schedule`. Render external text with textContent. Participant names belong in accessibility labels/tooltips, not visible adjacent labels.
+Correct: retain `record.title` and `record.end - record.start`; attach only `record.schedule`. Card widths are capped at 244px; use auto-fill columns rather than stretching sparse rows. The Beijing date block includes day, month, weekday and time. Room-owner colors style the card without implying participation. Render external text with textContent. Participant names belong in accessibility labels/tooltips, not visible adjacent labels.
