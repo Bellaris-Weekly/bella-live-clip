@@ -30,6 +30,12 @@ export function formatTime(seconds, fractional = false) {
   return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? '.' + String(ms % 1000).padStart(3, '0') : ''}`;
 }
 
+export function formatPlaybackTime(seconds) {
+  const whole=Math.floor(Math.max(0,seconds));
+  const h=Math.floor(whole/3600),m=Math.floor(whole/60)%60,s=whole%60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+}
+
 export function formatDate(unix, withSeconds = false) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',

@@ -4,14 +4,14 @@ import {createPlayer} from './full-preview.js';
 import {createPlayback} from './playback.js';
 import {createTimeline} from './timeline.js';
 import {exportSelection} from './media.js';
-import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
+import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatPlaybackTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
 
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');const room=roomIdFromUrl(pageUrl);
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
- let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0;
+ let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0,playbackTotal=0;
  const cache=new Map(),urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
  function updateFeedback(){$('feedback').hidden=!busy&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
@@ -20,8 +20,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  let rect=constrainRect(get('windowV2',defaults()),viewport());
  const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
  const playback=createPlayback(video,status);
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>player.seek(t),onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
- const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);$('clock').textContent=formatTime(t,true);}});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
+ const updateClock=t=>{$('clock').textContent=`${formatPlaybackTime(t)} / ${formatPlaybackTime(playbackTotal)}`;};
+ const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').textContent=paused?'▶':'⏸';$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function controls(){root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});timeline.lock(busy||!ready);for(const id of ['togglePlayback','markStart','markEnd'])$(id).disabled=busy||!ready;$('download').hidden=page!=='edit';$('download').disabled=busy||!ready;$('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();}
@@ -40,8 +41,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  }
  async function library(refresh=false){playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');return;}await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');});}
  async function loadRecord(next,signal){
-  playback.cancel();record=next;ready=false;clearDownloads();showPage('edit');$('recordTitle').textContent=record.title;$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
+  playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');$('recordTitle').textContent=record.title;$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
+  playbackTotal=total;updateClock(0);
   const first=Math.max(0,streams[0].start_time-record.start),last=Math.min(total,streams.at(-1).end_time-record.start);
   const end=record.live?Math.max(first+.001,last-15):Math.min(last,first+60),start=record.live?Math.max(first,end-60):first;
   timeline.reset(total,{start,end});ready=true;if(record.live)player.seek(start);status('按住时间轴预览；松开选区边界后自动适配视野。');

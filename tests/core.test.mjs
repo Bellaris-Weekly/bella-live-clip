@@ -72,3 +72,8 @@ test('新增成员按配置查询回放并保留 UID、直播间与姓名',async
   assert.equal(records[0].uid,uid);assert.equal(records[0].room,room);assert.equal(records[0].member,name);
  }
 });
+
+test('播放器时间省略毫秒和多余小时，覆盖分钟与小时边界',async()=>{
+ const {formatPlaybackTime}=await import('../src/core.js');
+ for(const [value,expected] of [[0,'0:00'],[59.999,'0:59'],[60,'1:00'],[1174.775,'19:34'],[3599.999,'59:59'],[3600,'1:00:00'],[4970,'1:22:50'],[36000,'10:00:00']])assert.equal(formatPlaybackTime(value),expected);
+});
