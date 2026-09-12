@@ -17,7 +17,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  $('launcher').innerHTML=icon('scissors')+'<span>片段</span>';
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
- let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,estimateController=null,estimateState='loading';
+ let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,estimateController=null,estimateState='loading',clipSelection=null;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const cache=new Map(),urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
@@ -33,14 +33,25 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
-  $('selectionDuration').textContent=`选中 ${formatDuration(selection.end-selection.start)}`;
-  $('estimatedSize').textContent=estimate ? `预估约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${$('exportMode').value==='precise'?'（原画参考）':''}` : estimateState==='error'?'预估大小暂不可用':'预估大小计算中…';
+  $('selectionDuration').textContent=`${$('wholeRecording').checked?'整场':'选中'} ${formatDuration(selection.end-selection.start)}`;
+  $('estimatedSize').textContent=estimate ? `预估约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${!$('wholeRecording').checked&&$('exportMode').value==='precise'?'（原画参考）':''}` : estimateState==='error'?'预估大小暂不可用':'预估大小计算中…';
  }
  function startEstimate(streams){
   estimateController?.abort();const own=new AbortController();estimateController=own;
   void (async()=>{try{const groups=await loadRecordingPlan(api,streams,own.signal);const result=await estimateRecordingRate(api,groups,own.signal);own.signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!own.signal.aborted){estimateState='error';updateExportSummary();}}})();
  }
- function controls(){root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});timeline.lock(busy||!ready);for(const id of ['togglePlayback','markStart','markEnd'])$(id).disabled=busy||!ready;$('download').hidden=page!=='edit';$('download').disabled=busy||!ready;$('downloadFull').disabled=busy||!ready;$('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();}
+ function controls(){
+  const whole=$('wholeRecording').checked;
+  root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});
+  timeline.lock(busy||!ready||whole);
+  for(const id of ['markStart','markEnd'])$(id).disabled=busy||!ready||whole;
+  $('togglePlayback').disabled=busy||!ready;$('wholeRecording').disabled=busy||!ready;
+  $('exportMode').closest('.export-row').hidden=whole;
+  $('download').innerHTML=`<span>下载${whole?'整场':'选区'} MP4</span>`+icon('download');
+  $('download').hidden=page!=='edit';$('download').disabled=busy||!ready;
+  $('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();
+ }
+
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
  async function job(action){if(busy)return;const own=new AbortController();controller=own;busy=true;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{busy=false;controller=null;controls();}}
  function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
@@ -56,7 +67,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  }
  async function library(refresh=false){estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');return;}await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');});}
  async function loadRecord(next,signal){
-  estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');setTitle($('recordTitle'),record.title);$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
+  $('wholeRecording').checked=false;clipSelection=null;estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');setTitle($('recordTitle'),record.title);$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
   const first=Math.max(0,streams[0].start_time-record.start),last=Math.min(total,streams.at(-1).end_time-record.start);
@@ -87,7 +98,13 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
- $('cancel').onclick=()=>controller?.abort();$('download').onclick=download;$('downloadFull').onclick=downloadFull;$('exportMode').onchange=()=>updateExportSummary();
+ $('cancel').onclick=()=>controller?.abort();$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
+ $('wholeRecording').onchange=()=>{
+  if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({start:0,end:playbackTotal},true);}
+  else{timeline.setSelection(clipSelection,true);clipSelection=null;}
+  controls();
+ };
+ $('exportMode').onchange=()=>updateExportSummary();
  $('markStart').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:t,end:Math.max(s.end,t+.001)},true);}catch(e){status(e.message,true);}};
  $('markEnd').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:Math.min(s.start,t-.001),end:t},true);}catch(e){status(e.message,true);}};
  $('togglePlayback').onclick=()=>playback.toggle();
