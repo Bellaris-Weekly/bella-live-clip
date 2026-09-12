@@ -1,4 +1,6 @@
 import html from './ui.html';
+import {ScheduleService} from './schedule.js';
+import {createRecordCard} from './record-card.js';
 import {icon} from './icons.js';
 import css from './ui.css';
 import {createPlayer} from './full-preview.js';
@@ -19,6 +21,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
  let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,estimateController=null,estimateState='loading',clipSelection=null;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
+ const schedules=new ScheduleService(api.request);let scheduleController=null;
  const cache=new Map(),urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
  function updateFeedback(){$('feedback').hidden=!busy&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
@@ -56,17 +59,37 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  async function job(action){if(busy)return;const own=new AbortController();controller=own;busy=true;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{busy=false;controller=null;controls();}}
  function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
  function renderCards(){
+  const focusedKey=root.activeElement?.dataset.recordKey,scroll=$('body').scrollTop;
   root.querySelectorAll('[data-member]').forEach(el=>el.setAttribute('aria-pressed',el.dataset.member===member.id));
   const records=cache.get(member.id)||[];$('cards').replaceChildren();$('libraryEmpty').hidden=records.length>0;$('libraryEmpty').textContent='近 14 天暂无可用回放';
-  for(const r of records){const card=document.createElement('button');card.className='record-card';card.setAttribute('aria-label',`${formatDate(r.start)} ${r.title}`);const cover=document.createElement('div');cover.className='cover';
-   const placeholder=document.createElement('span');placeholder.className='cover-placeholder';placeholder.innerHTML=icon('play');cover.append(placeholder);
-   if(r.cover){const image=document.createElement('img');image.src=r.cover;image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';image.onload=()=>placeholder.hidden=true;image.onerror=()=>image.hidden=true;cover.append(image);}
-   const duration=document.createElement('span');duration.className='duration';duration.textContent=formatTime(r.end-r.start);cover.append(duration);
-   const info=document.createElement('div');info.className='card-info';const title=document.createElement('strong');setTitle(title,r.title);const date=document.createElement('p');date.textContent=`${formatDate(r.start)} · ${member.name}`;info.append(title,date);card.append(cover,info);card.onclick=()=>{libraryScroll=$('body').scrollTop;void enterRecord(r);};$('cards').append(card);
+  for(const r of records){
+   const card=createRecordCard(r,()=>{libraryScroll=$('body').scrollTop;void enterRecord(r);});card.dataset.recordKey=r.key;$('cards').append(card);
+   if(r.key===focusedKey)card.focus({preventScroll:true});
   }
+  $('body').scrollTop=scroll;controls();
  }
- async function library(refresh=false){estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');return;}await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');});}
+ function enrichCards(refresh){
+  if($('panel').hidden)return;
+  scheduleController?.abort();const own=new AbortController();scheduleController=own;
+  const selected=member.id,records=cache.get(selected)||[];
+  $('scheduleNote').textContent='正在补充直播日程…';$('scheduleNote').hidden=!records.length;
+  void (async()=>{
+   try{
+    const result=await schedules.enrich(records,{signal:own.signal,refresh});
+    if(own.signal.aborted||member.id!==selected||page!=='library')return;
+    cache.set(selected,result.records);renderCards();
+    $('scheduleNote').hidden=!result.failed;$('scheduleNote').textContent=result.failed?'部分日程暂不可用，可刷新重试。':'';
+   }catch(e){if(!own.signal.aborted){$('scheduleNote').hidden=false;$('scheduleNote').textContent='日程暂不可用，可刷新重试。';}}
+  })();
+ }
+ async function library(refresh=false){
+  scheduleController?.abort();$('scheduleNote').hidden=true;
+  estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();
+  if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');enrichCards(false);return;}
+  await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');enrichCards(refresh);});
+ }
  async function loadRecord(next,signal){
+  scheduleController?.abort();
   $('wholeRecording').checked=false;clipSelection=null;estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');setTitle($('recordTitle'),record.title);$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
@@ -92,8 +115,8 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
    const message=document.createElement('p');message.textContent=`整场已保存到所选位置 · ${formatBytes(result.bytes)}`;$('downloads').append(message);
   });
  }
- async function open(){$('panel').hidden=false;if(!initialized){initialized=true;await(room?currentRoom():library());}}
- const close=()=>{$('panel').hidden=true;playback.cancel();};
+ async function open(){$('panel').hidden=false;if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library')enrichCards(false);}
+ const close=()=>{$('panel').hidden=true;scheduleController?.abort();playback.cancel();};
  $('close').onclick=close;
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);
@@ -132,5 +155,5 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('launcher').addEventListener('pointerdown',()=>{launcherMoved=false; launcherStart=$('launcher').getBoundingClientRect();});
   drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
   window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
- window.addEventListener('pagehide',()=>{controller?.abort();estimateController?.abort();player.clear();clearDownloads();});controls();return {open,resetWindow,root};
+ window.addEventListener('pagehide',()=>{scheduleController?.abort();controller?.abort();estimateController?.abort();player.clear();clearDownloads();});controls();return {open,resetWindow,root};
 }

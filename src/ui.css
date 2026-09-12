@@ -43,17 +43,20 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .members button:hover{background:var(--surface)}
 .members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}
 .members i{width:6px;height:6px;flex:none;border-radius:50%}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
-.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.record-card{display:flex;flex-direction:column;gap:14px;min-width:0;padding:16px;text-align:left;border-radius:12px;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}
 .record-card:hover{box-shadow:0 4px 14px #0000000a;border-color:var(--border-strong)}
-.cover{aspect-ratio:16/9;position:relative;background:var(--hover);overflow:hidden}
-.cover img{display:block;width:100%;height:100%;object-fit:cover}
-.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#a3a3a3}
-.cover-placeholder .glyph{width:40px;height:40px}
-.duration{font-variant-numeric:tabular-nums;line-height:16px;position:absolute;right:10px;bottom:10px;background:#171717b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}
-.card-info{padding:12px 14px 14px}
-.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:20px;min-height:40px}
-.card-info p{font-size:11px;color:var(--muted);margin-top:8px}
+.card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px}
+.record-type{font-size:11px;line-height:20px;padding:1px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted)}
+.participants{display:flex;gap:5px;margin-left:auto}
+.participant{position:relative;display:grid;place-items:center;flex:none;width:28px;height:28px;overflow:hidden;border-radius:50%;background:var(--surface);color:var(--member-color);border:1px solid var(--line)}
+.participant img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.participant .glyph{width:18px;height:18px}
+.card-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:15px;font-weight:600;line-height:23px;min-height:46px}
+.card-details{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;font-size:11px;line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.record-duration{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.record-duration .glyph{width:13px;height:13px}
+.schedule-note{font-size:11px;color:var(--muted);margin:0 0 12px}
 .empty{text-align:center;color:var(--muted);padding:70px 15px}
 .empty p{margin:12px 0 24px}
 

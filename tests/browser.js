@@ -1,8 +1,27 @@
 import { createApp } from '../src/app.js';
+import {MEMBERS} from '../src/core.js';
+import {runCardChecks} from './cards-browser.js';
 import { convertMp4, inspectMedia, exportSelection } from '../src/media.js';
 const record={key:'987654321098765432',title:'浏览器验证 · 真实直播素材',start:1789213000,end:1789213024,live:false,uid:1,member:'贝拉',room:22632424};
-const api={history:async member=>Array.from({length:6},(_,i)=>({...record,key:String(987654321000+i),member:member.name,title:['【3D】今晚一起唱歌','【突击】看看测试服！','周末的轻松时光'][i%3],start:record.start-i*86400,end:record.end-i*86400})),current:async()=>({...record,live:true}),clips:async r=>[{stream:location.origin+'/fixture.m3u8',start_time:r.start,end_time:r.start+24}],request:async(url,{type,signal}={})=>{const response=await fetch(url,{signal});return {data:type==='arraybuffer'?await response.arrayBuffer():await response.text(),url:response.url};}};
-const app=createApp({api,pageUrl:new URLSearchParams(location.search).has('live')?'https://live.bilibili.com/22632424':location.href}); app.open();
+const query=new URLSearchParams(location.search);
+const historyFor=member=>Array.from({length:6},(_,i)=>({...record,key:String(987654321000+i),uid:member.uid,room:member.room,member:member.name,title:['【3D】今晚一起唱歌','【突击】看看测试服！','周末的轻松时光','【双播】一起度过周末的夜晚','一个很长的原标题，用来确认多行显示时卡片中的日期、实际时长与头像仍然整齐','这场没有匹配日程'][i],start:record.start-i*86400,end:record.end-i*86400}));
+const faces={672353429:'https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg',672328094:'https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg',672342685:'https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg'};
+const calendar='BEGIN:VCALENDAR\r\n'+MEMBERS.slice(0,3).flatMap(member=>historyFor(member).slice(0,5).map((r,i)=>{
+ const kind=['团播','突击','单播','双播','单播'][i],people=i===0?'贝拉、嘉然、乃琳':i===3?'贝拉、乃琳':member.name;
+ return `BEGIN:VEVENT\r\nUID:${member.id}-${i}\r\nSUMMARY:日程主题不应该替换原标题\r\nDTSTART:${new Date(r.start*1000).toISOString().replace(/[-:]/g,'').replace('.000','')}\r\nDURATION:PT1H\r\nDESCRIPTION:${kind} | ${people}\\n\\n直播间：https://live.bilibili.com/${member.room}\r\nURL:https://live.bilibili.com/${member.room}\r\nEND:VEVENT\r\n`;
+})).join('')+'END:VCALENDAR';
+const api={history:async member=>historyFor(member),current:async()=>({...record,live:true}),clips:async r=>[{stream:location.origin+'/fixture.m3u8',start_time:r.start,end_time:r.start+24}],request:async(url,{type,signal}={})=>{
+ if(url.startsWith('https://calendar.bk0717.us.ci/')){
+  await new Promise(resolve=>setTimeout(resolve,query.has('slow-schedule')?1200:100));signal?.throwIfAborted();
+  if(query.has('schedule-error'))throw new Error('模拟日程不可用');
+  return {data:calendar,url};
+ }
+ if(url.startsWith('https://api.live.bilibili.com/live_user/')){signal?.throwIfAborted();const uid=new URL(url).searchParams.get('uid');return {data:JSON.stringify({code:0,data:{info:{face:query.has('avatar-error')&&uid==='672328094'?location.origin+'/missing-avatar.png':faces[uid]}}}),url};}
+ const response=await fetch(url,{signal});return {data:type==='arraybuffer'?await response.arrayBuffer():await response.text(),url:response.url};
+}};
+const app=createApp({api,pageUrl:query.has('live')?'https://live.bilibili.com/22632424':location.href,get:(key,fallback)=>key==='windowV2'&&query.has('narrow')?{left:20,top:20,width:360,height:780}:fallback});app.open();
+const cardTest=document.createElement('button');cardTest.textContent='验证场次卡片';cardTest.id='cardTest';document.getElementById('test').after(cardTest);
+cardTest.onclick=()=>runCardChecks(app,query);
 document.getElementById('test').onclick=async()=>{
  const out=document.getElementById('result');out.textContent='正在验证浏览器重封装和精确裁剪…';
  try {

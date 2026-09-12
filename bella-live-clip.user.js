@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.1.2
+// @version      2.2.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -9,6 +9,7 @@
 // @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。
 // @match        https://*.bilibili.com/*
 // @match        https://bilibili.com/*
+// @connect      calendar.bk0717.us.ci
 // @connect      api.live.bilibili.com
 // @connect      live.bilibili.com
 // @connect      bilivideo.com
@@ -148,10 +149,339 @@
   });
 
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">预估大小计算中…</span></div><div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">选区跨断流时分文件保存；整场原画下载会跳过断流空档。预估大小随画面码率变化。</p><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">预估大小计算中…</span></div><div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">选区跨断流时分文件保存；整场原画下载会跳过断流空档。预估大小随画面码率变化。</p><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+
+  // src/core.js
+  var MEMBERS = Object.freeze([
+    { id: "bella", name: "贝拉", uid: 672353429, room: 22632424, color: "#b97259" },
+    { id: "diana", name: "嘉然", uid: 672328094, room: 22637261, color: "#c7829c" },
+    { id: "eileen", name: "乃琳", uid: 672342685, room: 22625027, color: "#7b85ad" },
+    { id: "xinyi", name: "心宜", uid: "3537115310721181", room: 30849777, color: "#c93773" },
+    { id: "sinuo", name: "思诺", uid: "3537115310721781", room: 30858592, color: "#7252c0" }
+  ]);
+  var DEFAULT_SHORTCUT = Object.freeze({
+    code: "KeyC",
+    ctrlKey: false,
+    altKey: true,
+    shiftKey: true,
+    metaKey: false
+  });
+  var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  function formatTime(seconds, fractional = false) {
+    const ms = Math.round(Math.max(0, seconds) * 1e3);
+    const h = Math.floor(ms / 36e5);
+    const m = Math.floor(ms / 6e4) % 60;
+    const s = Math.floor(ms / 1e3) % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? "." + String(ms % 1e3).padStart(3, "0") : ""}`;
+  }
+  function formatPlaybackTime(seconds) {
+    const whole = Math.floor(Math.max(0, seconds));
+    const h = Math.floor(whole / 3600), m = Math.floor(whole / 60) % 60, s = whole % 60;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  }
+  function formatCompactTime(seconds) {
+    const ms = Math.round(Math.max(0, seconds) * 1e3);
+    const h = Math.floor(ms / 36e5), m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
+    const sec = `${String(s).padStart(h || m ? 2 : 1, "0")}.${String(ms % 1e3).padStart(3, "0")}`;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : m ? `${m}:${sec}` : sec;
+  }
+  function formatDuration(seconds) {
+    const tenths = Math.round(Math.max(0, seconds) * 10);
+    const h = Math.floor(tenths / 36e3), m = Math.floor(tenths / 600) % 60, s = tenths % 600 / 10;
+    return `${h ? h + "时" : ""}${h || m ? m + "分" : ""}${s.toFixed(1)}秒`;
+  }
+  function formatDate(unix, withSeconds = false) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      ...withSeconds ? { second: "2-digit" } : {},
+      hourCycle: "h23"
+    }).format(new Date(unix * 1e3));
+  }
+  function formatBytes(bytes2) {
+    if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(2)} GB`;
+    if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(1)} MB`;
+    return `${(bytes2 / 1e3).toFixed(0)} KB`;
+  }
+  function validateRange(start, end, duration) {
+    if (![start, end, duration].every(Number.isFinite) || start < 0 || end <= start) {
+      throw new Error("结束时间必须晚于开始时间。");
+    }
+    if (end > duration + 1e-3) throw new Error(`结束时间超出范围，最晚为 ${formatTime(duration, true)}。`);
+    return { start, end };
+  }
+  function recordFromReplay(item, member) {
+    if (typeof item.live_key !== "string") throw new Error("场次编号格式异常，请刷新场次列表。");
+    return {
+      key: item.live_key,
+      title: item.live_info.title,
+      cover: item.live_info.cover,
+      start: item.start_time,
+      end: item.end_time,
+      live: false,
+      uid: member.uid,
+      member: member.name,
+      room: item.room_id
+    };
+  }
+  function roomFromHtml(html) {
+    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text));
+    if (!script) throw new Error("未找到直播场次信息，请刷新直播间后重试。");
+    const raw = script.replace(/^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=\s*/, "").trim().replace(/;\s*$/, "");
+    const info = JSON.parse(raw).roomInfoRes;
+    if (info?.code !== 0 || !info.data?.room_info) throw new Error("直播间暂未返回场次信息。");
+    return info.data.room_info;
+  }
+  function recordFromRoom(info, member, now2 = Date.now() / 1e3) {
+    if (info.live_status !== 1) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
+    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str)) {
+      throw new Error("直播场次编号不可用，请刷新直播间。");
+    }
+    return {
+      key: info.live_id_str,
+      title: info.title,
+      start: info.live_start_time,
+      end: Math.floor(now2),
+      live: true,
+      uid: info.uid,
+      member: member.name,
+      room: info.room_id
+    };
+  }
+  function roomIdFromUrl(value) {
+    const url2 = new URL(value);
+    if (url2.hostname !== "live.bilibili.com") return null;
+    const match = url2.pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/);
+    return match ? Number(match[1]) : null;
+  }
+  function normalizeShortcut(value) {
+    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
+    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
+    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
+  }
+  function formatShortcut(shortcut) {
+    return [
+      shortcut.ctrlKey && "Ctrl",
+      shortcut.altKey && "Alt",
+      shortcut.shiftKey && "Shift",
+      shortcut.metaKey && "⌘",
+      shortcut.code.replace(/^Key|^Digit/, "")
+    ].filter(Boolean).join("+");
+  }
+  function matchesShortcut(event, shortcut) {
+    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
+  }
+  function isEditing(event) {
+    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
+  }
+  function constrainRect(rect, viewport) {
+    const margin = 10;
+    const maxW = Math.max(1, viewport.width - margin * 2);
+    const maxH = Math.max(1, viewport.height - margin * 2);
+    const width = clamp(rect.width, Math.min(360, maxW), maxW);
+    const height = clamp(rect.height, Math.min(480, maxH), maxH);
+    return {
+      width,
+      height,
+      left: clamp(rect.left, margin, viewport.width - margin - width),
+      top: clamp(rect.top, margin, viewport.height - margin - height)
+    };
+  }
+  function resizeRect(rect, edge, dx, dy, viewport) {
+    let { left, top, width, height } = rect;
+    const minW = Math.min(360, viewport.width - 20), minH = Math.min(480, viewport.height - 20);
+    if (edge.includes("e")) width = clamp(width + dx, minW, viewport.width - 10 - left);
+    if (edge.includes("s")) height = clamp(height + dy, minH, viewport.height - 10 - top);
+    if (edge.includes("w")) {
+      const shift = clamp(dx, 10 - left, width - minW);
+      left += shift;
+      width -= shift;
+    }
+    if (edge.includes("n")) {
+      const shift = clamp(dy, 10 - top, height - minH);
+      top += shift;
+      height -= shift;
+    }
+    return { left, top, width, height };
+  }
+  function fileName(record, start, end, part = "") {
+    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(record.start * 1e3));
+    const label = `${record.member}_${date}_${record.title}_${formatTime(start).replaceAll(":", "-")}-${formatTime(end).replaceAll(":", "-")}${part}`;
+    return label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
+  }
+  function zoomWindow(view3, total, factor, anchor = 0.5) {
+    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total), total);
+    const pivot = view3.start + span * clamp(anchor, 0, 1);
+    const start = clamp(pivot - width * anchor, 0, total - width);
+    return { start, end: start + width };
+  }
+  function panWindow(view3, total, delta) {
+    const width = view3.end - view3.start, start = clamp(view3.start + delta, 0, total - width);
+    return { start, end: start + width };
+  }
+
+  // src/schedule.js
+  var CALENDAR = "https://calendar.bk0717.us.ci";
+  var SCHEDULE_MEMBERS = MEMBERS.filter((member) => ["bella", "diana", "eileen"].includes(member.id));
+  var WINDOW = 30 * 60;
+  var CACHE_TIME = 60 * 60 * 1e3;
+  function decodeText(value) {
+    return value.replace(/\\([nN,;\\])/g, (_, escaped) => /[nN]/.test(escaped) ? "\n" : escaped);
+  }
+  function eventStart(property, value) {
+    const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+    if (!match) return null;
+    const utc = Boolean(match[7]);
+    if (!utc && !/(?:^|;)TZID="?Asia\/Shanghai"?(?:;|$)/i.test(property)) return null;
+    const [, year, month, day, hour, minute, second] = match;
+    const time = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+    if (new Date(time).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
+    return time / 1e3 - (utc ? 0 : 8 * 3600);
+  }
+  function parseEvent(fields) {
+    if (fields.STATUS?.value === "CANCELLED") return null;
+    const start = fields.DTSTART && eventStart(fields.DTSTART.property, fields.DTSTART.value);
+    if (start == null) return null;
+    const description = decodeText(fields.DESCRIPTION?.value || "");
+    const [type, names] = description.split("\n")[0].split("|").map((part) => part.trim());
+    if (!type || !names) return null;
+    const participantNames = names.split(/[、,，;；]/).map((name) => name.trim().split(/\s+/)[0]);
+    const participants = SCHEDULE_MEMBERS.filter((member) => participantNames.includes(member.name));
+    let room = null;
+    const roomUrl = fields.URL?.value || description.match(/直播间[：:]\s*(https?:\/\/\S+)/)?.[1];
+    try {
+      if (roomUrl) room = roomIdFromUrl(roomUrl);
+    } catch {
+      return null;
+    }
+    if (!SCHEDULE_MEMBERS.some((member) => member.room === room)) return null;
+    return { uid: fields.UID?.value || null, start, room, type, participants };
+  }
+  function parseCalendar(text) {
+    const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+    if (!lines.includes("BEGIN:VCALENDAR") || !lines.includes("END:VCALENDAR")) {
+      throw new Error("日程没有返回有效的日历数据。");
+    }
+    const events = [];
+    let fields = null;
+    for (const line of lines) {
+      if (line === "BEGIN:VEVENT") {
+        fields = {};
+        continue;
+      }
+      if (line === "END:VEVENT") {
+        if (fields) {
+          const event = parseEvent(fields);
+          if (event) events.push(event);
+        }
+        fields = null;
+        continue;
+      }
+      const colon = line.indexOf(":");
+      if (!fields || colon < 0) continue;
+      const property = line.slice(0, colon);
+      fields[property.split(";")[0].toUpperCase()] = { property, value: line.slice(colon + 1) };
+    }
+    return events;
+  }
+  function scheduleMonths(start) {
+    return [...new Set([-WINDOW, WINDOW].map((offset) => new Date((start + offset + 8 * 3600) * 1e3).toISOString().slice(0, 7)))];
+  }
+  function matchSchedule(record, events) {
+    let nearest = null, distance = Infinity, ambiguous = false;
+    const seen = /* @__PURE__ */ new Set();
+    for (const event of events) {
+      if (event.uid && seen.has(event.uid)) continue;
+      if (event.uid) seen.add(event.uid);
+      const delta = Math.abs(record.start - event.start);
+      if (Number(record.room) !== event.room || delta > WINDOW) continue;
+      if (delta < distance) {
+        nearest = event;
+        distance = delta;
+        ambiguous = false;
+      } else if (delta === distance) ambiguous = true;
+    }
+    return ambiguous ? null : nearest;
+  }
+  var ScheduleService = class {
+    constructor(request) {
+      this.request = request;
+      this.calendars = /* @__PURE__ */ new Map();
+      this.avatars = /* @__PURE__ */ new Map();
+    }
+    async calendar(month, { signal, refresh }) {
+      signal?.throwIfAborted();
+      const cached = this.calendars.get(month);
+      if (!refresh && cached && Date.now() - cached.time < CACHE_TIME) return cached.events;
+      const { data } = await this.request(`${CALENDAR}/calendar-${month}.ics`, { auth: false, signal });
+      signal?.throwIfAborted();
+      const events = parseCalendar(data);
+      this.calendars.set(month, { events, time: Date.now() });
+      return events;
+    }
+    async avatar(member, signal) {
+      signal?.throwIfAborted();
+      if (this.avatars.has(member.id)) return this.avatars.get(member.id);
+      try {
+        const { data } = await this.request(
+          `https://api.live.bilibili.com/live_user/v1/Master/info?uid=${member.uid}`,
+          { auth: false, signal }
+        );
+        signal?.throwIfAborted();
+        const response = JSON.parse(data);
+        const face = response.code === 0 ? response.data?.info?.face : null;
+        if (typeof face !== "string" || !/^https?:\/\//.test(face)) return null;
+        this.avatars.set(member.id, face);
+        return face;
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error.name === "AbortError") throw error;
+        return null;
+      }
+    }
+    async enrich(records, { signal, refresh = false } = {}) {
+      signal?.throwIfAborted();
+      const eligible = records.filter((record) => SCHEDULE_MEMBERS.some((member) => member.room === Number(record.room)));
+      const months = [...new Set(eligible.flatMap((record) => scheduleMonths(record.start)))];
+      const calendars = /* @__PURE__ */ new Map();
+      let failed = false;
+      await Promise.all(months.map(async (month) => {
+        try {
+          calendars.set(month, await this.calendar(month, { signal, refresh }));
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (error.name === "AbortError") throw error;
+          failed = true;
+        }
+      }));
+      signal?.throwIfAborted();
+      const matches = new Map(eligible.map((record) => {
+        const needed = scheduleMonths(record.start);
+        return [record, needed.every((month) => calendars.has(month)) ? matchSchedule(record, needed.flatMap((month) => calendars.get(month))) : null];
+      }));
+      const participants = [...new Map([...matches.values()].filter(Boolean).flatMap((event) => event.participants).map((member) => [member.id, member])).values()];
+      const avatars = new Map(await Promise.all(participants.map(async (member) => [member.id, await this.avatar(member, signal)])));
+      signal?.throwIfAborted();
+      return { failed, records: records.map((record) => {
+        const match = matches.get(record);
+        return { ...record, schedule: match ? { type: match.type, participants: match.participants.map((member) => ({
+          id: member.id,
+          name: member.name,
+          color: member.color,
+          avatar: avatars.get(member.id)
+        })) } : null };
+      }) };
+    }
+  };
 
   // src/icons.js
   var paths = {
+    person: '<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     play: '<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>',
     pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
     close: '<path d="m6 6 12 12M18 6 6 18"/>',
@@ -164,8 +494,65 @@
     return `<svg class="glyph glyph-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
   }
 
+  // src/record-card.js
+  function createRecordCard(record, onSelect) {
+    const card = document.createElement("button");
+    card.className = "record-card";
+    const people = record.schedule?.participants || [];
+    card.setAttribute("aria-label", [formatDate(record.start), record.title, record.schedule?.type, ...people.map((p) => p.name), `时长 ${formatTime(record.end - record.start)}`].filter(Boolean).join(" · "));
+    const heading = document.createElement("div");
+    heading.className = "card-heading";
+    if (record.schedule?.type) {
+      const tag = document.createElement("span");
+      tag.className = "record-type";
+      tag.textContent = record.schedule.type;
+      heading.append(tag);
+    }
+    const portraits = document.createElement("span");
+    portraits.className = "participants";
+    for (const person of people) {
+      const portrait = document.createElement("span");
+      portrait.className = "participant";
+      portrait.title = person.name;
+      portrait.setAttribute("role", "img");
+      portrait.setAttribute("aria-label", person.name);
+      portrait.style.setProperty("--member-color", person.color);
+      portrait.innerHTML = icon("person");
+      if (person.avatar) {
+        const img = document.createElement("img");
+        img.src = person.avatar;
+        img.alt = "";
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => img.remove();
+        portrait.append(img);
+      }
+      portraits.append(portrait);
+    }
+    heading.append(portraits);
+    const title = document.createElement("strong");
+    title.textContent = record.title;
+    title.title = record.title;
+    title.className = "card-title";
+    title.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(record.title));
+    const details = document.createElement("div");
+    details.className = "card-details";
+    const date = document.createElement("time");
+    date.dateTime = new Date(record.start * 1e3).toISOString();
+    date.textContent = formatDate(record.start);
+    const duration = document.createElement("span");
+    duration.className = "record-duration";
+    duration.innerHTML = icon("clock");
+    duration.append(document.createTextNode(formatTime(record.end - record.start)));
+    duration.title = "实际场次时长";
+    details.append(date, duration);
+    card.append(heading, title, details);
+    card.onclick = onSelect;
+    return card;
+  }
+
   // src/ui.css
-  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}\n*{box-sizing:border-box}\n[hidden]{display:none!important}\nbutton,input,select{font:inherit;color:inherit}\nbutton{margin:0}\n.glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}\n.glyph-play{transform:translateX(1px)}\nbutton{cursor:pointer}\nbutton:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}\nbutton:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}\nbutton{border:0}\nh1,h2,p{margin:0}\nh1{font-size:20px}\nh2{font-size:23px;line-height:1.5}\ninput,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}\nsmall,.hint{color:var(--muted);font-size:11px}\n.hint{margin-top:10px;line-height:1.7}\n.text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:transparent;color:var(--text);padding:6px 8px;border-radius:7px;font-size:12px;line-height:20px}\n.text-button:hover{background:var(--hover)}\n.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}\n.button:hover{background:#e9e9e9}\n#download{background:var(--accent);color:#fff}\n#download:hover{background:var(--accent-hover)}\n.secondary{background:var(--hover);color:var(--text)}\n.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;gap:2px;line-height:1;touch-action:none}\n#launcher span{font-size:10px;line-height:16px}\n#launcher .glyph{width:24px;height:24px}\n#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}\n#body{flex:1;min-height:0;overflow:auto;border-radius:0 0 20px 20px;padding:0;overscroll-behavior:contain;scrollbar-width:thin}\n#status{font-size:12px;color:var(--muted)}\n#status[data-error=true]{color:#ad4936}\nprogress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}\n#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n\n.library-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px var(--gutter);background:var(--surface);border-bottom:1px solid var(--line)}\n.members{display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;min-width:0}\n.refresh-button{padding:8px;width:36px;height:36px}\n.members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);height:36px;padding:7px 4px;border-radius:8px;font-size:13px;line-height:20px;font-weight:500}\n.members button:hover{background:var(--surface)}\n.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}\n.members i{width:6px;height:6px;flex:none;border-radius:50%}\n.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}\n.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}\n.record-card:hover{box-shadow:0 4px 14px #0000000a;border-color:var(--border-strong)}\n.cover{aspect-ratio:16/9;position:relative;background:var(--hover);overflow:hidden}\n.cover img{display:block;width:100%;height:100%;object-fit:cover}\n.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#a3a3a3}\n.cover-placeholder .glyph{width:40px;height:40px}\n.duration{font-variant-numeric:tabular-nums;line-height:16px;position:absolute;right:10px;bottom:10px;background:#171717b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}\n.card-info{padding:12px 14px 14px}\n.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:20px;min-height:40px}\n.card-info p{font-size:11px;color:var(--muted);margin-top:8px}\n.empty{text-align:center;color:var(--muted);padding:70px 15px}\n.empty p{margin:12px 0 24px}\n\n.editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}\n#recordTitle{line-height:28px;overflow-wrap:anywhere}\n#recordTitle{font-size:19px}\n#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}\n#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}\n#fullVideo{display:block;width:100%;height:100%}\n#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}\n.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}\n.mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}\n.preview-toolbar>#clock{justify-self:end}\n.playback-center{display:flex;align-items:center;justify-content:center}\n#togglePlayback{width:40px;height:36px;padding:6px}\n#togglePlayback .glyph{width:22px;height:22px}\n#clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}\n#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}\n#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}\n#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}\n#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}\n#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}\n#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}\n#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}\n.export-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}\n.export-row label{line-height:20px}\n.export-row select{height:38px;line-height:20px;padding:8px 10px;width:100%}\n.export-row select{flex:1}\n.resize{position:absolute;z-index:5;touch-action:none}\n.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}\n.resize[data-edge=n]{top:-5px}\n.resize[data-edge=s]{bottom:-5px}\n.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}\n.resize[data-edge=e]{right:-5px}\n.resize[data-edge=w]{left:-5px}\n.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}\n.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}\n.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}\n.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}\n.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}\n@container(max-width:520px){\n\n.cards{grid-template-columns:1fr}\n}\n@media(prefers-reduced-motion:reduce){*{transition:none!important}\n}\n\n.export-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px;line-height:20px;padding:10px 16px;margin-top:16px}\n.feedback{margin:0 18px 18px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n\n#header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px var(--gutter);border-bottom:1px solid var(--line);cursor:grab;touch-action:none}\n#header h1{font-size:15px;font-weight:600;line-height:24px}\n.header-tools{display:flex;align-items:center;gap:8px}\n#shortcut{width:104px;height:30px;padding:5px 7px;line-height:18px;font-size:10px;text-align:center;background:var(--surface);border-radius:6px;cursor:pointer}\n#shortcut.recording{outline:2px solid var(--text)}\n#close{display:flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:-6px;padding:6px;border-radius:6px}\n#close:hover{background:var(--hover)}\n.library-content{padding:var(--gutter)}\n.record-section{padding:10px var(--gutter) 12px;border-bottom:1px solid var(--line)}\n.preview-section{padding:18px var(--gutter) 0}\n.timeline-section{margin:8px var(--gutter) 18px;padding:14px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n.export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}\n\n/* Opening punctuation hangs into the gutter so the visible title edge aligns. */\n.hanging-title{text-indent:-.5em}\n\n.export-summary{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-variant-numeric:tabular-nums}\n#selectionDuration{font-weight:600}\n#estimatedSize{font-size:11px;color:var(--muted)}\n.timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}\n#timelineLabels{grid-column:2}\n.whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}\n#wholeRecording{width:13px;height:13px;margin:0;padding:0;accent-color:var(--accent)}\n@container(max-width:440px){\n.preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}\n.mark-buttons{gap:0;margin-left:-4px}\n.mark-buttons .text-button{padding:6px 4px;font-size:10px}\n#clock{font-size:10px}\n}\n";
+  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}\n*{box-sizing:border-box}\n[hidden]{display:none!important}\nbutton,input,select{font:inherit;color:inherit}\nbutton{margin:0}\n.glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}\n.glyph-play{transform:translateX(1px)}\nbutton{cursor:pointer}\nbutton:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}\nbutton:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}\nbutton{border:0}\nh1,h2,p{margin:0}\nh1{font-size:20px}\nh2{font-size:23px;line-height:1.5}\ninput,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}\nsmall,.hint{color:var(--muted);font-size:11px}\n.hint{margin-top:10px;line-height:1.7}\n.text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:transparent;color:var(--text);padding:6px 8px;border-radius:7px;font-size:12px;line-height:20px}\n.text-button:hover{background:var(--hover)}\n.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}\n.button:hover{background:#e9e9e9}\n#download{background:var(--accent);color:#fff}\n#download:hover{background:var(--accent-hover)}\n.secondary{background:var(--hover);color:var(--text)}\n.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;gap:2px;line-height:1;touch-action:none}\n#launcher span{font-size:10px;line-height:16px}\n#launcher .glyph{width:24px;height:24px}\n#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}\n#body{flex:1;min-height:0;overflow:auto;border-radius:0 0 20px 20px;padding:0;overscroll-behavior:contain;scrollbar-width:thin}\n#status{font-size:12px;color:var(--muted)}\n#status[data-error=true]{color:#ad4936}\nprogress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}\n#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n\n.library-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px var(--gutter);background:var(--surface);border-bottom:1px solid var(--line)}\n.members{display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;min-width:0}\n.refresh-button{padding:8px;width:36px;height:36px}\n.members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);height:36px;padding:7px 4px;border-radius:8px;font-size:13px;line-height:20px;font-weight:500}\n.members button:hover{background:var(--surface)}\n.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}\n.members i{width:6px;height:6px;flex:none;border-radius:50%}\n.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}\n.record-card{display:flex;flex-direction:column;gap:14px;min-width:0;padding:16px;text-align:left;border-radius:12px;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}\n.record-card:hover{box-shadow:0 4px 14px #0000000a;border-color:var(--border-strong)}\n.card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px}\n.record-type{font-size:11px;line-height:20px;padding:1px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted)}\n.participants{display:flex;gap:5px;margin-left:auto}\n.participant{position:relative;display:grid;place-items:center;flex:none;width:28px;height:28px;overflow:hidden;border-radius:50%;background:var(--surface);color:var(--member-color);border:1px solid var(--line)}\n.participant img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n.participant .glyph{width:18px;height:18px}\n.card-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:15px;font-weight:600;line-height:23px;min-height:46px}\n.card-details{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;font-size:11px;line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums;flex-wrap:wrap}\n.record-duration{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}\n.record-duration .glyph{width:13px;height:13px}\n.schedule-note{font-size:11px;color:var(--muted);margin:0 0 12px}\n.empty{text-align:center;color:var(--muted);padding:70px 15px}\n.empty p{margin:12px 0 24px}\n\n.editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}\n#recordTitle{line-height:28px;overflow-wrap:anywhere}\n#recordTitle{font-size:19px}\n#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}\n#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}\n#fullVideo{display:block;width:100%;height:100%}\n#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}\n.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}\n.mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}\n.preview-toolbar>#clock{justify-self:end}\n.playback-center{display:flex;align-items:center;justify-content:center}\n#togglePlayback{width:40px;height:36px;padding:6px}\n#togglePlayback .glyph{width:22px;height:22px}\n#clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}\n#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}\n#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}\n#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}\n#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}\n#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}\n#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}\n#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}\n.export-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}\n.export-row label{line-height:20px}\n.export-row select{height:38px;line-height:20px;padding:8px 10px;width:100%}\n.export-row select{flex:1}\n.resize{position:absolute;z-index:5;touch-action:none}\n.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}\n.resize[data-edge=n]{top:-5px}\n.resize[data-edge=s]{bottom:-5px}\n.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}\n.resize[data-edge=e]{right:-5px}\n.resize[data-edge=w]{left:-5px}\n.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}\n.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}\n.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}\n.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}\n.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}\n@container(max-width:520px){\n\n.cards{grid-template-columns:1fr}\n}\n@media(prefers-reduced-motion:reduce){*{transition:none!important}\n}\n\n.export-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px;line-height:20px;padding:10px 16px;margin-top:16px}\n.feedback{margin:0 18px 18px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n\n#header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px var(--gutter);border-bottom:1px solid var(--line);cursor:grab;touch-action:none}\n#header h1{font-size:15px;font-weight:600;line-height:24px}\n.header-tools{display:flex;align-items:center;gap:8px}\n#shortcut{width:104px;height:30px;padding:5px 7px;line-height:18px;font-size:10px;text-align:center;background:var(--surface);border-radius:6px;cursor:pointer}\n#shortcut.recording{outline:2px solid var(--text)}\n#close{display:flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:-6px;padding:6px;border-radius:6px}\n#close:hover{background:var(--hover)}\n.library-content{padding:var(--gutter)}\n.record-section{padding:10px var(--gutter) 12px;border-bottom:1px solid var(--line)}\n.preview-section{padding:18px var(--gutter) 0}\n.timeline-section{margin:8px var(--gutter) 18px;padding:14px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n.export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}\n\n/* Opening punctuation hangs into the gutter so the visible title edge aligns. */\n.hanging-title{text-indent:-.5em}\n\n.export-summary{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-variant-numeric:tabular-nums}\n#selectionDuration{font-weight:600}\n#estimatedSize{font-size:11px;color:var(--muted)}\n.timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}\n#timelineLabels{grid-column:2}\n.whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}\n#wholeRecording{width:13px;height:13px;margin:0;padding:0;accent-color:var(--accent)}\n@container(max-width:440px){\n.preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}\n.mark-buttons{gap:0;margin-left:-4px}\n.mark-buttons .text-button{padding:6px 4px;font-size:10px}\n#clock{font-size:10px}\n}\n";
 
   // node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
@@ -22309,14 +22696,14 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
           const postroll = interstitial.cue.post;
           const previousEvent = interstitialEvents[i - 1] || null;
           const appendInPlace = interstitial.appendInPlace;
-          const eventStart = postroll ? primaryDuration : interstitial.startOffset;
+          const eventStart2 = postroll ? primaryDuration : interstitial.startOffset;
           const interstitialDuration = interstitial.duration;
           const timelineDuration = interstitial.timelineOccupancy === TimelineOccupancy.Range ? interstitialDuration : 0;
           const resumptionOffset = interstitial.resumptionOffset;
-          const inSameStartTimeSequence = (previousEvent == null ? void 0 : previousEvent.startTime) === eventStart;
-          const start = eventStart + interstitial.cumulativeDuration;
-          let end = appendInPlace ? start + interstitialDuration : eventStart + resumptionOffset;
-          if (preroll || !postroll && eventStart <= 0) {
+          const inSameStartTimeSequence = (previousEvent == null ? void 0 : previousEvent.startTime) === eventStart2;
+          const start = eventStart2 + interstitial.cumulativeDuration;
+          let end = appendInPlace ? start + interstitialDuration : eventStart2 + resumptionOffset;
+          if (preroll || !postroll && eventStart2 <= 0) {
             const integratedStart = integratedTime;
             integratedTime += timelineDuration;
             interstitial.timelineStart = start;
@@ -22335,9 +22722,9 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
                 end: integratedTime
               }
             });
-          } else if (eventStart <= primaryDuration) {
+          } else if (eventStart2 <= primaryDuration) {
             if (!inSameStartTimeSequence) {
-              const segmentDuration = eventStart - primaryPosition;
+              const segmentDuration = eventStart2 - primaryPosition;
               if (segmentDuration > ABUTTING_THRESHOLD_SECONDS) {
                 const timelineStart = primaryPosition;
                 const _integratedStart = integratedTime;
@@ -22361,7 +22748,7 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
                 schedule.push(primarySegment);
               } else if (segmentDuration > 0 && previousEvent) {
                 previousEvent.cumulativeDuration += segmentDuration;
-                schedule[schedule.length - 1].end = eventStart;
+                schedule[schedule.length - 1].end = eventStart2;
               }
             }
             if (postroll) {
@@ -22454,14 +22841,14 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       interstitialEvents.forEach((interstitial, i) => {
         const preroll = interstitial.cue.pre;
         const postroll = interstitial.cue.post;
-        const eventStart = preroll ? 0 : postroll ? primaryDuration : interstitial.startTime;
+        const eventStart2 = preroll ? 0 : postroll ? primaryDuration : interstitial.startTime;
         this.updateAssetDurations(interstitial);
-        const inSameStartTimeSequence = lastScheduledStart === eventStart;
+        const inSameStartTimeSequence = lastScheduledStart === eventStart2;
         if (inSameStartTimeSequence) {
           interstitial.cumulativeDuration = cumulativeDuration;
         } else {
           cumulativeDuration = 0;
-          lastScheduledStart = eventStart;
+          lastScheduledStart = eventStart2;
         }
         if (!postroll && interstitial.snapOptions.in) {
           interstitial.resumeAnchor = findFragmentByPTS(null, details.fragments, interstitial.startOffset + interstitial.resumptionOffset, 0, 0) || void 0;
@@ -22518,13 +22905,13 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       if (!interstitial.assetListLoaded) {
         return;
       }
-      const eventStart = interstitial.timelineStart;
+      const eventStart2 = interstitial.timelineStart;
       let sumDuration = 0;
       let hasUnknownDuration = false;
       let hasErrors = false;
       for (let i = 0; i < interstitial.assetList.length; i++) {
         const asset = interstitial.assetList[i];
-        const timelineStart = eventStart + sumDuration;
+        const timelineStart = eventStart2 + sumDuration;
         asset.startOffset = sumDuration;
         asset.timelineStart = timelineStart;
         hasUnknownDuration || (hasUnknownDuration = asset.duration === null);
@@ -24577,12 +24964,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       if (!((_this$schedule0 = this.schedule) != null && _this$schedule0.hasEvent(interstitialId))) {
         return;
       }
-      const eventStart = interstitial.timelineStart;
+      const eventStart2 = interstitial.timelineStart;
       const previousDuration = interstitial.duration;
       let sumDuration = 0;
       assets.forEach((asset, assetListIndex) => {
         const duration = parseFloat(asset.DURATION);
-        this.createAsset(interstitial, assetListIndex, sumDuration, eventStart + sumDuration, duration, asset.URI);
+        this.createAsset(interstitial, assetListIndex, sumDuration, eventStart2 + sumDuration, duration, asset.URI);
         sumDuration += duration;
       });
       interstitial.duration = sumDuration;
@@ -33188,179 +33575,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
   };
   Hls.defaultConfig = void 0;
-
-  // src/core.js
-  var MEMBERS = Object.freeze([
-    { id: "bella", name: "贝拉", uid: 672353429, room: 22632424, color: "#b97259" },
-    { id: "diana", name: "嘉然", uid: 672328094, room: 22637261, color: "#c7829c" },
-    { id: "eileen", name: "乃琳", uid: 672342685, room: 22625027, color: "#7b85ad" },
-    { id: "xinyi", name: "心宜", uid: "3537115310721181", room: 30849777, color: "#c93773" },
-    { id: "sinuo", name: "思诺", uid: "3537115310721781", room: 30858592, color: "#7252c0" }
-  ]);
-  var DEFAULT_SHORTCUT = Object.freeze({
-    code: "KeyC",
-    ctrlKey: false,
-    altKey: true,
-    shiftKey: true,
-    metaKey: false
-  });
-  var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-  function formatTime(seconds, fractional = false) {
-    const ms = Math.round(Math.max(0, seconds) * 1e3);
-    const h = Math.floor(ms / 36e5);
-    const m = Math.floor(ms / 6e4) % 60;
-    const s = Math.floor(ms / 1e3) % 60;
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? "." + String(ms % 1e3).padStart(3, "0") : ""}`;
-  }
-  function formatPlaybackTime(seconds) {
-    const whole = Math.floor(Math.max(0, seconds));
-    const h = Math.floor(whole / 3600), m = Math.floor(whole / 60) % 60, s = whole % 60;
-    return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-  }
-  function formatCompactTime(seconds) {
-    const ms = Math.round(Math.max(0, seconds) * 1e3);
-    const h = Math.floor(ms / 36e5), m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
-    const sec = `${String(s).padStart(h || m ? 2 : 1, "0")}.${String(ms % 1e3).padStart(3, "0")}`;
-    return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : m ? `${m}:${sec}` : sec;
-  }
-  function formatDuration(seconds) {
-    const tenths = Math.round(Math.max(0, seconds) * 10);
-    const h = Math.floor(tenths / 36e3), m = Math.floor(tenths / 600) % 60, s = tenths % 600 / 10;
-    return `${h ? h + "时" : ""}${h || m ? m + "分" : ""}${s.toFixed(1)}秒`;
-  }
-  function formatDate(unix, withSeconds = false) {
-    return new Intl.DateTimeFormat("zh-CN", {
-      timeZone: "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      ...withSeconds ? { second: "2-digit" } : {},
-      hourCycle: "h23"
-    }).format(new Date(unix * 1e3));
-  }
-  function formatBytes(bytes2) {
-    if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(2)} GB`;
-    if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(1)} MB`;
-    return `${(bytes2 / 1e3).toFixed(0)} KB`;
-  }
-  function validateRange(start, end, duration) {
-    if (![start, end, duration].every(Number.isFinite) || start < 0 || end <= start) {
-      throw new Error("结束时间必须晚于开始时间。");
-    }
-    if (end > duration + 1e-3) throw new Error(`结束时间超出范围，最晚为 ${formatTime(duration, true)}。`);
-    return { start, end };
-  }
-  function recordFromReplay(item, member) {
-    if (typeof item.live_key !== "string") throw new Error("场次编号格式异常，请刷新场次列表。");
-    return {
-      key: item.live_key,
-      title: item.live_info.title,
-      cover: item.live_info.cover,
-      start: item.start_time,
-      end: item.end_time,
-      live: false,
-      uid: member.uid,
-      member: member.name,
-      room: item.room_id
-    };
-  }
-  function roomFromHtml(html) {
-    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text));
-    if (!script) throw new Error("未找到直播场次信息，请刷新直播间后重试。");
-    const raw = script.replace(/^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=\s*/, "").trim().replace(/;\s*$/, "");
-    const info = JSON.parse(raw).roomInfoRes;
-    if (info?.code !== 0 || !info.data?.room_info) throw new Error("直播间暂未返回场次信息。");
-    return info.data.room_info;
-  }
-  function recordFromRoom(info, member, now2 = Date.now() / 1e3) {
-    if (info.live_status !== 1) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
-    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str)) {
-      throw new Error("直播场次编号不可用，请刷新直播间。");
-    }
-    return {
-      key: info.live_id_str,
-      title: info.title,
-      start: info.live_start_time,
-      end: Math.floor(now2),
-      live: true,
-      uid: info.uid,
-      member: member.name,
-      room: info.room_id
-    };
-  }
-  function roomIdFromUrl(value) {
-    const url2 = new URL(value);
-    if (url2.hostname !== "live.bilibili.com") return null;
-    const match = url2.pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/);
-    return match ? Number(match[1]) : null;
-  }
-  function normalizeShortcut(value) {
-    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
-    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
-    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
-  }
-  function formatShortcut(shortcut) {
-    return [
-      shortcut.ctrlKey && "Ctrl",
-      shortcut.altKey && "Alt",
-      shortcut.shiftKey && "Shift",
-      shortcut.metaKey && "⌘",
-      shortcut.code.replace(/^Key|^Digit/, "")
-    ].filter(Boolean).join("+");
-  }
-  function matchesShortcut(event, shortcut) {
-    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
-  }
-  function isEditing(event) {
-    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
-  }
-  function constrainRect(rect, viewport) {
-    const margin = 10;
-    const maxW = Math.max(1, viewport.width - margin * 2);
-    const maxH = Math.max(1, viewport.height - margin * 2);
-    const width = clamp(rect.width, Math.min(360, maxW), maxW);
-    const height = clamp(rect.height, Math.min(480, maxH), maxH);
-    return {
-      width,
-      height,
-      left: clamp(rect.left, margin, viewport.width - margin - width),
-      top: clamp(rect.top, margin, viewport.height - margin - height)
-    };
-  }
-  function resizeRect(rect, edge, dx, dy, viewport) {
-    let { left, top, width, height } = rect;
-    const minW = Math.min(360, viewport.width - 20), minH = Math.min(480, viewport.height - 20);
-    if (edge.includes("e")) width = clamp(width + dx, minW, viewport.width - 10 - left);
-    if (edge.includes("s")) height = clamp(height + dy, minH, viewport.height - 10 - top);
-    if (edge.includes("w")) {
-      const shift = clamp(dx, 10 - left, width - minW);
-      left += shift;
-      width -= shift;
-    }
-    if (edge.includes("n")) {
-      const shift = clamp(dy, 10 - top, height - minH);
-      top += shift;
-      height -= shift;
-    }
-    return { left, top, width, height };
-  }
-  function fileName(record, start, end, part = "") {
-    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(record.start * 1e3));
-    const label = `${record.member}_${date}_${record.title}_${formatTime(start).replaceAll(":", "-")}-${formatTime(end).replaceAll(":", "-")}${part}`;
-    return label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
-  }
-  function zoomWindow(view3, total, factor, anchor = 0.5) {
-    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total), total);
-    const pivot = view3.start + span * clamp(anchor, 0, 1);
-    const start = clamp(pivot - width * anchor, 0, total - width);
-    return { start, end: start + width };
-  }
-  function panWindow(view3, total, delta) {
-    const width = view3.end - view3.start, start = clamp(view3.start + delta, 0, total - width);
-    return { start, end: start + width };
-  }
 
   // src/full-preview.js
   function makeHlsLoader(request) {
@@ -60138,6 +60352,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       element.textContent = text;
       element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text));
     }
+    const schedules = new ScheduleService(api.request);
+    let scheduleController = null;
     const cache = /* @__PURE__ */ new Map(), urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     const status2 = (text, error = false) => {
@@ -60243,51 +60459,51 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       $("downloads").replaceChildren();
     }
     function renderCards() {
+      const focusedKey = root.activeElement?.dataset.recordKey, scroll = $("body").scrollTop;
       root.querySelectorAll("[data-member]").forEach((el) => el.setAttribute("aria-pressed", el.dataset.member === member.id));
       const records = cache.get(member.id) || [];
       $("cards").replaceChildren();
       $("libraryEmpty").hidden = records.length > 0;
       $("libraryEmpty").textContent = "近 14 天暂无可用回放";
       for (const r of records) {
-        const card = document.createElement("button");
-        card.className = "record-card";
-        card.setAttribute("aria-label", `${formatDate(r.start)} ${r.title}`);
-        const cover = document.createElement("div");
-        cover.className = "cover";
-        const placeholder = document.createElement("span");
-        placeholder.className = "cover-placeholder";
-        placeholder.innerHTML = icon("play");
-        cover.append(placeholder);
-        if (r.cover) {
-          const image = document.createElement("img");
-          image.src = r.cover;
-          image.alt = "";
-          image.loading = "lazy";
-          image.referrerPolicy = "no-referrer";
-          image.onload = () => placeholder.hidden = true;
-          image.onerror = () => image.hidden = true;
-          cover.append(image);
-        }
-        const duration = document.createElement("span");
-        duration.className = "duration";
-        duration.textContent = formatTime(r.end - r.start);
-        cover.append(duration);
-        const info = document.createElement("div");
-        info.className = "card-info";
-        const title = document.createElement("strong");
-        setTitle(title, r.title);
-        const date = document.createElement("p");
-        date.textContent = `${formatDate(r.start)} · ${member.name}`;
-        info.append(title, date);
-        card.append(cover, info);
-        card.onclick = () => {
+        const card = createRecordCard(r, () => {
           libraryScroll = $("body").scrollTop;
           void enterRecord(r);
-        };
+        });
+        card.dataset.recordKey = r.key;
         $("cards").append(card);
+        if (r.key === focusedKey) card.focus({ preventScroll: true });
       }
+      $("body").scrollTop = scroll;
+      controls();
+    }
+    function enrichCards(refresh) {
+      if ($("panel").hidden) return;
+      scheduleController?.abort();
+      const own = new AbortController();
+      scheduleController = own;
+      const selected = member.id, records = cache.get(selected) || [];
+      $("scheduleNote").textContent = "正在补充直播日程…";
+      $("scheduleNote").hidden = !records.length;
+      void (async () => {
+        try {
+          const result = await schedules.enrich(records, { signal: own.signal, refresh });
+          if (own.signal.aborted || member.id !== selected || page !== "library") return;
+          cache.set(selected, result.records);
+          renderCards();
+          $("scheduleNote").hidden = !result.failed;
+          $("scheduleNote").textContent = result.failed ? "部分日程暂不可用，可刷新重试。" : "";
+        } catch (e) {
+          if (!own.signal.aborted) {
+            $("scheduleNote").hidden = false;
+            $("scheduleNote").textContent = "日程暂不可用，可刷新重试。";
+          }
+        }
+      })();
     }
     async function library(refresh = false) {
+      scheduleController?.abort();
+      $("scheduleNote").hidden = true;
       estimateController?.abort();
       estimate = null;
       estimateState = "loading";
@@ -60299,6 +60515,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       renderCards();
       if (!refresh && cache.has(member.id)) {
         status2("选择想剪辑的那场直播。");
+        enrichCards(false);
         return;
       }
       await job(async (signal) => {
@@ -60306,9 +60523,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         cache.set(member.id, await api.history(member, signal));
         renderCards();
         status2("选择想剪辑的那场直播。");
+        enrichCards(refresh);
       });
     }
     async function loadRecord(next, signal) {
+      scheduleController?.abort();
       $("wholeRecording").checked = false;
       clipSelection = null;
       estimateController?.abort();
@@ -60404,10 +60623,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       if (!initialized) {
         initialized = true;
         await (room ? currentRoom() : library());
-      }
+      } else if (page === "library") enrichCards(false);
     }
     const close = () => {
       $("panel").hidden = true;
+      scheduleController?.abort();
       playback.cancel();
     };
     $("close").onclick = close;
@@ -60540,6 +60760,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       if (b.right > innerWidth || b.bottom > innerHeight) moveLauncher(b.left, b.top);
     });
     window.addEventListener("pagehide", () => {
+      scheduleController?.abort();
       controller?.abort();
       estimateController?.abort();
       player.clear();
