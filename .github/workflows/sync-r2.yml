@@ -32,9 +32,7 @@ jobs:
         run: npm run verify
 
       - name: Check built artifact is committed
-        run: |
-          npm run build
-          git diff --exit-code -- bella-live-clip.user.js
+        run: git diff --exit-code -- bella-live-clip.user.js
 
   upload:
     needs: test

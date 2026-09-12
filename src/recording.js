@@ -13,17 +13,15 @@ export async function loadRecordingPlan(api, streams, signal) {
 }
 
 export async function estimateRecordingRate(api, groups, signal) {
-  let bytes=0, duration=0;
   // Sample each uninterrupted part so quality changes are reflected in its estimate.
   const rates=[];
   for (const group of groups) {
     const sample=group.segments[Math.floor(group.segments.length/2)];
     const size=sample.range?.length ?? (await api.request(sample.url,{type:'arraybuffer',signal})).data.byteLength;
     const rate=size/sample.duration;
-    const groupDuration=group.segments.reduce((sum,s)=>sum+s.duration,0);
-    rates.push({...group,rate});bytes+=rate*groupDuration;duration+=groupDuration;
+    rates.push({...group,rate});
   }
-  return {groups:rates,rate:bytes/duration};
+  return {groups:rates};
 }
 
 export function estimateSelectionBytes(estimate, recordStart, selection) {

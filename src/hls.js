@@ -46,7 +46,7 @@ export function parsePlaylist(text, baseUrl) {
   }
   flush();
   if (!groups.length) throw new Error('这个时间段尚无可下载的视频分片，请调整时间或稍后重试。');
-  return { groups, duration: total, segmentCount: groups.reduce((n, g) => n + g.segments.length, 0) };
+  return { groups, duration: total };
 }
 
 export async function mapConcurrent(items, concurrency, task, signal) {

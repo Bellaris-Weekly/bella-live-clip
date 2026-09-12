@@ -59,6 +59,15 @@ export async function runCardChecks(app, query) {
   assert(!/选中|预估/.test(durationNode.textContent+sizeNode.textContent),'摘要仍有多余前缀');
   for(const prop of ['fontSize','fontWeight','color'])assert(getComputedStyle(durationNode)[prop]===getComputedStyle(sizeNode)[prop],'摘要文字样式不同');
   checks.push('默认整场选区与统一摘要样式');
+  if(!query.has('schedule-error'))await until(()=>root.getElementById('recordMeta').textContent.endsWith('团播'));
+  assert(!/历史回放|本场直播/.test(root.getElementById('recordMeta').textContent),'场次信息仍显示来源标签');
+  const precise=root.querySelector('[data-mode="precise"]'),copy=root.querySelector('[data-mode="copy"]');
+  precise.click();assert(precise.getAttribute('aria-pressed')==='true'&&copy.getAttribute('aria-pressed')==='false','精确模式切换失败');
+  root.getElementById('wholeRecording').click();assert(root.getElementById('exportMode').hidden,'整场模式未隐藏切换');
+  root.getElementById('wholeRecording').click();assert(!root.getElementById('exportMode').hidden&&precise.getAttribute('aria-pressed')==='true','退出整场后模式丢失');
+  copy.click();assert(copy.getAttribute('aria-pressed')==='true','原画模式切换失败');
+  assert(!root.querySelector('.export-section .hint')&&!root.querySelector('select#exportMode'),'旧导出说明或下拉框仍存在');
+  checks.push('直播类型、双选项切换和整场模式恢复');
   root.getElementById('back').click();
   await until(()=>!root.getElementById('library').hidden&&!root.getElementById('refreshLibrary').disabled);
   checks.push('选择录像与返回列表');

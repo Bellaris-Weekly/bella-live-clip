@@ -9,3 +9,17 @@ export function createPlayback(video, onError) {
   toggle(){if(video.paused)void play();else video.pause();},
  };
 }
+
+// Leave fullscreen gestures and controls to the browser.
+export function bindVideoControls(video, playback, onError) {
+ const fullscreen=()=>video.getRootNode().fullscreenElement===video;
+ const sync=()=>{video.controls=fullscreen();};
+ video.ownerDocument.addEventListener('fullscreenchange',sync);
+ video.addEventListener('click',event=>{
+  if(!fullscreen()&&event.detail===1)playback.toggle();
+ });
+ video.addEventListener('dblclick',()=>{
+  if(!fullscreen())void video.requestFullscreen().catch(error=>onError(error.message,true));
+ });
+ sync();
+}

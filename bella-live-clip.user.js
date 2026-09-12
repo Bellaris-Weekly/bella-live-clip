@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.2.3
+// @version      2.2.4
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -28,128 +28,8 @@
 // Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1
 
 (() => {
-  var __defProp = Object.defineProperty;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __esm = (fn, res, err) => function __init() {
-    if (err) throw err[0];
-    try {
-      return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-    } catch (e) {
-      throw err = [e], e;
-    }
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
-
-  // src/hls.js
-  var hls_exports = {};
-  __export(hls_exports, {
-    mapConcurrent: () => mapConcurrent,
-    parsePlaylist: () => parsePlaylist,
-    selectPlaylistRange: () => selectPlaylistRange
-  });
-  function attributes(text) {
-    return Object.fromEntries([...text.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
-  }
-  function byteRange(value, previousEnd) {
-    const match = String(value).match(/^(\d+)(?:@(\d+))?$/);
-    if (!match || Number(match[1]) <= 0) throw new Error("视频分片字节范围无效。");
-    const offset = match[2] === void 0 ? previousEnd : Number(match[2]);
-    if (!Number.isSafeInteger(offset)) throw new Error("视频分片缺少字节起始位置。");
-    return { offset, length: Number(match[1]) };
-  }
-  function parsePlaylist(text, baseUrl) {
-    const lines = text.trim().split(/\r?\n/).map((line) => line.trim());
-    if (lines[0] !== "#EXTM3U") throw new Error("B 站未返回有效的视频分片清单，请重新载入。");
-    const groups = [];
-    let segments = [], duration = null, map = null, rangeText = null, previous = null, total = 0;
-    const flush = () => {
-      if (segments.length) {
-        groups.push({ segments, map, offset: total - segments.reduce((n, s) => n + s.duration, 0) });
-        segments = [];
-      }
-    };
-    for (const line of lines.slice(1)) {
-      if (line.startsWith("#EXT-X-STREAM-INF:")) throw new Error("该场次返回了多清晰度清单，当前剪辑接口格式不受支持。");
-      if (line.startsWith("#EXT-X-KEY:")) {
-        if (attributes(line).METHOD !== "NONE") throw new Error("该录像包含加密分片，无法导出。");
-      } else if (line.startsWith("#EXT-X-MAP:")) {
-        flush();
-        const attrs = attributes(line);
-        map = {
-          url: new URL(attrs.URI, baseUrl).href,
-          range: attrs.BYTERANGE ? byteRange(attrs.BYTERANGE, void 0) : null
-        };
-      } else if (line === "#EXT-X-DISCONTINUITY") {
-        flush();
-        previous = null;
-      } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
-        rangeText = line.slice(line.indexOf(":") + 1);
-      } else if (line.startsWith("#EXTINF:")) {
-        duration = Number(line.slice(8).split(",")[0]);
-        if (!(duration > 0)) throw new Error("视频分片时长无效。");
-      } else if (line && !line.startsWith("#")) {
-        if (duration === null) throw new Error("视频清单缺少分片时长。");
-        const url2 = new URL(line, baseUrl).href;
-        const prevEnd = previous?.url === url2 && previous.range ? previous.range.offset + previous.range.length : void 0;
-        const range = rangeText ? byteRange(rangeText, prevEnd) : null;
-        const segment = { url: url2, duration, range };
-        segments.push(segment);
-        previous = segment;
-        total += duration;
-        duration = null;
-        rangeText = null;
-      }
-    }
-    flush();
-    if (!groups.length) throw new Error("这个时间段尚无可下载的视频分片，请调整时间或稍后重试。");
-    return { groups, duration: total, segmentCount: groups.reduce((n, g) => n + g.segments.length, 0) };
-  }
-  async function mapConcurrent(items, concurrency, task, signal) {
-    const result = new Array(items.length);
-    let cursor = 0, failed = false;
-    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (!failed && cursor < items.length) {
-        signal?.throwIfAborted();
-        const index = cursor++;
-        try {
-          result[index] = await task(items[index], index);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    });
-    await Promise.all(workers);
-    return result;
-  }
-  function selectPlaylistRange(parsed, start, end) {
-    const plans = [];
-    for (const group of parsed.groups) {
-      let cursor = group.offset;
-      const selected = [];
-      let first;
-      for (const segment of group.segments) {
-        const next = cursor + segment.duration;
-        if (next > start && cursor < end) {
-          first ??= cursor;
-          selected.push(segment);
-        }
-        cursor = next;
-      }
-      if (selected.length) plans.push({ segments: selected, map: group.map, start: Math.max(0, start - first), end: Math.min(end, cursor) - first, offset: first });
-    }
-    return plans;
-  }
-  var init_hls = __esm({
-    "src/hls.js"() {
-    }
-  });
-
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div><div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">选区跨断流时分文件保存；整场原画下载会跳过断流空档。预估大小随画面码率变化。</p><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/core.js
   var MEMBERS = Object.freeze([
@@ -219,7 +99,6 @@
     return {
       key: item.live_key,
       title: item.live_info.title,
-      cover: item.live_info.cover,
       start: item.start_time,
       end: item.end_time,
       live: false,
@@ -572,26 +451,21 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 button,input,select{font:inherit;color:inherit}
-button{margin:0}
+button{margin:0;cursor:pointer;border:0}
 .glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}
 .glyph-play{transform:translateX(1px)}
-button{cursor:pointer}
 button:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}
-button{border:0}
 h1,h2,p{margin:0}
 h1{font-size:20px}
 h2{font-size:23px;line-height:1.5}
 input,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}
-small,.hint{color:var(--muted);font-size:11px}
-.hint{margin-top:10px;line-height:1.7}
 .text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:transparent;color:var(--text);padding:6px 8px;border-radius:7px;font-size:12px;line-height:20px}
 .text-button:hover{background:var(--hover)}
 .button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}
 .button:hover{background:#e9e9e9}
 #download{background:var(--accent);color:#fff}
 #download:hover{background:var(--accent-hover)}
-.secondary{background:var(--hover);color:var(--text)}
 .icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}
 
 #launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;gap:2px;line-height:1;touch-action:none}
@@ -651,8 +525,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .empty p{margin:12px 0 24px}
 
 .editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}
-#recordTitle{line-height:28px;overflow-wrap:anywhere}
-#recordTitle{font-size:19px}
+#recordTitle{line-height:28px;overflow-wrap:anywhere;font-size:19px}
 #recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}
 #playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}
 #fullVideo{display:block;width:100%;height:100%}
@@ -671,10 +544,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
 #timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}
 #timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
-.export-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}
-.export-row label{line-height:20px}
-.export-row select{height:38px;line-height:20px;padding:8px 10px;width:100%}
-.export-row select{flex:1}
+.export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.export-mode{display:flex;flex:none;padding:2px;gap:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover)}
+.export-mode button{padding:5px 10px;border-radius:5px;background:transparent;color:var(--muted);font-size:11px;line-height:18px}
+.export-mode button[aria-pressed=true]{background:var(--paper);color:var(--text);box-shadow:0 1px 3px #00000012}
 .resize{position:absolute;z-index:5;touch-action:none}
 .resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}
 .resize[data-edge=n]{top:-5px}
@@ -709,7 +582,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 /* Opening punctuation hangs into the gutter so the visible title edge aligns. */
 .hanging-title{text-indent:-.5em}
 
-.export-summary{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+.export-summary{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;flex-wrap:wrap;margin-left:auto;font-size:11px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
 #selectionDuration::after{content:"·";margin-left:8px;color:var(--border-strong)}
 .timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}
 #timelineLabels{grid-column:2}
@@ -33887,6 +33760,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
     };
   }
+  function bindVideoControls(video, playback, onError) {
+    const fullscreen = () => video.getRootNode().fullscreenElement === video;
+    const sync = () => {
+      video.controls = fullscreen();
+    };
+    video.ownerDocument.addEventListener("fullscreenchange", sync);
+    video.addEventListener("click", (event) => {
+      if (!fullscreen() && event.detail === 1) playback.toggle();
+    });
+    video.addEventListener("dblclick", () => {
+      if (!fullscreen()) void video.requestFullscreen().catch((error) => onError(error.message, true));
+    });
+    sync();
+  }
 
   // src/timeline.js
   function fitSelection(start, end, total) {
@@ -34023,7 +33910,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }, lock(value) {
       locked = value;
       render();
-    }, refit };
+    } };
   }
 
   // node_modules/mediabunny/dist/modules/src/misc.js
@@ -60246,8 +60133,102 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   globalThis[MEDIABUNNY_LOADED_SYMBOL] = true;
 
+  // src/hls.js
+  function attributes(text) {
+    return Object.fromEntries([...text.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
+  }
+  function byteRange(value, previousEnd) {
+    const match = String(value).match(/^(\d+)(?:@(\d+))?$/);
+    if (!match || Number(match[1]) <= 0) throw new Error("视频分片字节范围无效。");
+    const offset = match[2] === void 0 ? previousEnd : Number(match[2]);
+    if (!Number.isSafeInteger(offset)) throw new Error("视频分片缺少字节起始位置。");
+    return { offset, length: Number(match[1]) };
+  }
+  function parsePlaylist(text, baseUrl) {
+    const lines = text.trim().split(/\r?\n/).map((line) => line.trim());
+    if (lines[0] !== "#EXTM3U") throw new Error("B 站未返回有效的视频分片清单，请重新载入。");
+    const groups = [];
+    let segments = [], duration = null, map = null, rangeText = null, previous = null, total = 0;
+    const flush = () => {
+      if (segments.length) {
+        groups.push({ segments, map, offset: total - segments.reduce((n, s) => n + s.duration, 0) });
+        segments = [];
+      }
+    };
+    for (const line of lines.slice(1)) {
+      if (line.startsWith("#EXT-X-STREAM-INF:")) throw new Error("该场次返回了多清晰度清单，当前剪辑接口格式不受支持。");
+      if (line.startsWith("#EXT-X-KEY:")) {
+        if (attributes(line).METHOD !== "NONE") throw new Error("该录像包含加密分片，无法导出。");
+      } else if (line.startsWith("#EXT-X-MAP:")) {
+        flush();
+        const attrs = attributes(line);
+        map = {
+          url: new URL(attrs.URI, baseUrl).href,
+          range: attrs.BYTERANGE ? byteRange(attrs.BYTERANGE, void 0) : null
+        };
+      } else if (line === "#EXT-X-DISCONTINUITY") {
+        flush();
+        previous = null;
+      } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
+        rangeText = line.slice(line.indexOf(":") + 1);
+      } else if (line.startsWith("#EXTINF:")) {
+        duration = Number(line.slice(8).split(",")[0]);
+        if (!(duration > 0)) throw new Error("视频分片时长无效。");
+      } else if (line && !line.startsWith("#")) {
+        if (duration === null) throw new Error("视频清单缺少分片时长。");
+        const url2 = new URL(line, baseUrl).href;
+        const prevEnd = previous?.url === url2 && previous.range ? previous.range.offset + previous.range.length : void 0;
+        const range = rangeText ? byteRange(rangeText, prevEnd) : null;
+        const segment = { url: url2, duration, range };
+        segments.push(segment);
+        previous = segment;
+        total += duration;
+        duration = null;
+        rangeText = null;
+      }
+    }
+    flush();
+    if (!groups.length) throw new Error("这个时间段尚无可下载的视频分片，请调整时间或稍后重试。");
+    return { groups, duration: total };
+  }
+  async function mapConcurrent(items, concurrency, task, signal) {
+    const result = new Array(items.length);
+    let cursor = 0, failed = false;
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (!failed && cursor < items.length) {
+        signal?.throwIfAborted();
+        const index = cursor++;
+        try {
+          result[index] = await task(items[index], index);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    });
+    await Promise.all(workers);
+    return result;
+  }
+  function selectPlaylistRange(parsed, start, end) {
+    const plans = [];
+    for (const group of parsed.groups) {
+      let cursor = group.offset;
+      const selected = [];
+      let first;
+      for (const segment of group.segments) {
+        const next = cursor + segment.duration;
+        if (next > start && cursor < end) {
+          first ??= cursor;
+          selected.push(segment);
+        }
+        cursor = next;
+      }
+      if (selected.length) plans.push({ segments: selected, map: group.map, start: Math.max(0, start - first), end: Math.min(end, cursor) - first, offset: first });
+    }
+    return plans;
+  }
+
   // src/media.js
-  init_hls();
   async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {
   } } = {}) {
     signal?.throwIfAborted();
@@ -60298,7 +60279,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   async function exportSelection(api, record, streams, selection, { signal, precise = false, onProgress = () => {
   } }) {
-    const { selectPlaylistRange: selectPlaylistRange2 } = await Promise.resolve().then(() => (init_hls(), hls_exports));
     const outputs = [];
     let bytes2 = 0;
     for (const stream of streams) {
@@ -60306,7 +60286,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       if (selection.end <= offset || selection.start >= stream.end_time - record.start) continue;
       const response = await api.request(stream.stream, { signal });
       const parsed = parsePlaylist(response.data, response.url);
-      for (const plan of selectPlaylistRange2(parsed, selection.start - offset, selection.end - offset)) {
+      for (const plan of selectPlaylistRange(parsed, selection.start - offset, selection.end - offset)) {
         const segments = plan.map ? [plan.map, ...plan.segments] : plan.segments;
         let done = 0;
         const chunks = await mapConcurrent(segments, 3, async (segment) => {
@@ -60328,7 +60308,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
 
   // src/recording.js
-  init_hls();
   async function loadRecordingPlan(api, streams, signal) {
     const groups = [];
     for (const stream of streams) {
@@ -60339,18 +60318,14 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     return groups;
   }
   async function estimateRecordingRate(api, groups, signal) {
-    let bytes2 = 0, duration = 0;
     const rates = [];
     for (const group of groups) {
       const sample = group.segments[Math.floor(group.segments.length / 2)];
       const size = sample.range?.length ?? (await api.request(sample.url, { type: "arraybuffer", signal })).data.byteLength;
       const rate = size / sample.duration;
-      const groupDuration = group.segments.reduce((sum, s) => sum + s.duration, 0);
       rates.push({ ...group, rate });
-      bytes2 += rate * groupDuration;
-      duration += groupDuration;
     }
-    return { groups: rates, rate: bytes2 / duration };
+    return { groups: rates };
   }
   function estimateSelectionBytes(estimate, recordStart, selection) {
     let bytes2 = 0;
@@ -60522,7 +60497,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text));
     }
     const schedules = new ScheduleService(api.request);
-    let scheduleController = null;
+    let scheduleController = null, exportMode = "copy";
     const cache = /* @__PURE__ */ new Map(), urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     const status2 = (text, error = false) => {
@@ -60539,6 +60514,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const applyRect = () => Object.assign($("panel").style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
     applyRect();
     const playback = createPlayback(video, status2);
+    bindVideoControls(video, playback, status2);
     const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => {
       player.seek(t);
       updateClock(t);
@@ -60559,7 +60535,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     for (const event of ["play", "pause", "ended", "emptied"]) video.addEventListener(event, syncPlayback);
     function updateExportSummary(selection = timeline.getSelection()) {
       $("selectionDuration").textContent = formatDuration(selection.end - selection.start);
-      $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}${!$("wholeRecording").checked && $("exportMode").value === "precise" ? "（原画参考）" : ""}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
+      $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}${!$("wholeRecording").checked && exportMode === "precise" ? "（原画参考）" : ""}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
     }
     function startEstimate(streams) {
       estimateController?.abort();
@@ -60589,7 +60565,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       for (const id of ["markStart", "markEnd"]) $(id).disabled = busy || !ready || whole;
       $("togglePlayback").disabled = busy || !ready;
       $("wholeRecording").disabled = busy || !ready;
-      $("exportMode").closest(".export-row").hidden = whole;
+      $("exportMode").hidden = whole;
       $("download").innerHTML = `<span>导出${whole ? "整场" : ""}</span>` + icon("download");
       $("download").hidden = page !== "edit";
       $("download").disabled = busy || !ready;
@@ -60695,6 +60671,21 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         enrichCards(refresh);
       });
     }
+    function renderRecordMeta() {
+      $("recordMeta").textContent = [record.member, formatDate(record.start), record.schedule?.type].filter(Boolean).join(" · ");
+    }
+    function enrichRecordType() {
+      if (record.schedule || $("panel").hidden) return;
+      const own = new AbortController();
+      scheduleController = own;
+      const selected = record;
+      void schedules.enrich([selected], { signal: own.signal }).then((result) => {
+        if (own.signal.aborted || record !== selected || page !== "edit") return;
+        record = result.records[0];
+        renderRecordMeta();
+      }).catch(() => {
+      });
+    }
     async function loadRecord(next, signal) {
       scheduleController?.abort();
       $("wholeRecording").checked = false;
@@ -60710,7 +60701,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       clearDownloads();
       showPage("edit");
       setTitle($("recordTitle"), record.title);
-      $("recordMeta").textContent = `${record.member} · ${formatDate(record.start)}${record.live ? " · 本场直播" : " · 历史回放"}`;
+      renderRecordMeta();
+      enrichRecordType();
       status2("正在载入整场录像…");
       const { total, streams } = await player.load(record, signal);
       playbackTotal = total;
@@ -60747,7 +60739,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         player.pause();
         clearDownloads();
         status2("正在下载选中的录像…");
-        const outputs = await exportSelection(api, record, player.getStreams(), selection, { signal, precise: $("exportMode").value === "precise", onProgress: (p) => {
+        const outputs = await exportSelection(api, record, player.getStreams(), selection, { signal, precise: exportMode === "precise", onProgress: (p) => {
           $("progress").value = p.phase === "download" ? p.done / p.count * 75 : 75 + p.progress * 25;
           status2(p.phase === "download" ? `下载分片 ${p.done}/${p.count} · ${formatBytes(p.bytes)}` : "正在生成 MP4…");
         } });
@@ -60791,6 +60783,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         initialized = true;
         await (room ? currentRoom() : library());
       } else if (page === "library") enrichCards(false);
+      else if (page === "edit") enrichRecordType();
     }
     const close = () => {
       $("panel").hidden = true;
@@ -60824,7 +60817,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
       controls();
     };
-    $("exportMode").onchange = () => updateExportSummary();
+    root.querySelectorAll("[data-mode]").forEach((button) => button.onclick = () => {
+      exportMode = button.dataset.mode;
+      root.querySelectorAll("[data-mode]").forEach((el) => el.setAttribute("aria-pressed", el.dataset.mode === exportMode));
+      updateExportSummary();
+    });
     $("markStart").onclick = () => {
       const s = timeline.getSelection(), t = player.position();
       try {

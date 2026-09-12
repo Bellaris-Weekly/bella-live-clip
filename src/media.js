@@ -1,7 +1,7 @@
 import {
   Input, BlobSource, MP4, MPEG_TS, Output, BufferTarget, Mp4OutputFormat, Conversion, QUALITY_HIGH,
 } from 'mediabunny';
-import { parsePlaylist, mapConcurrent } from './hls.js';
+import { parsePlaylist, mapConcurrent, selectPlaylistRange } from './hls.js';
 
 export async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {} } = {}) {
   signal?.throwIfAborted();
@@ -44,7 +44,6 @@ export async function inspectMedia(blob) {
 
 // Use the same full playlist timeline as the preview, then retrieve only overlapping segments.
 export async function exportSelection(api,record,streams,selection,{signal,precise=false,onProgress=()=>{}}){
- const {selectPlaylistRange}=await import('./hls.js');
  const outputs=[];let bytes=0;
  for(const stream of streams){
   const offset=stream.start_time-record.start;

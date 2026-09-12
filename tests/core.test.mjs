@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTime, formatTime, validateRange, recordFromRoom, roomFromHtml, constrainRect, resizeRect, normalizeShortcut } from '../src/core.js';
+import { formatTime, validateRange, recordFromRoom, roomFromHtml, constrainRect, resizeRect, normalizeShortcut } from '../src/core.js';
 import { parsePlaylist, mapConcurrent } from '../src/hls.js';
 import { createRequest, BiliApi } from '../src/network.js';
-test('时间解析覆盖不同长度与毫秒，拒绝非法范围',()=>{
- for(const [s,n] of [['1:02:03.456',3723.456],['12:34.5',754.5],['75.25',75.25]]) assert.equal(parseTime(s),n);
- for(const s of ['1:60','-1','1:99:00','abc']) assert.throws(()=>parseTime(s));
- assert.equal(formatTime(3661.125,true),'01:01:01.125'); assert.throws(()=>validateRange(5,4,10)); assert.throws(()=>validateRange(0,11,10));
+test('时间格式与选区校验覆盖分钟、小时及非法范围',()=>{
+ for(const [value,expected] of [[65.25,'00:01:05.250'],[3661.125,'01:01:01.125']])assert.equal(formatTime(value,true),expected);
+ for(const range of [[5,4,10],[0,11,10],[-1,5,10],[0,Infinity,10]])assert.throws(()=>validateRange(...range));
+ for(const range of [[0,10,10],[1.25,3.75,10]])assert.deepEqual(validateRange(...range),{start:range[0],end:range[1]});
 });
 test('直播编号原样保留，不经过浮点数',()=>{
  for(const key of ['734979151883758285','987654321098765432']) {

@@ -11,16 +11,6 @@ export const DEFAULT_SHORTCUT = Object.freeze({
 });
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-export function parseTime(value) {
-  const text = String(value).trim();
-  if (!/^\d+(?::\d{1,2}){0,2}(?:\.\d{1,3})?$/.test(text)) {
-    throw new Error('时间请填写为 时:分:秒、分:秒 或秒数，例如 01:23:45。');
-  }
-  const parts = text.split(':').map(Number);
-  if (parts.slice(1).some(part => part >= 60)) throw new Error('时间中的分、秒须小于 60。');
-  return parts.reduce((total, part) => total * 60 + part, 0);
-}
-
 export function formatTime(seconds, fractional = false) {
   const ms = Math.round(Math.max(0, seconds) * 1000);
   const h = Math.floor(ms / 3600000);
@@ -74,7 +64,7 @@ export function validateRange(start, end, duration) {
 export function recordFromReplay(item, member) {
   if (typeof item.live_key !== 'string') throw new Error('场次编号格式异常，请刷新场次列表。');
   return {
-    key: item.live_key, title: item.live_info.title, cover: item.live_info.cover, start: item.start_time,
+    key: item.live_key, title: item.live_info.title, start: item.start_time,
     end: item.end_time, live: false, uid: member.uid, member: member.name, room: item.room_id,
   };
 }

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createPlayback} from '../src/playback.js';
+import {createPlayback,bindVideoControls} from '../src/playback.js';
 import {createTimeline} from '../src/timeline.js';
 
 class Element {
@@ -68,4 +68,29 @@ test('默认选区覆盖整场，两端直接位于时间轴起止位置',()=>{
    assert.deepEqual(timeline.getSelection(),{start:0,end:duration});
   }
  }finally{globalThis.document=oldDocument;}
+});
+
+
+test('普通画面隐藏控件并响应点击，全屏和退出时切换原生控件',async()=>{
+ const video=Object.assign(new EventTarget(),makeVideo(true));
+ const root={fullscreenElement:null};
+ video.ownerDocument=new EventTarget();video.getRootNode=()=>root;
+ let requests=0;
+ video.requestFullscreen=async()=>{requests++;root.fullscreenElement=video;video.ownerDocument.dispatchEvent(new Event('fullscreenchange'));};
+ const fail=()=>assert.fail('播放器操作失败');
+ bindVideoControls(video,createPlayback(video,fail),fail);
+ const click=detail=>video.dispatchEvent(Object.assign(new Event('click'),{detail}));
+ assert.equal(video.controls,false);
+ click(1);assert.equal(video.paused,false);
+ click(1);assert.equal(video.paused,true);
+ click(2);assert.equal(video.paused,true);
+ video.dispatchEvent(new Event('dblclick'));await Promise.resolve();
+ assert.equal(requests,1);assert.equal(video.controls,true);
+ click(1);assert.equal(video.paused,true,'全屏交给原生控件，不重复切换');
+ video.dispatchEvent(new Event('dblclick'));assert.equal(requests,1);
+ for(const target of [null,{}]){
+  root.fullscreenElement=target;video.ownerDocument.dispatchEvent(new Event('fullscreenchange'));
+  assert.equal(video.controls,false,'退出视频全屏或其他元素全屏时隐藏');
+ }
+ click(1);assert.equal(video.paused,false);
 });
