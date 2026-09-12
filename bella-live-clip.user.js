@@ -29,7 +29,7 @@
 
 (() => {
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/core.js
   var MEMBERS = Object.freeze([
@@ -59,12 +59,6 @@
     const whole = Math.floor(Math.max(0, seconds));
     const h = Math.floor(whole / 3600), m = Math.floor(whole / 60) % 60, s = whole % 60;
     return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-  }
-  function formatCompactTime(seconds) {
-    const ms = Math.round(Math.max(0, seconds) * 1e3);
-    const h = Math.floor(ms / 36e5), m = Math.floor(ms / 6e4) % 60, s = Math.floor(ms / 1e3) % 60;
-    const sec = `${String(s).padStart(h || m ? 2 : 1, "0")}.${String(ms % 1e3).padStart(3, "0")}`;
-    return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : m ? `${m}:${sec}` : sec;
   }
   function formatDuration(seconds) {
     const tenths = Math.round(Math.max(0, seconds) * 10);
@@ -701,11 +695,14 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #togglePlayback{width:40px;height:36px;padding:6px}
 #togglePlayback .glyph{width:22px;height:22px}
 #clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
-#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
-#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}
+#timeline{position:relative;height:44px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
+#thumbnails{position:absolute;inset:0;display:flex;overflow:hidden;border-radius:7px;pointer-events:none}
+#thumbnails .thumbnail{flex:1;min-width:0;display:grid;place-items:center;background:#e4e7e6;color:#69736f;font-size:9px;border-right:1px solid #ffffff55}
+#thumbnails canvas{width:100%;height:100%;object-fit:cover;display:block}
+#ticks{z-index:1;position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 5px 4px;font-size:9px;color:white;text-shadow:0 1px 3px #000; background:linear-gradient(transparent 55%,#0009);pointer-events:none}
 #selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}
 #playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}
-#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
+#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:12px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
 #timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}
 #timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
 .export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
@@ -33900,7 +33897,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   // src/playback.js
   function createPlayback(video, onError) {
     let scrubbing = false, resume = false;
-    const play = () => video.play().catch((error) => onError(error.message, true));
+    const play = () => video.play().catch((error) => {
+      if (error.name !== "AbortError") onError(error.message, true);
+    });
     return {
       begin() {
         resume = !video.paused && !video.ended;
@@ -33955,6 +33954,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     return next;
   }
   function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
+  }, onView = () => {
   } }) {
     let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending;
     const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
@@ -33984,9 +33984,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       tickElements.forEach((span, i) => {
         span.textContent = timeLabel(view3.start + (view3.end - view3.start) * i / 4);
       });
-      labels.textContent = `${formatCompactTime(selection.start)} — ${formatCompactTime(selection.end)}`;
+      labels.textContent = `${formatPlaybackTime(selection.start)} — ${formatPlaybackTime(selection.end)}`;
       renderPlayhead();
       renderLock();
+      onView({ ...view3 });
     }
     function setSelection(next, refit2 = false) {
       validateRange(next.start, next.end, total);
@@ -34083,6 +34084,113 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       locked = value;
       renderLock();
     } };
+  }
+
+  // src/thumbnails.js
+  function thumbnailSamples(record, streams, view3, count = 6) {
+    return Array.from({ length: count }, (_, i) => {
+      const time = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
+      const stream = streams.find((s) => time >= s.start_time - record.start && time < s.end_time - record.start);
+      return { time, stream, local: stream ? time - (stream.start_time - record.start) : null };
+    });
+  }
+  async function readThumbnail(request, sample, signal) {
+    signal.throwIfAborted();
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    const hls = new Hls({ loader: makeHlsLoader(request), enableWorker: false, startPosition: sample.local, maxBufferLength: 2, maxMaxBufferLength: 2, backBufferLength: 0 });
+    let timer, abort;
+    try {
+      return await new Promise((resolve, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        timer = setTimeout(() => reject(new Error("缩略图加载超时")), 15e3);
+        const ready = () => {
+          if (video.readyState < 2 || video.seeking || Math.abs(video.currentTime - sample.local) > 0.15) return;
+          const canvas = document.createElement("canvas");
+          canvas.width = 160;
+          canvas.height = 90;
+          try {
+            canvas.getContext("2d").drawImage(video, 0, 0, 160, 90);
+            resolve(canvas);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        for (const name of ["loadeddata", "seeked", "canplay"]) video.addEventListener(name, ready);
+        video.addEventListener("error", () => reject(new Error("缩略图解码失败")), { once: true });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) reject(new Error("缩略图加载失败"));
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.currentTime = sample.local;
+        });
+        hls.loadSource(sample.stream.stream);
+        hls.attachMedia(video);
+      });
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      hls.destroy();
+      video.removeAttribute("src");
+      video.load();
+    }
+  }
+  function createThumbnails({ container, request, readFrame = readThumbnail }) {
+    let record, streams = [], viewKey = "", controller, timer;
+    function cancel() {
+      clearTimeout(timer);
+      controller?.abort();
+      controller = null;
+    }
+    function clear() {
+      cancel();
+      record = null;
+      streams = [];
+      viewKey = "";
+      container.replaceChildren();
+    }
+    async function render(samples, own, cells) {
+      for (const [i, sample] of samples.entries()) {
+        if (own.signal.aborted) return;
+        if (!sample.stream) {
+          cells[i].textContent = "无录像";
+          continue;
+        }
+        try {
+          const canvas = await readFrame(request, sample, own.signal);
+          if (own.signal.aborted) return;
+          cells[i].replaceChildren(canvas);
+        } catch (error) {
+          if (own.signal.aborted) return;
+          cells[i].textContent = "暂无预览";
+        }
+      }
+    }
+    function update(view3) {
+      if (!record) return;
+      const key = `${view3.start}:${view3.end}`;
+      if (key === viewKey) return;
+      viewKey = key;
+      cancel();
+      const own = new AbortController();
+      controller = own;
+      const samples = thumbnailSamples(record, streams, view3);
+      const cells = samples.map(() => {
+        const cell = container.ownerDocument.createElement("div");
+        cell.className = "thumbnail";
+        cell.textContent = "…";
+        return cell;
+      });
+      container.replaceChildren(...cells);
+      timer = setTimeout(() => void render(samples, own, cells), 200);
+    }
+    return { load(next, parts) {
+      clear();
+      record = next;
+      streams = parts;
+    }, update, clear };
   }
 
   // node_modules/mediabunny/dist/modules/src/misc.js
@@ -60569,10 +60677,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     applyRect();
     const playback = createPlayback(video, status2);
     bindVideoControls(video, playback, status2);
+    const thumbnails = createThumbnails({ container: $("thumbnails"), request: api.request });
     const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => {
       player.seek(t);
       updateClock(t);
-    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: updateExportSummary });
+    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: updateExportSummary, onView: (view3) => thumbnails.update(view3) });
     const updateClock = (t) => {
       $("clock").textContent = `${formatPlaybackTime(t)} / ${formatPlaybackTime(playbackTotal)}`;
     };
@@ -60654,6 +60763,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       $("wholeRecording").checked = false;
       playback.cancel();
       player.clear();
+      thumbnails.clear();
       clearDownloads();
       updateClock(0);
     }
@@ -60745,6 +60855,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       updateClock(0);
       recordingController = new AbortController();
       recordingPlan = new RecordingPlan(api, streams, recordingController.signal);
+      thumbnails.load(record, streams);
       timeline.reset(total);
       ready = true;
       startEstimate(recordingPlan, recordingController.signal);

@@ -1,7 +1,8 @@
 // Scrubbing temporarily pauses decoding; release restores the user's playback intent.
 export function createPlayback(video, onError) {
  let scrubbing=false,resume=false;
- const play=()=>video.play().catch(error=>onError(error.message,true));
+ // pause() and source reloads abort pending play requests during normal interaction.
+ const play=()=>video.play().catch(error=>{if(error.name!=='AbortError')onError(error.message,true);});
  return {
   begin(){resume=!video.paused&&!video.ended;scrubbing=true;video.pause();},
   end(){if(!scrubbing)return;scrubbing=false;if(resume)void play();resume=false;},

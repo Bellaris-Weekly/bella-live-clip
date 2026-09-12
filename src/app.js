@@ -8,6 +8,7 @@ import css from './ui.css';
 import {createPlayer} from './full-preview.js';
 import {createPlayback,bindVideoControls} from './playback.js';
 import {createTimeline} from './timeline.js';
+import {createThumbnails} from './thumbnails.js';
 import {exportSelection} from './media.js';
 import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from './recording.js';
 import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatDuration,formatPlaybackTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
@@ -33,7 +34,8 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
  const playback=createPlayback(video,status);
  bindVideoControls(video,playback,status);
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary});
+ const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary,onView:view=>thumbnails.update(view)});
  const updateClock=t=>{$('clock').textContent=`${formatPlaybackTime(t)} / ${formatPlaybackTime(playbackTotal)}`;};
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
@@ -55,7 +57,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
   recordingController?.abort();recordingController=null;recordingPlan=null;
   estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;
-  $('wholeRecording').checked=false;playback.cancel();player.clear();clearDownloads();updateClock(0);
+  $('wholeRecording').checked=false;playback.cancel();player.clear();thumbnails.clear();clearDownloads();updateClock(0);
  }
  function renderCards(){
   const focusedKey=root.activeElement?.dataset.recordKey,scroll=$('body').scrollTop;
@@ -100,7 +102,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
   recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
-  timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);
+  thumbnails.load(record,streams);timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);
   if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
   status('按住时间轴预览；松开选区边界后自动适配视野。');
  }

@@ -1,4 +1,4 @@
-import {clamp, formatCompactTime, zoomWindow, panWindow, validateRange} from './core.js';
+import {clamp, formatPlaybackTime, zoomWindow, panWindow, validateRange} from './core.js';
 
 export function fitSelection(start,end,total) {
  const width=Math.min(total,(end-start)*1.12);
@@ -14,7 +14,7 @@ export function dragSelection(session,x,width,selection,total) {
  else next.end=Math.max(target,selection.start+gap);
  return next;
 }
-export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,onPreview,onScrubStart,onScrubEnd,onSelection=()=>{}}) {
+export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,onPreview,onScrubStart,onScrubEnd,onSelection=()=>{},onView=()=>{}}) {
  let total=0,selection={start:0,end:1},view={start:0,end:1},drag=null,current=0,locked=false,frame=0,pending;
  const pct=t=>clamp((t-view.start)/(view.end-view.start)*100,0,100);
  const timeLabel=t=>{const h=Math.floor(t/3600),m=Math.floor(t/60)%60,s=Math.floor(t)%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');};
@@ -29,8 +29,8 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   selectionElement.style.left=`${pct(selection.start)}%`;selectionElement.style.right=`${100-pct(selection.end)}%`;
   for(const [el,value]of[[startHandle,selection.start],[endHandle,selection.end]]){el.setAttribute('aria-valuenow',value.toFixed(3));el.setAttribute('aria-valuemin',0);el.setAttribute('aria-valuemax',total);}
   tickElements.forEach((span,i)=>{span.textContent=timeLabel(view.start+(view.end-view.start)*i/4);});
-  labels.textContent=`${formatCompactTime(selection.start)} — ${formatCompactTime(selection.end)}`;
-  renderPlayhead();renderLock();
+  labels.textContent=`${formatPlaybackTime(selection.start)} — ${formatPlaybackTime(selection.end)}`;
+  renderPlayhead();renderLock();onView({...view});
  }
  function setSelection(next,refit=false){validateRange(next.start,next.end,total);selection=next;if(refit)view=fitSelection(next.start,next.end,total);render();onSelection({...selection});}
  function refit(){track.classList.add('refitting');view=fitSelection(selection.start,selection.end,total);render();setTimeout(()=>track.classList.remove('refitting'),180);}

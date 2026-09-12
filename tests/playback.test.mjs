@@ -14,6 +14,39 @@ class Element {
 }
 const makeVideo=paused=>({paused,ended:false,playCount:0,pause(){this.paused=true;},play(){this.playCount++;this.paused=false;return Promise.resolve();}});
 
+test('尚未开始的播放被暂停、拖动、关闭或换源打断时不报错，之后仍可播放',async()=>{
+ for(const action of ['pause','scrub','cancel','reload']){
+  const errors=[];let rejectPlay;
+  const video=makeVideo(true);
+  video.play=function(){this.playCount++;this.paused=false;return new Promise((resolve,reject)=>{rejectPlay=reject;});};
+  video.pause=function(){this.paused=true;rejectPlay?.(new DOMException('播放被暂停打断','AbortError'));};
+  video.load=function(){this.paused=true;rejectPlay?.(new DOMException('媒体源已重载','AbortError'));};
+  const playback=createPlayback(video,(...args)=>errors.push(args));
+  playback.toggle();
+  if(action==='pause')playback.toggle();
+  else if(action==='scrub')playback.begin();
+  else if(action==='cancel')playback.cancel();
+  else video.load();
+  await Promise.resolve();
+  assert.deepEqual(errors,[],action);assert.equal(video.paused,true,action);
+  video.play=makeVideo(true).play;
+  if(action==='scrub')playback.end();else playback.toggle();
+  await Promise.resolve();
+  assert.equal(video.paused,false,action);assert.equal(video.playCount,2,action);
+ }
+});
+
+test('真实播放失败仍保留提示，不按报错文案判断取消',async()=>{
+ for(const name of ['NotAllowedError','NotSupportedError','Error']){
+  const errors=[],video=makeVideo(true);
+  const error=new DOMException('The play() request was interrupted by a call to pause().',name);
+  video.play=()=>Promise.reject(error);
+  createPlayback(video,(...args)=>errors.push(args)).toggle();
+  await Promise.resolve();
+  assert.deepEqual(errors,[[error.message,true]],name);
+ }
+});
+
 test('播放位置与左右边界拖动均恢复原来的播放状态，覆盖松手和取消',()=>{
  const oldDocument=globalThis.document,oldCancel=globalThis.cancelAnimationFrame,oldRequest=globalThis.requestAnimationFrame;
  globalThis.document={createElement:()=>new Element()};globalThis.cancelAnimationFrame=()=>{};globalThis.requestAnimationFrame=()=>1;
@@ -25,6 +58,10 @@ test('播放位置与左右边界拖动均恢复原来的播放状态，覆盖�
    let position;
    const timeline=createTimeline({...elements,onPreview:t=>{video.pause();position=t;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
    timeline.reset(100,{start:10,end:80});
+   timeline.setSelection({start:10.704,end:80.602});
+   assert.equal(elements.labels.textContent,'0:10 — 1:20');
+   assert.deepEqual(timeline.getSelection(),{start:10.704,end:80.602});
+   timeline.setSelection({start:10,end:80});
    const target=handle==='playhead'?elements.track:elements[handle+'Handle'];
    const event={button:0,clientX:50,pointerId:1,target,preventDefault(){}};
    elements.track.handlers.pointerdown(event);
