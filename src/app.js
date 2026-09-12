@@ -1,5 +1,7 @@
 import html from './ui.html';
 import {ScheduleService} from './schedule.js';
+import {createControls} from './controls.js';
+import {RecordingPlan} from './recording-plan.js';
 import {createRecordCard} from './record-card.js';
 import {icon} from './icons.js';
 import css from './ui.css';
@@ -7,7 +9,7 @@ import {createPlayer} from './full-preview.js';
 import {createPlayback,bindVideoControls} from './playback.js';
 import {createTimeline} from './timeline.js';
 import {exportSelection} from './media.js';
-import {loadRecordingPlan,estimateRecordingRate,estimateSelectionBytes,saveRecording} from './recording.js';
+import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from './recording.js';
 import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatDuration,formatPlaybackTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
 
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
@@ -19,12 +21,12 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  $('launcher').innerHTML=icon('scissors')+'<span>片段</span>';
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
- let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,estimateController=null,estimateState='loading',clipSelection=null;
+ let page='library',record=null,initialized=false,controller=null,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,recordingController=null,recordingPlan=null,estimateState='loading',clipSelection=null;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const schedules=new ScheduleService(api.request);let scheduleController=null,exportMode='copy';
  const cache=new Map(),urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
- function updateFeedback(){$('feedback').hidden=!busy&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
+ function updateFeedback(){$('feedback').hidden=!controller&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
  const viewport=()=>({width:innerWidth,height:innerHeight});
  const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
  let rect=constrainRect(get('windowV2',defaults()),viewport());
@@ -40,25 +42,21 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('selectionDuration').textContent=formatDuration(selection.end-selection.start);
   $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${!$('wholeRecording').checked&&exportMode==='precise'?'（原画参考）':''}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
- function startEstimate(streams){
-  estimateController?.abort();const own=new AbortController();estimateController=own;
-  void (async()=>{try{const groups=await loadRecordingPlan(api,streams,own.signal);const result=await estimateRecordingRate(api,groups,own.signal);own.signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!own.signal.aborted){estimateState='error';updateExportSummary();}}})();
+ function startEstimate(plan,signal){
+  void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
  }
- function controls(){
-  const whole=$('wholeRecording').checked;
-  root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});
-  timeline.lock(busy||!ready||whole);
-  for(const id of ['markStart','markEnd'])$(id).disabled=busy||!ready||whole;
-  $('togglePlayback').disabled=busy||!ready;$('wholeRecording').disabled=busy||!ready;
-  $('exportMode').hidden=whole;
-  $('download').innerHTML=`<span>导出${whole?'整场':''}</span>`+icon('download');
-  $('download').hidden=page!=='edit';$('download').disabled=busy||!ready;
-  $('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();
- }
+ const updateControls=createControls(root,timeline);
+ function controls(){updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action){if(busy)return;const own=new AbortController();controller=own;busy=true;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{busy=false;controller=null;controls();}}
+ async function job(action){if(controller)return;const own=new AbortController();controller=own;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{controller=null;controls();}}
  function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
+ function leavePage(){
+  scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
+  recordingController?.abort();recordingController=null;recordingPlan=null;
+  estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;
+  $('wholeRecording').checked=false;playback.cancel();player.clear();clearDownloads();updateClock(0);
+ }
  function renderCards(){
   const focusedKey=root.activeElement?.dataset.recordKey,scroll=$('body').scrollTop;
   root.querySelectorAll('[data-member]').forEach(el=>el.setAttribute('aria-pressed',el.dataset.member===member.id));
@@ -84,43 +82,42 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   })();
  }
  async function library(refresh=false){
-  scheduleController?.abort();$('scheduleNote').hidden=true;
-  estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();
+  leavePage();showPage('library');renderCards();
   if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');enrichCards(false);return;}
   await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');enrichCards(refresh);});
  }
  function renderRecordMeta(){$('recordMeta').textContent=[record.member,formatDate(record.start),record.schedule?.type].filter(Boolean).join(' · ');}
  function enrichRecordType(){
   if(record.schedule||$('panel').hidden)return;
-  const own=new AbortController();scheduleController=own;const selected=record;
+  scheduleController?.abort();const own=new AbortController();scheduleController=own;const selected=record;
   void schedules.enrich([selected],{signal:own.signal}).then(result=>{
    if(own.signal.aborted||record!==selected||page!=='edit')return;
    record=result.records[0];renderRecordMeta();
   }).catch(()=>{});
  }
  async function loadRecord(next,signal){
-  scheduleController?.abort();
-  $('wholeRecording').checked=false;clipSelection=null;estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');setTitle($('recordTitle'),record.title);renderRecordMeta();enrichRecordType();
+  record=next;showPage('edit');setTitle($('recordTitle'),record.title);renderRecordMeta();enrichRecordType();
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
-  timeline.reset(total);ready=true;startEstimate(streams);
+  recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
+  timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);
   if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
   status('按住时间轴预览；松开选区边界后自动适配视野。');
  }
- async function enterRecord(next){await job(signal=>loadRecord(next,signal));}
- async function currentRoom(){await job(async signal=>{ready=false;showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal);await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}});}
- async function download(){await job(async signal=>{const selection=timeline.getSelection();player.pause();clearDownloads();status('正在下载选中的录像…');const outputs=await exportSelection(api,record,player.getStreams(),selection,{signal,precise:exportMode==='precise',onProgress:p=>{$('progress').value=p.phase==='download'?p.done/p.count*75:75+p.progress*25;status(p.phase==='download'?`下载分片 ${p.done}/${p.count} · ${formatBytes(p.bytes)}`:'正在生成 MP4…');}});
+ async function enterRecord(next){await job(signal=>{leavePage();return loadRecord(next,signal);});}
+ async function currentRoom(){await job(async signal=>{leavePage();showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal);await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}});}
+ async function download(){await job(async signal=>{const selection=timeline.getSelection();player.pause();clearDownloads();status('正在下载选中的录像…');const outputs=await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress:p=>{$('progress').value=p.phase==='download'?p.done/p.count*75:75+p.progress*25;status(p.phase==='download'?`下载分片 ${p.done}/${p.count} · ${formatBytes(p.bytes)}`:'正在生成 MP4…');}});
   for(const [i,output]of outputs.entries()){const a=document.createElement('a');a.href=URL.createObjectURL(output.blob);urls.push(a.href);a.download=fileName(record,output.start,output.end,outputs.length>1?`_第${i+1}段`:'');a.textContent=`保存${outputs.length>1?'第 '+(i+1)+' 段':''} MP4 · ${formatBytes(output.blob.size)}`;$('downloads').append(a);}
   if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?'MP4 已生成，可点击下方链接再次保存。':`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
  });}
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
-  if(busy||!ready)return;
+  if(controller||!ready)return;
   if(typeof window.showSaveFilePicker!=='function'){status('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。',true);return;}
   await job(async signal=>{
    const handle=await window.showSaveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   const result=await saveRecording(api,player.getStreams(),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`整场下载 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
+   const result=await saveRecording(api,await recordingPlan.load(signal),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`整场下载 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
    status('整场下载完成。');
    const message=document.createElement('p');message.textContent=`整场已保存到所选位置 · ${formatBytes(result.bytes)}`;$('downloads').append(message);
   });
@@ -165,5 +162,5 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('launcher').addEventListener('pointerdown',()=>{launcherMoved=false; launcherStart=$('launcher').getBoundingClientRect();});
   drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
   window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
- window.addEventListener('pagehide',()=>{scheduleController?.abort();controller?.abort();estimateController?.abort();player.clear();clearDownloads();});controls();return {open,resetWindow,root};
+ window.addEventListener('pagehide',()=>{controller?.abort();leavePage();});controls();return {open,resetWindow,root};
 }

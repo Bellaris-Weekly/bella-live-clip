@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Output,BufferTarget,Mp4OutputFormat,EncodedVideoPacketSource,EncodedPacket,Input,BufferSource,MP4} from 'mediabunny';
+import {RecordingPlan} from '../src/recording-plan.js';
+import {exportSelection} from '../src/media.js';
 import {config,frame} from './synthetic-frame.mjs';
 import {formatCompactTime,formatDuration} from '../src/core.js';
 import {saveRecording,createSegmentCache,estimateRecordingRate,estimateSelectionBytes} from '../src/recording.js';
@@ -49,7 +51,7 @@ function mockApi(data,kind='plain'){
 }
 for(const kind of ['plain','map'])test(`整场逐段写盘保留跨断流视频（${kind}）`,async()=>{
  const data=await fixture(),api=mockApi(data,kind);let earlyWrite=false;const file=disk(()=>{if(!api.seen.includes('https://example.com/part2'))earlyWrite=true;});
- await saveRecording(api,[{stream:'https://example.com/list',start_time:100}],file);
+ await saveRecording(api,await new RecordingPlan(api,[{stream:'https://example.com/list',start_time:100,end_time:112}]).load(),file);
  assert.equal(file.closed,true);assert.equal(file.aborted,false);assert.ok(file.writes.length>1);assert.ok(earlyWrite,'必须在读完整场之前写盘');
  const input=new Input({source:new BufferSource(file.data()),formats:[MP4]});
  try{assert.ok(Math.abs(await input.computeDuration()-12)<.01);assert.ok(await input.getPrimaryVideoTrack());}finally{input.dispose();}
@@ -62,7 +64,32 @@ test('取消、网络失败和写盘失败均终止文件，不能提交半成�
   const own=new AbortController(),api=mockApi(data),original=api.request.bind(api);
   api.request=async(url,options)=>{if(url.endsWith('part1')){if(reason==='abort')own.abort();if(reason==='network')throw new Error('网络中断');}return original(url,options);};
   const file=disk(()=>{if(reason==='disk')throw new Error('磁盘已满');});
-  await assert.rejects(saveRecording(api,[{stream:'https://example.com/list',start_time:100}],file,{signal:own.signal}));
+  await assert.rejects(saveRecording(api,await new RecordingPlan(api,[{stream:'https://example.com/list',start_time:100,end_time:112}]).load(),file,{signal:own.signal}));
   assert.equal(file.closed,false,reason);assert.equal(file.aborted,true,reason);
+ }
+});
+
+for(const kind of ['plain','map'])test(`选区使用共享清单保留跨段时间与实际 MP4 时长（${kind}）`,async()=>{
+ const data=await fixture(),api=mockApi(data,kind);
+ const plan=new RecordingPlan(api,[{stream:'https://example.com/first-list',start_time:100,end_time:112},{stream:'https://example.com/second-list',start_time:130,end_time:142}]);
+ const groups=await plan.load();
+ await estimateRecordingRate(api,await plan.load());
+ for(const [start,end,ranges] of [[11,15,[[11,13],[13,15]]],[39,42,[[40,42]]]]){
+  const outputs=await exportSelection(api,{start:90},await plan.load(),{start,end},{});
+  assert.deepEqual(outputs.map(output=>[output.start,output.end]),ranges);
+  for(const output of outputs){
+   const input=new Input({source:new BufferSource(new Uint8Array(await output.blob.arrayBuffer())),formats:[MP4]});
+   try{assert.ok(Math.abs(await input.computeDuration()-(output.end-output.start))<.01);assert.ok(await input.getPrimaryVideoTrack());}finally{input.dispose();}
+  }
+ }
+ assert.equal(api.seen.filter(url=>url.endsWith('-list')).length,2,'预估和重复导出不能重读清单');
+});
+
+test('清单比接口报告的录像更长时，选区不能重新选中已结束的录像段',async()=>{
+ const data=await fixture();
+ for(const start of [100,130]){
+  const api=mockApi(data),plan=new RecordingPlan(api,[{stream:'https://example.com/list',start_time:start,end_time:start+1}]);
+  await assert.rejects(exportSelection(api,{start:90},await plan.load(),{start:start+1-90,end:start+2-90},{}),/没有可用录像/);
+  assert.deepEqual(api.seen,['https://example.com/list'],'没有相交录像时不下载分片');
  }
 });

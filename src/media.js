@@ -1,7 +1,7 @@
 import {
   Input, BlobSource, MP4, MPEG_TS, Output, BufferTarget, Mp4OutputFormat, Conversion, QUALITY_HIGH,
 } from 'mediabunny';
-import { parsePlaylist, mapConcurrent, selectPlaylistRange } from './hls.js';
+import { mapConcurrent, selectPlaylistRange } from './hls.js';
 
 export async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {} } = {}) {
   signal?.throwIfAborted();
@@ -32,33 +32,24 @@ export async function convertMp4(blob, { start, end, precise = false, signal, on
   }
 }
 
-export async function inspectMedia(blob) {
+async function mediaDuration(blob) {
   const input = new Input({ source: new BlobSource(blob), formats: [MP4] });
-  try {
-    const video = await input.getPrimaryVideoTrack();
-    const audio = await input.getPrimaryAudioTrack();
-    return { duration: await input.computeDuration(), width: video ? await video.getDisplayWidth() : 0,
-      height: video ? await video.getDisplayHeight() : 0, hasAudio: Boolean(audio), hasVideo: Boolean(video) };
-  } finally { input.dispose(); }
+  try { return await input.computeDuration(); }
+  finally { input.dispose(); }
 }
 
 // Use the same full playlist timeline as the preview, then retrieve only overlapping segments.
-export async function exportSelection(api,record,streams,selection,{signal,precise=false,onProgress=()=>{}}){
+export async function exportSelection(api,record,groups,selection,{signal,precise=false,onProgress=()=>{}}){
  const outputs=[];let bytes=0;
- for(const stream of streams){
-  const offset=stream.start_time-record.start;
-  if(selection.end<=offset||selection.start>=stream.end_time-record.start)continue;
-  const response=await api.request(stream.stream,{signal});
-  const parsed=parsePlaylist(response.data,response.url);
-  for(const plan of selectPlaylistRange(parsed,selection.start-offset,selection.end-offset)){
+ const parsed={groups:groups.filter(group=>selection.start<group.streamEnd-record.start).map(group=>({...group,offset:group.start-record.start}))};
+ for(const plan of selectPlaylistRange(parsed,selection.start,selection.end)){
    const segments=plan.map?[plan.map,...plan.segments]:plan.segments;let done=0;
    const chunks=await mapConcurrent(segments,3,async segment=>{const r=await api.request(segment.url,{type:'arraybuffer',range:segment.range,signal});bytes+=r.data.byteLength;onProgress({phase:'download',done:++done,count:segments.length,bytes});return r.data;},signal);
-   const normalized=await convertMp4(new Blob(chunks),{signal});const info=await inspectMedia(normalized);
-   const start=Math.min(plan.start,info.duration),end=Math.min(plan.end,info.duration);
+   const normalized=await convertMp4(new Blob(chunks),{signal});const duration=await mediaDuration(normalized);
+   const start=Math.min(plan.start,duration),end=Math.min(plan.end,duration);
    if(end<=start)throw new Error('选区与录像时间线不一致，请刷新后重新定位。');
    const blob=await convertMp4(normalized,{start,end,precise,signal,onProgress:p=>onProgress({phase:'encode',progress:p,bytes})});
-   outputs.push({blob,start:offset+plan.offset+start,end:offset+plan.offset+end});
-  }
+   outputs.push({blob,start:plan.offset+start,end:plan.offset+end});
  }
  if(!outputs.length)throw new Error('选区中没有可用录像，请调整起止位置。');
  return outputs;

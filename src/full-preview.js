@@ -39,5 +39,5 @@ export function createPlayer({video,loading,api,status,onTime}) {
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
  video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
  function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];target=null;}
- return {async load(nextRecord,signal){clear();record=nextRecord;const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;streams=await api.clips(record,0,total,signal);signal.throwIfAborted();attach(0);return {streams,total};},seek,clear,pause:()=>video.pause(),position:()=>offset()+video.currentTime,getStreams:()=>streams};
+ return {async load(nextRecord,signal){clear();record=nextRecord;const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;streams=await api.clips(record,0,total,signal);signal.throwIfAborted();attach(0);return {streams,total};},seek,clear,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
 }

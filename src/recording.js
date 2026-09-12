@@ -1,17 +1,5 @@
 import { Input, HLS, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
   Output, StreamTarget, Mp4OutputFormat, Conversion } from 'mediabunny';
-import { parsePlaylist } from './hls.js';
-
-export async function loadRecordingPlan(api, streams, signal) {
-  const groups=[];
-  for (const stream of streams) {
-    const response=await api.request(stream.stream,{signal});
-    const parsed=parsePlaylist(response.data,response.url);
-    for (const group of parsed.groups) groups.push({...group, start:stream.start_time+group.offset});
-  }
-  return groups;
-}
-
 export async function estimateRecordingRate(api, groups, signal) {
   // Sample each uninterrupted part so quality changes are reflected in its estimate.
   const rates=[];
@@ -90,13 +78,12 @@ export function recordingSource(groups,read) {
   });
 }
 
-export async function saveRecording(api, streams, fileHandle, {signal,onProgress=()=>{}}={}) {
+export async function saveRecording(api, groups, fileHandle, {signal,onProgress=()=>{}}={}) {
   let file,input,output,conversion,canceling,bytes=0,written=0;
   const cancel=()=>{if(conversion)canceling=conversion.cancel();};
   signal?.addEventListener('abort',cancel,{once:true});
   try {
     signal?.throwIfAborted();file=await fileHandle.createWritable();
-    const groups=await loadRecordingPlan(api,streams,signal);
     const read=createSegmentCache(api,{signal,onRead:size=>{bytes+=size;onProgress({bytes,written});}});
     input=new Input({source:recordingSource(groups,read),formats:[HLS,MP4,MPEG_TS]});
     // The wrapper leaves committing/aborting the file to this function, including on muxer cancellation.
