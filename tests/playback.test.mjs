@@ -44,3 +44,28 @@ test('播放按钮能切换状态，关闭面板取消尚未结束的恢复意�
  playback.toggle();assert.equal(video.paused,true);
  playback.toggle();playback.begin();playback.cancel();playback.end();assert.equal(video.paused,true);
 });
+
+
+test('默认选区覆盖整场，两端直接位于时间轴起止位置',()=>{
+ const oldDocument=globalThis.document;
+ globalThis.document={createElement:()=>new Element()};
+ try{
+  const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(k=>[k,new Element()]));
+  let selected;
+  const timeline=createTimeline({...elements,onPreview(){},onSelection:value=>selected=value});
+  for(const duration of [24,4976,7200]){
+   timeline.reset(duration);
+   assert.deepEqual(timeline.getSelection(),{start:0,end:duration});
+   assert.deepEqual(timeline.getView(),{start:0,end:duration});
+   assert.deepEqual(selected,{start:0,end:duration});
+   assert.equal(elements.startHandle.style.left,'0%');
+   assert.equal(elements.endHandle.style.left,'100%');
+   elements.track.handlers.wheel({deltaY:-100,deltaX:0,clientX:50,shiftKey:false,preventDefault(){}});
+   const zoomed=timeline.getView();assert.ok(zoomed.end-zoomed.start<duration);
+   assert.deepEqual(timeline.getSelection(),{start:0,end:duration});
+   elements.track.handlers.wheel({deltaY:10,deltaX:0,clientX:50,shiftKey:true,preventDefault(){}});
+   assert.ok(timeline.getView().start>zoomed.start);
+   assert.deepEqual(timeline.getSelection(),{start:0,end:duration});
+  }
+ }finally{globalThis.document=oldDocument;}
+});

@@ -10,7 +10,7 @@ export async function runCardChecks(app, query) {
   const cards=[...root.querySelectorAll('.record-card')];
   assert(!root.querySelector('.cover'),'仍然显示封面');
   assert(cards[0].querySelector('.card-title').textContent==='【3D】今晚一起唱歌','原标题被替换');
-  assert(cards.every(c=>c.querySelector('.record-duration').textContent==='00:00:24'),'没有使用实际时长');
+  assert(cards.every(c=>c.querySelector('.record-duration').textContent===(query.has('timeline')?'01:22:56':'00:00:24')),'没有使用实际时长');
   assert(cards.every(c=>!/贝拉|嘉然|乃琳/.test(c.textContent)),'卡片出现姓名文字');
   assert(!cards[5].querySelector('.record-type')&&!cards[5].querySelector('.participant'),'无日程时猜测了参与者');
   assert(cards.every(c=>c.scrollWidth<=c.clientWidth),'卡片横向溢出');
@@ -53,6 +53,12 @@ export async function runCardChecks(app, query) {
   if(query.has('slow-schedule'))await new Promise(resolve=>setTimeout(resolve,1300));
   assert(root.getElementById('recordTitle').textContent==='【3D】今晚一起唱歌','进入录像后标题改变');
   assert(!root.getElementById('editPage').hidden,'迟到日程打断了录像页');
+  assert(Number(root.getElementById('startHandle').getAttribute('aria-valuenow'))===0,'默认选区起点错误');
+  assert(Number(root.getElementById('endHandle').getAttribute('aria-valuenow'))===(query.has('timeline')?4976:24),'默认选区未覆盖整场');
+  const durationNode=root.getElementById('selectionDuration'),sizeNode=root.getElementById('estimatedSize');
+  assert(!/选中|预估/.test(durationNode.textContent+sizeNode.textContent),'摘要仍有多余前缀');
+  for(const prop of ['fontSize','fontWeight','color'])assert(getComputedStyle(durationNode)[prop]===getComputedStyle(sizeNode)[prop],'摘要文字样式不同');
+  checks.push('默认整场选区与统一摘要样式');
   root.getElementById('back').click();
   await until(()=>!root.getElementById('library').hidden&&!root.getElementById('refreshLibrary').disabled);
   checks.push('选择录像与返回列表');

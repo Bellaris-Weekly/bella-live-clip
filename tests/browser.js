@@ -4,6 +4,7 @@ import {runCardChecks} from './cards-browser.js';
 import { convertMp4, inspectMedia, exportSelection } from '../src/media.js';
 const record={key:'987654321098765432',title:'浏览器验证 · 真实直播素材',start:1789213000,end:1789213024,live:false,uid:1,member:'贝拉',room:22632424};
 const query=new URLSearchParams(location.search);
+if(query.has('timeline'))record.end=record.start+4976;
 const historyFor=member=>Array.from({length:6},(_,i)=>({...record,key:String(987654321000+i),uid:member.uid,room:member.room,member:member.name,title:['【3D】今晚一起唱歌','【突击】看看测试服！','周末的轻松时光','【双播】一起度过周末的夜晚','一个很长的原标题，用来确认多行显示时卡片中的日期、实际时长与头像仍然整齐','这场没有匹配日程'][i],start:record.start-i*86400,end:record.end-i*86400}));
 const faces={672353429:'https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg',672328094:'https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg',672342685:'https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg'};
 const calendar='BEGIN:VCALENDAR\r\n'+MEMBERS.slice(0,3).flatMap(member=>historyFor(member).slice(0,5).map((r,i)=>{

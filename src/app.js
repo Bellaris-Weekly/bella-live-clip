@@ -36,8 +36,8 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
-  $('selectionDuration').textContent=`${$('wholeRecording').checked?'整场':'选中'} ${formatDuration(selection.end-selection.start)}`;
-  $('estimatedSize').textContent=estimate ? `预估约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${!$('wholeRecording').checked&&$('exportMode').value==='precise'?'（原画参考）':''}` : estimateState==='error'?'预估大小暂不可用':'预估大小计算中…';
+  $('selectionDuration').textContent=formatDuration(selection.end-selection.start);
+  $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${!$('wholeRecording').checked&&$('exportMode').value==='precise'?'（原画参考）':''}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
  function startEstimate(streams){
   estimateController?.abort();const own=new AbortController();estimateController=own;
@@ -93,9 +93,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('wholeRecording').checked=false;clipSelection=null;estimateController?.abort();estimate=null;estimateState='loading';playback.cancel();playbackTotal=0;updateClock(0);record=next;ready=false;clearDownloads();showPage('edit');setTitle($('recordTitle'),record.title);$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
-  const first=Math.max(0,streams[0].start_time-record.start),last=Math.min(total,streams.at(-1).end_time-record.start);
-  const end=record.live?Math.max(first+.001,last-15):Math.min(last,first+60),start=record.live?Math.max(first,end-60):first;
-  timeline.reset(total,{start,end});ready=true;startEstimate(streams);if(record.live)player.seek(start);status('按住时间轴预览；松开选区边界后自动适配视野。');
+  timeline.reset(total);ready=true;startEstimate(streams);
+  if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
+  status('按住时间轴预览；松开选区边界后自动适配视野。');
  }
  async function enterRecord(next){await job(signal=>loadRecord(next,signal));}
  async function currentRoom(){await job(async signal=>{ready=false;showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal);await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}});}

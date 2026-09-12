@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.2.2
+// @version      2.2.3
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -149,7 +149,7 @@
   });
 
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">预估大小计算中…</span></div><div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">选区跨断流时分文件保存；整场原画下载会跳过断流空档。预估大小随画面码率变化。</p><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">0:00 / 0:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div><div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">选区跨断流时分文件保存；整场原画下载会跳过断流空档。预估大小随画面码率变化。</p><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/core.js
   var MEMBERS = Object.freeze([
@@ -568,7 +568,160 @@
   }
 
   // src/ui.css
-  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}\n*{box-sizing:border-box}\n[hidden]{display:none!important}\nbutton,input,select{font:inherit;color:inherit}\nbutton{margin:0}\n.glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}\n.glyph-play{transform:translateX(1px)}\nbutton{cursor:pointer}\nbutton:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}\nbutton:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}\nbutton{border:0}\nh1,h2,p{margin:0}\nh1{font-size:20px}\nh2{font-size:23px;line-height:1.5}\ninput,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}\nsmall,.hint{color:var(--muted);font-size:11px}\n.hint{margin-top:10px;line-height:1.7}\n.text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:transparent;color:var(--text);padding:6px 8px;border-radius:7px;font-size:12px;line-height:20px}\n.text-button:hover{background:var(--hover)}\n.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}\n.button:hover{background:#e9e9e9}\n#download{background:var(--accent);color:#fff}\n#download:hover{background:var(--accent-hover)}\n.secondary{background:var(--hover);color:var(--text)}\n.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;gap:2px;line-height:1;touch-action:none}\n#launcher span{font-size:10px;line-height:16px}\n#launcher .glyph{width:24px;height:24px}\n#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}\n#body{flex:1;min-height:0;overflow:auto;border-radius:0 0 20px 20px;padding:0;overscroll-behavior:contain;scrollbar-width:thin}\n#status{font-size:12px;color:var(--muted)}\n#status[data-error=true]{color:#ad4936}\nprogress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}\n#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n\n.library-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px var(--gutter);background:var(--surface);border-bottom:1px solid var(--line)}\n.members{display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;min-width:0}\n.refresh-button{padding:8px;width:36px;height:36px}\n.members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);height:36px;padding:7px 4px;border-radius:8px;font-size:13px;line-height:20px;font-weight:500}\n.members button:hover{background:var(--surface)}\n.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}\n.members i{width:6px;height:6px;flex:none;border-radius:50%}\n.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.record-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:13px 14px 12px;text-align:left;border-radius:12px;border:1px solid var(--line);border-top:3px solid var(--card-line);background:linear-gradient(160deg,var(--card-tint),#fff 65%);transition:border-color .15s,box-shadow .15s,transform .15s}\n.record-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px #0000000d;border-color:var(--card-line)}\n.card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px}\n.card-date{display:flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums}\n.card-date>b{font-size:29px;font-weight:650;letter-spacing:-1px;line-height:36px;color:var(--card-color)}\n.card-date>span{display:flex;flex-direction:column;font-size:10px;line-height:15px;color:var(--muted)}\n.record-type{flex:none;font-size:10px;line-height:18px;padding:1px 7px;border:1px solid var(--card-line);border-radius:6px;background:var(--card-tint);color:var(--card-color)}\n.participants{display:flex;gap:4px;min-height:26px;align-items:center}\n.participant{position:relative;display:grid;place-items:center;flex:none;width:26px;height:26px;overflow:hidden;border-radius:50%;background:var(--surface);color:var(--member-color);border:1px solid var(--line)}\n.participant img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}\n.participant .glyph{width:17px;height:17px}\n.card-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:14px;font-weight:600;line-height:21px;min-height:42px}\n.card-details{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:9px;border-top:1px solid var(--card-line);font-size:10px;line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums}\n.record-duration{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}\n.record-duration .glyph{width:12px;height:12px}\n@container(min-width:720px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}\n@container(max-width:520px){\n.cards{gap:8px}\n.record-card{padding:10px 9px 9px;gap:9px}\n.card-heading{gap:5px;min-height:32px}\n.card-date{gap:4px}\n.card-date>b{font-size:25px;line-height:32px}\n.card-date>span{font-size:9px;line-height:13px}\n.record-type{font-size:9px;padding:0 5px}\n.card-title{font-size:13px;line-height:20px;min-height:40px}\n.card-details{gap:4px;flex-wrap:wrap;padding-top:7px;font-size:9px}\n.participants{gap:3px;min-height:21px}\n.participant{width:21px;height:21px}\n.record-duration{gap:3px;margin-left:auto}\n.record-duration .glyph{width:10px;height:10px}\n}\n@container(max-width:349px){.cards{grid-template-columns:minmax(0,1fr)}}\n.schedule-note{font-size:11px;color:var(--muted);margin:0 0 12px}\n.empty{text-align:center;color:var(--muted);padding:70px 15px}\n.empty p{margin:12px 0 24px}\n\n.editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}\n#recordTitle{line-height:28px;overflow-wrap:anywhere}\n#recordTitle{font-size:19px}\n#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}\n#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}\n#fullVideo{display:block;width:100%;height:100%}\n#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}\n.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}\n.mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}\n.preview-toolbar>#clock{justify-self:end}\n.playback-center{display:flex;align-items:center;justify-content:center}\n#togglePlayback{width:40px;height:36px;padding:6px}\n#togglePlayback .glyph{width:22px;height:22px}\n#clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}\n#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}\n#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}\n#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}\n#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}\n#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}\n#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}\n#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}\n.export-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}\n.export-row label{line-height:20px}\n.export-row select{height:38px;line-height:20px;padding:8px 10px;width:100%}\n.export-row select{flex:1}\n.resize{position:absolute;z-index:5;touch-action:none}\n.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}\n.resize[data-edge=n]{top:-5px}\n.resize[data-edge=s]{bottom:-5px}\n.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}\n.resize[data-edge=e]{right:-5px}\n.resize[data-edge=w]{left:-5px}\n.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}\n.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}\n.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}\n.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}\n.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}\n@media(prefers-reduced-motion:reduce){*{transition:none!important}\n}\n\n.export-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px;line-height:20px;padding:10px 16px;margin-top:16px}\n.feedback{margin:0 18px 18px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n\n#header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px var(--gutter);border-bottom:1px solid var(--line);cursor:grab;touch-action:none}\n#header h1{font-size:15px;font-weight:600;line-height:24px}\n.header-tools{display:flex;align-items:center;gap:8px}\n#shortcut{width:104px;height:30px;padding:5px 7px;line-height:18px;font-size:10px;text-align:center;background:var(--surface);border-radius:6px;cursor:pointer}\n#shortcut.recording{outline:2px solid var(--text)}\n#close{display:flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:-6px;padding:6px;border-radius:6px}\n#close:hover{background:var(--hover)}\n.library-content{padding:var(--gutter)}\n.record-section{padding:10px var(--gutter) 12px;border-bottom:1px solid var(--line)}\n.preview-section{padding:18px var(--gutter) 0}\n.timeline-section{margin:8px var(--gutter) 18px;padding:14px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}\n.export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}\n\n/* Opening punctuation hangs into the gutter so the visible title edge aligns. */\n.hanging-title{text-indent:-.5em}\n\n.export-summary{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-variant-numeric:tabular-nums}\n#selectionDuration{font-weight:600}\n#estimatedSize{font-size:11px;color:var(--muted)}\n.timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}\n#timelineLabels{grid-column:2}\n.whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}\n#wholeRecording{width:13px;height:13px;margin:0;padding:0;accent-color:var(--accent)}\n@container(max-width:440px){\n.preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}\n.mark-buttons{gap:0;margin-left:-4px}\n.mark-buttons .text-button{padding:6px 4px;font-size:10px}\n#clock{font-size:10px}\n}\n";
+  var ui_default2 = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+button,input,select{font:inherit;color:inherit}
+button{margin:0}
+.glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}
+.glyph-play{transform:translateX(1px)}
+button{cursor:pointer}
+button:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+button{border:0}
+h1,h2,p{margin:0}
+h1{font-size:20px}
+h2{font-size:23px;line-height:1.5}
+input,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}
+small,.hint{color:var(--muted);font-size:11px}
+.hint{margin-top:10px;line-height:1.7}
+.text-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;background:transparent;color:var(--text);padding:6px 8px;border-radius:7px;font-size:12px;line-height:20px}
+.text-button:hover{background:var(--hover)}
+.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}
+.button:hover{background:#e9e9e9}
+#download{background:var(--accent);color:#fff}
+#download:hover{background:var(--accent-hover)}
+.secondary{background:var(--hover);color:var(--text)}
+.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}
+
+#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;gap:2px;line-height:1;touch-action:none}
+#launcher span{font-size:10px;line-height:16px}
+#launcher .glyph{width:24px;height:24px}
+#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}
+
+#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}
+#body{flex:1;min-height:0;overflow:auto;border-radius:0 0 20px 20px;padding:0;overscroll-behavior:contain;scrollbar-width:thin}
+#status{font-size:12px;color:var(--muted)}
+#status[data-error=true]{color:#ad4936}
+progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
+#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}
+
+.library-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px var(--gutter);background:var(--surface);border-bottom:1px solid var(--line)}
+.members{display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;min-width:0}
+.refresh-button{padding:8px;width:36px;height:36px}
+.members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);height:36px;padding:7px 4px;border-radius:8px;font-size:13px;line-height:20px;font-weight:500}
+.members button:hover{background:var(--surface)}
+.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}
+.members i{width:6px;height:6px;flex:none;border-radius:50%}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.record-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:13px 14px 12px;text-align:left;border-radius:12px;border:1px solid var(--line);border-top:3px solid var(--card-line);background:linear-gradient(160deg,var(--card-tint),#fff 65%);transition:border-color .15s,box-shadow .15s,transform .15s}
+.record-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px #0000000d;border-color:var(--card-line)}
+.card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px}
+.card-date{display:flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums}
+.card-date>b{font-size:29px;font-weight:650;letter-spacing:-1px;line-height:36px;color:var(--card-color)}
+.card-date>span{display:flex;flex-direction:column;font-size:10px;line-height:15px;color:var(--muted)}
+.record-type{flex:none;font-size:10px;line-height:18px;padding:1px 7px;border:1px solid var(--card-line);border-radius:6px;background:var(--card-tint);color:var(--card-color)}
+.participants{display:flex;gap:4px;min-height:26px;align-items:center}
+.participant{position:relative;display:grid;place-items:center;flex:none;width:26px;height:26px;overflow:hidden;border-radius:50%;background:var(--surface);color:var(--member-color);border:1px solid var(--line)}
+.participant img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.participant .glyph{width:17px;height:17px}
+.card-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:14px;font-weight:600;line-height:21px;min-height:42px}
+.card-details{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:auto;padding-top:9px;border-top:1px solid var(--card-line);font-size:10px;line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums}
+.record-duration{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.record-duration .glyph{width:12px;height:12px}
+@container(min-width:720px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container(max-width:520px){
+.cards{gap:8px}
+.record-card{padding:10px 9px 9px;gap:9px}
+.card-heading{gap:5px;min-height:32px}
+.card-date{gap:4px}
+.card-date>b{font-size:25px;line-height:32px}
+.card-date>span{font-size:9px;line-height:13px}
+.record-type{font-size:9px;padding:0 5px}
+.card-title{font-size:13px;line-height:20px;min-height:40px}
+.card-details{gap:4px;flex-wrap:wrap;padding-top:7px;font-size:9px}
+.participants{gap:3px;min-height:21px}
+.participant{width:21px;height:21px}
+.record-duration{gap:3px;margin-left:auto}
+.record-duration .glyph{width:10px;height:10px}
+}
+@container(max-width:349px){.cards{grid-template-columns:minmax(0,1fr)}}
+.schedule-note{font-size:11px;color:var(--muted);margin:0 0 12px}
+.empty{text-align:center;color:var(--muted);padding:70px 15px}
+.empty p{margin:12px 0 24px}
+
+.editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}
+#recordTitle{line-height:28px;overflow-wrap:anywhere}
+#recordTitle{font-size:19px}
+#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}
+#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}
+#fullVideo{display:block;width:100%;height:100%}
+#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}
+.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}
+.mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}
+.preview-toolbar>#clock{justify-self:end}
+.playback-center{display:flex;align-items:center;justify-content:center}
+#togglePlayback{width:40px;height:36px;padding:6px}
+#togglePlayback .glyph{width:22px;height:22px}
+#clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
+#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}
+#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}
+#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}
+#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
+#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}
+#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
+.export-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}
+.export-row label{line-height:20px}
+.export-row select{height:38px;line-height:20px;padding:8px 10px;width:100%}
+.export-row select{flex:1}
+.resize{position:absolute;z-index:5;touch-action:none}
+.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}
+.resize[data-edge=n]{top:-5px}
+.resize[data-edge=s]{bottom:-5px}
+.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}
+.resize[data-edge=e]{right:-5px}
+.resize[data-edge=w]{left:-5px}
+.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}
+.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}
+.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}
+.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}
+.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}
+}
+
+.export-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px;line-height:20px;padding:10px 16px;margin-top:16px}
+.feedback{margin:0 18px 18px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+
+#header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px var(--gutter);border-bottom:1px solid var(--line);cursor:grab;touch-action:none}
+#header h1{font-size:15px;font-weight:600;line-height:24px}
+.header-tools{display:flex;align-items:center;gap:8px}
+#shortcut{width:104px;height:30px;padding:5px 7px;line-height:18px;font-size:10px;text-align:center;background:var(--surface);border-radius:6px;cursor:pointer}
+#shortcut.recording{outline:2px solid var(--text)}
+#close{display:flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:-6px;padding:6px;border-radius:6px}
+#close:hover{background:var(--hover)}
+.library-content{padding:var(--gutter)}
+.record-section{padding:10px var(--gutter) 12px;border-bottom:1px solid var(--line)}
+.preview-section{padding:18px var(--gutter) 0}
+.timeline-section{margin:8px var(--gutter) 18px;padding:14px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}
+
+/* Opening punctuation hangs into the gutter so the visible title edge aligns. */
+.hanging-title{text-indent:-.5em}
+
+.export-summary{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+#selectionDuration::after{content:"·";margin-left:8px;color:var(--border-strong)}
+.timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}
+#timelineLabels{grid-column:2}
+.whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}
+#wholeRecording{width:13px;height:13px;margin:0;padding:0;accent-color:var(--accent)}
+@container(max-width:440px){
+.preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}
+.mark-buttons{gap:0;margin-left:-4px}
+.mark-buttons .text-button{padding:6px 4px;font-size:10px}
+#clock{font-size:10px}
+}
+`;
 
   // node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
@@ -33858,7 +34011,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       onPreview(next[type]);
       onScrubEnd?.(next[type]);
     };
-    return { reset(duration, next) {
+    return { reset(duration, next = { start: 0, end: duration }) {
       total = duration;
       view3 = { start: 0, end: total };
       setSelection(next);
@@ -60405,8 +60558,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     };
     for (const event of ["play", "pause", "ended", "emptied"]) video.addEventListener(event, syncPlayback);
     function updateExportSummary(selection = timeline.getSelection()) {
-      $("selectionDuration").textContent = `${$("wholeRecording").checked ? "整场" : "选中"} ${formatDuration(selection.end - selection.start)}`;
-      $("estimatedSize").textContent = estimate ? `预估约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}${!$("wholeRecording").checked && $("exportMode").value === "precise" ? "（原画参考）" : ""}` : estimateState === "error" ? "预估大小暂不可用" : "预估大小计算中…";
+      $("selectionDuration").textContent = formatDuration(selection.end - selection.start);
+      $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}${!$("wholeRecording").checked && $("exportMode").value === "precise" ? "（原画参考）" : ""}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
     }
     function startEstimate(streams) {
       estimateController?.abort();
@@ -60562,12 +60715,10 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       const { total, streams } = await player.load(record, signal);
       playbackTotal = total;
       updateClock(0);
-      const first = Math.max(0, streams[0].start_time - record.start), last2 = Math.min(total, streams.at(-1).end_time - record.start);
-      const end = record.live ? Math.max(first + 1e-3, last2 - 15) : Math.min(last2, first + 60), start = record.live ? Math.max(first, end - 60) : first;
-      timeline.reset(total, { start, end });
+      timeline.reset(total);
       ready = true;
       startEstimate(streams);
-      if (record.live) player.seek(start);
+      if (record.live) player.seek(Math.max(streams[0].start_time - record.start, streams.at(-1).end_time - record.start - 15));
       status2("按住时间轴预览；松开选区边界后自动适配视野。");
     }
     async function enterRecord(next) {

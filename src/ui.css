@@ -139,9 +139,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 /* Opening punctuation hangs into the gutter so the visible title edge aligns. */
 .hanging-title{text-indent:-.5em}
 
-.export-summary{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-variant-numeric:tabular-nums}
-#selectionDuration{font-weight:600}
-#estimatedSize{font-size:11px;color:var(--muted)}
+.export-summary{display:flex;justify-content:flex-end;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}
+#selectionDuration::after{content:"·";margin-left:8px;color:var(--border-strong)}
 .timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}
 #timelineLabels{grid-column:2}
 .whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}
