@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bella-live-clip
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.0.2
+// @version      2.0.3
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -148,10 +148,10 @@
   });
 
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="直播片段助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="直播片段助手">\n<header id="header"><div><h1>直播片段</h1><small>留住这一刻</small></div><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键"/><button id="close" class="icon" aria-label="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div class="page-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>选一场，留下一段。</h2><p>浏览近 14 天的直播回放</p></div><button id="refreshLibrary" class="text-button">刷新场次</button></div>\n<div id="members" class="members"></div>\n<div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p>\n</section>\n<section id="editPage" hidden>\n<div class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p>\n<div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><button id="playSelection" class="text-button">▶ 播放选区</button><span id="clock"></span><div><button id="zoomOut" class="text-button" aria-label="缩小时间轴">−</button><button id="zoomIn" class="text-button" aria-label="放大时间轴">＋</button><button id="focusRange" class="text-button">聚焦选区</button><button id="showAll" class="text-button">整场</button></div></div>\n<div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div id="timelineLabels"></div><input id="pan" type="range" min="0" value="0" aria-label="移动时间轴可见范围"/>\n<p class="hint">按住时间轴预览画面 · 拖动边界后松手，自动放大选区</p>\n<div class="trim-fields"><label>开始<input id="start" value="00:00:00.000" aria-label="选区开始时间"/></label><button id="markStart" class="text-button">当前画面设为开始</button><label>结束<input id="end" value="00:01:00.000" aria-label="选区结束时间"/></label><button id="markEnd" class="text-button">设为结束</button></div>\n<div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n</div>\n<footer><div id="status" role="status" aria-live="polite">准备就绪</div><progress id="progress" max="100" value="0" hidden></progress><div class="footer-actions"><button id="resetWindow" class="text-button">重置窗口</button><button id="cancel" class="button secondary" hidden>取消</button><button id="download" class="button" hidden>下载选区 MP4 ↓</button></div><div id="downloads"></div></footer>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="直播片段助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="直播片段助手">\n<header id="header"><div><h1>直播片段</h1><small>留住这一刻</small></div><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键"/><button id="close" class="icon" aria-label="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div class="page-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>选一场，留下一段。</h2><p>浏览近 14 天的直播回放</p></div><button id="refreshLibrary" class="text-button">刷新场次</button></div>\n<div id="members" class="members"></div>\n<div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p>\n</section>\n<section id="editPage" hidden>\n<div class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p>\n<div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><button id="markStart" class="text-button">设为开始</button><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><span id="clock">00:00:00.000</span></div><button id="markEnd" class="text-button">设为结束</button></div>\n<div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div id="timelineLabels"></div>\n<div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n</div>\n<footer><div id="status" role="status" aria-live="polite">准备就绪</div><progress id="progress" max="100" value="0" hidden></progress><div class="footer-actions"><button id="resetWindow" class="text-button">重置窗口</button><button id="cancel" class="button secondary" hidden>取消</button><button id="download" class="button" hidden>下载选区 MP4 ↓</button></div><div id="downloads"></div></footer>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui.css
-  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#233532;--accent:#147d70;--muted:#73837b;--line:#dce5de;--paper:#fcfcf9}*{box-sizing:border-box}[hidden]{display:none!important}button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button{border:0}h1,h2,p{margin:0}h1{font-size:20px}h2{font-size:23px;line-height:1.5}input,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}small,.hint{color:var(--muted);font-size:11px}.hint{margin-top:10px;line-height:1.7}.text-button{background:transparent;color:var(--accent);padding:7px;border-radius:7px;font-size:12px}.text-button:hover{background:#e4f1e9}.button{background:var(--accent);color:#fff;border-radius:10px;padding:11px 20px;font-weight:600}.secondary{background:#edf2ed;color:#345047}.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid #c7dfd3;border-radius:18px;background:#f6fcf8;color:var(--accent);box-shadow:0 6px 22px #183a2726;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;touch-action:none}#launcher span{font-size:10px}#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid #cadacf;border-radius:20px;box-shadow:0 20px 80px #17392b35;container-type:inline-size}#header{flex:none;display:flex;justify-content:space-between;align-items:center;padding:17px 25px;border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none}.header-tools{display:flex;align-items:center;gap:10px}#shortcut{width:112px;text-align:center;font-size:10px;border:0;background:#eef3ee;cursor:pointer}#shortcut.recording{outline:2px solid var(--accent)}#body{flex:1;min-height:0;overflow:auto;padding:24px;overscroll-behavior:contain;scrollbar-width:thin}footer{flex:none;background:#f6f9f3;border-top:1px solid var(--line);padding:12px 24px 16px;border-radius:0 0 20px 20px}#status{font-size:12px;color:var(--muted)}#status[data-error=true]{color:#ad4936}.footer-actions{display:flex;gap:10px;align-items:center;margin-top:10px}#resetWindow{margin-right:auto;color:var(--muted)}progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}#downloads a{display:block;color:var(--accent);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n.page-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.page-heading p{color:var(--muted);margin-top:6px}.eyebrow{display:block;font-size:10px;letter-spacing:2px;color:var(--accent);margin-bottom:7px}.members{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}.members button{flex:1 0 90px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;border:1px solid var(--line);padding:13px;border-radius:12px;font-size:15px;font-weight:600}.members button[aria-pressed=true]{background:#e5f2ea;border-color:#9cbfae}.members i{width:9px;height:9px;border-radius:50%}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:transform .15s,box-shadow .15s}.record-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px #23353215;border-color:#9dc7b3}.cover{aspect-ratio:16/9;position:relative;background:linear-gradient(145deg,#e7efe4,#ceded3);overflow:hidden}.cover img{width:100%;height:100%;object-fit:cover}.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#8ca793}.duration{position:absolute;right:10px;bottom:10px;background:#203c30b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}.card-info{padding:14px 15px 16px}.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:1.6;min-height:44px}.card-info p{font-size:11px;color:var(--muted);margin-top:8px}.empty{text-align:center;color:var(--muted);padding:70px 15px}.empty p{margin:12px 0 24px}\n.editor-heading{display:flex;justify-content:space-between;margin-bottom:10px}#recordTitle{font-size:19px}#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 18px}#playerWrap{position:relative;background:#182b22;aspect-ratio:16/9;border-radius:13px;overflow:hidden}#fullVideo{display:block;width:100%;height:100%}#videoLoading{position:absolute;inset:0;background:#182b22;display:grid;place-items:center;color:#d8e8dd;pointer-events:none}.preview-toolbar{display:flex;justify-content:space-between;align-items:center;gap:5px;margin:13px 0}.preview-toolbar>div{display:flex}#clock{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#e7eee6 0,#e7eee6 calc(10% - 1px),#c7d5ca calc(10% - 1px),#c7d5ca 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:#819387;pointer-events:none}#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#147d7019;pointer-events:none}#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:#233532;pointer-events:none}#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:10px;font-variant-numeric:tabular-nums}#pan{width:100%;height:15px;padding:0;accent-color:var(--accent);margin-top:5px}.trim-fields{display:grid;grid-template-columns:1fr auto 1fr auto;align-items:end;gap:8px;margin-top:20px}.trim-fields label{font-size:11px;color:var(--muted)}.trim-fields input{display:block;width:100%;margin-top:5px;font-variant-numeric:tabular-nums}.trim-fields button{font-size:11px;margin-bottom:3px}.export-row{display:flex;gap:15px;align-items:center;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}.export-row select{flex:1}.resize{position:absolute;z-index:5;touch-action:none}.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}.resize[data-edge=n]{top:-5px}.resize[data-edge=s]{bottom:-5px}.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}.resize[data-edge=e]{right:-5px}.resize[data-edge=w]{left:-5px}.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}@container(max-width:520px){#body{padding:16px}.trim-fields{grid-template-columns:1fr auto}.preview-toolbar{flex-wrap:wrap}#clock{order:3;width:100%}.page-heading h2{font-size:20px}.cards{grid-template-columns:1fr}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}\n";
+  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:#233532;--accent:#147d70;--muted:#73837b;--line:#dce5de;--paper:#fcfcf9}*{box-sizing:border-box}[hidden]{display:none!important}button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button{border:0}h1,h2,p{margin:0}h1{font-size:20px}h2{font-size:23px;line-height:1.5}input,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}small,.hint{color:var(--muted);font-size:11px}.hint{margin-top:10px;line-height:1.7}.text-button{background:transparent;color:var(--accent);padding:7px;border-radius:7px;font-size:12px}.text-button:hover{background:#e4f1e9}.button{background:var(--accent);color:#fff;border-radius:10px;padding:11px 20px;font-weight:600}.secondary{background:#edf2ed;color:#345047}.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid #c7dfd3;border-radius:18px;background:#f6fcf8;color:var(--accent);box-shadow:0 6px 22px #183a2726;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;touch-action:none}#launcher span{font-size:10px}#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid #cadacf;border-radius:20px;box-shadow:0 20px 80px #17392b35;container-type:inline-size}#header{flex:none;display:flex;justify-content:space-between;align-items:center;padding:17px 25px;border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none}.header-tools{display:flex;align-items:center;gap:10px}#shortcut{width:112px;text-align:center;font-size:10px;border:0;background:#eef3ee;cursor:pointer}#shortcut.recording{outline:2px solid var(--accent)}#body{flex:1;min-height:0;overflow:auto;padding:24px;overscroll-behavior:contain;scrollbar-width:thin}footer{flex:none;background:#f6f9f3;border-top:1px solid var(--line);padding:12px 24px 16px;border-radius:0 0 20px 20px}#status{font-size:12px;color:var(--muted)}#status[data-error=true]{color:#ad4936}.footer-actions{display:flex;gap:10px;align-items:center;margin-top:10px}#resetWindow{margin-right:auto;color:var(--muted)}progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}#downloads a{display:block;color:var(--accent);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n.page-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.page-heading p{color:var(--muted);margin-top:6px}.eyebrow{display:block;font-size:10px;letter-spacing:2px;color:var(--accent);margin-bottom:7px}.members{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}.members button{flex:1 0 90px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;border:1px solid var(--line);padding:13px;border-radius:12px;font-size:15px;font-weight:600}.members button[aria-pressed=true]{background:#e5f2ea;border-color:#9cbfae}.members i{width:9px;height:9px;border-radius:50%}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:transform .15s,box-shadow .15s}.record-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px #23353215;border-color:#9dc7b3}.cover{aspect-ratio:16/9;position:relative;background:linear-gradient(145deg,#e7efe4,#ceded3);overflow:hidden}.cover img{width:100%;height:100%;object-fit:cover}.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#8ca793}.duration{position:absolute;right:10px;bottom:10px;background:#203c30b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}.card-info{padding:14px 15px 16px}.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:1.6;min-height:44px}.card-info p{font-size:11px;color:var(--muted);margin-top:8px}.empty{text-align:center;color:var(--muted);padding:70px 15px}.empty p{margin:12px 0 24px}\n.editor-heading{display:flex;justify-content:space-between;margin-bottom:10px}#recordTitle{font-size:19px}#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 18px}#playerWrap{position:relative;background:#182b22;aspect-ratio:16/9;border-radius:13px;overflow:hidden}#fullVideo{display:block;width:100%;height:100%}#videoLoading{position:absolute;inset:0;background:#182b22;display:grid;place-items:center;color:#d8e8dd;pointer-events:none}.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:13px 0}.preview-toolbar>#markStart{justify-self:start}.preview-toolbar>#markEnd{justify-self:end}.playback-center{display:flex;flex-direction:column;align-items:center;gap:3px}#togglePlayback{font-size:22px;line-height:1;width:44px;height:40px;padding:8px}#clock{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#e7eee6 0,#e7eee6 calc(10% - 1px),#c7d5ca calc(10% - 1px),#c7d5ca 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:#819387;pointer-events:none}#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#147d7019;pointer-events:none}#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:#233532;pointer-events:none}#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:10px;font-variant-numeric:tabular-nums}.export-row{display:flex;gap:15px;align-items:center;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}.export-row select{flex:1}.resize{position:absolute;z-index:5;touch-action:none}.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}.resize[data-edge=n]{top:-5px}.resize[data-edge=s]{bottom:-5px}.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}.resize[data-edge=e]{right:-5px}.resize[data-edge=w]{left:-5px}.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}@container(max-width:520px){#body{padding:16px}.page-heading h2{font-size:20px}.cards{grid-template-columns:1fr}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}\n";
 
   // node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
@@ -33191,15 +33191,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     metaKey: false
   });
   var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-  function parseTime(value) {
-    const text = String(value).trim();
-    if (!/^\d+(?::\d{1,2}){0,2}(?:\.\d{1,3})?$/.test(text)) {
-      throw new Error("时间请填写为 时:分:秒、分:秒 或秒数，例如 01:23:45。");
-    }
-    const parts = text.split(":").map(Number);
-    if (parts.slice(1).some((part) => part >= 60)) throw new Error("时间中的分、秒须小于 60。");
-    return parts.reduce((total, part) => total * 60 + part, 0);
-  }
   function formatTime(seconds, fractional = false) {
     const ms = Math.round(Math.max(0, seconds) * 1e3);
     const h = Math.floor(ms / 36e5);
@@ -33456,6 +33447,34 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }, seek, clear, pause: () => video.pause(), position: () => offset() + video.currentTime, getStreams: () => streams };
   }
 
+  // src/playback.js
+  function createPlayback(video, onError) {
+    let scrubbing = false, resume = false;
+    const play = () => video.play().catch((error) => onError(error.message, true));
+    return {
+      begin() {
+        resume = !video.paused && !video.ended;
+        scrubbing = true;
+        video.pause();
+      },
+      end() {
+        if (!scrubbing) return;
+        scrubbing = false;
+        if (resume) void play();
+        resume = false;
+      },
+      cancel() {
+        scrubbing = false;
+        resume = false;
+        video.pause();
+      },
+      toggle() {
+        if (video.paused) void play();
+        else video.pause();
+      }
+    };
+  }
+
   // src/timeline.js
   function fitSelection(start, end, total) {
     const width = Math.min(total, (end - start) * 1.12);
@@ -33471,7 +33490,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     else next.end = Math.max(target, selection.start + gap);
     return next;
   }
-  function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, pan, zoomIn, zoomOut, showAll, focus, onPreview, onChange, onScrubStart, onScrubEnd }) {
+  function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd }) {
     let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending;
     const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
     const timeLabel = (t) => {
@@ -33497,20 +33516,13 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         span.textContent = timeLabel(view3.start + (view3.end - view3.start) * i / 4);
         ticks.append(span);
       }
-      labels.textContent = `${timeLabel(view3.start)} — ${timeLabel(view3.end)} · 选中 ${(selection.end - selection.start).toFixed(3)} 秒`;
-      pan.max = Math.max(0, total - (view3.end - view3.start));
-      pan.step = 1e-3;
-      pan.value = view3.start;
-      pan.disabled = locked || Number(pan.max) <= 0;
-      zoomIn.disabled = locked || !total;
-      zoomOut.disabled = locked || view3.end - view3.start >= total;
+      labels.textContent = `${formatTime(selection.start, true)} — ${formatTime(selection.end, true)} · 选中 ${(selection.end - selection.start).toFixed(3)} 秒`;
     }
     function setSelection(next, refit2 = false) {
       validateRange(next.start, next.end, total);
       selection = next;
       if (refit2) view3 = fitSelection(next.start, next.end, total);
       render();
-      onChange({ ...selection });
     }
     function refit() {
       track.classList.add("refitting");
@@ -33527,7 +33539,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         selection = dragSelection(drag, x, rect.width, selection, total);
         target = selection[drag.type];
         view3 = { start: Math.min(view3.start, selection.start), end: Math.max(view3.end, selection.end) };
-        onChange({ ...selection });
       }
       current = target;
       render();
@@ -33574,29 +33585,15 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
       render();
     }, { passive: false });
-    function zoom(factor) {
-      view3 = zoomWindow(view3, total, factor, clamp(((selection.start + selection.end) / 2 - view3.start) / (view3.end - view3.start), 0, 1));
-      render();
-    }
-    zoomIn.onclick = () => zoom(0.5);
-    zoomOut.onclick = () => zoom(2);
-    showAll.onclick = () => {
-      view3 = { start: 0, end: total };
-      render();
-    };
-    focus.onclick = refit;
-    pan.oninput = () => {
-      const width = view3.end - view3.start;
-      view3 = { start: Number(pan.value), end: Number(pan.value) + width };
-      render();
-    };
     for (const [el, type] of [[startHandle, "start"], [endHandle, "end"]]) el.onkeydown = (e) => {
       if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
       e.preventDefault();
       const step = (e.shiftKey ? 10 : 1) * (view3.end - view3.start) / 1e3;
       const next = dragSelection({ type, x: 0, view: view3, anchor: selection[type] }, e.key === "ArrowRight" ? step : -step, view3.end - view3.start, selection, total);
+      onScrubStart?.();
       setSelection(next, true);
       onPreview(next[type]);
+      onScrubEnd?.(next[type]);
     };
     return { reset(duration, next) {
       total = duration;
@@ -57515,7 +57512,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       $("members").append(button);
     }
     let member = MEMBERS.find((m) => m.room === room) || MEMBERS.find((m) => m.id === get("member", "bella")) || MEMBERS[0];
-    let page = "library", record = null, initialized = false, controller = null, busy = false, ready = false, libraryScroll = 0, playingSelection = false;
+    let page = "library", record = null, initialized = false, controller = null, busy = false, ready = false, libraryScroll = 0;
     const cache = /* @__PURE__ */ new Map(), urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     const status2 = (text, error = false) => {
@@ -57527,26 +57524,25 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     let rect = constrainRect(get("windowV2", defaults2()), viewport());
     const applyRect = () => Object.assign($("panel").style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
     applyRect();
-    const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), pan: $("pan"), zoomIn: $("zoomIn"), zoomOut: $("zoomOut"), showAll: $("showAll"), focus: $("focusRange"), onPreview: (t) => player.seek(t), onScrubStart: () => {
-      playingSelection = false;
-      player.pause();
-    }, onChange: (s) => {
-      $("start").value = formatTime(s.start, true);
-      $("end").value = formatTime(s.end, true);
-    } });
+    const playback = createPlayback(video, status2);
+    const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => player.seek(t), onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end() });
     const player = createPlayer({ video, loading: $("videoLoading"), api, status: status2, onTime: (t) => {
       timeline.setCurrent(t);
       $("clock").textContent = formatTime(t, true);
-      if (playingSelection && t >= timeline.getSelection().end) {
-        video.pause();
-        playingSelection = false;
-      }
     } });
+    const syncPlayback = () => {
+      const paused = video.paused || video.ended;
+      $("togglePlayback").textContent = paused ? "▶" : "⏸";
+      $("togglePlayback").setAttribute("aria-label", paused ? "播放" : "暂停");
+      $("togglePlayback").title = paused ? "播放" : "暂停";
+    };
+    for (const event of ["play", "pause", "ended", "emptied"]) video.addEventListener(event, syncPlayback);
     function controls() {
       root.querySelectorAll("#body button,#body input,#body select").forEach((el) => {
         el.disabled = busy;
       });
       timeline.lock(busy || !ready);
+      for (const id of ["togglePlayback", "markStart", "markEnd"]) $(id).disabled = busy || !ready;
       $("download").hidden = page !== "edit";
       $("download").disabled = busy || !ready;
       $("cancel").hidden = !busy;
@@ -57627,6 +57623,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
     }
     async function library(refresh = false) {
+      playback.cancel();
       player.clear();
       ready = false;
       showPage("library");
@@ -57643,6 +57640,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       });
     }
     async function loadRecord(next, signal) {
+      playback.cancel();
       record = next;
       ready = false;
       clearDownloads();
@@ -57709,7 +57707,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     const close = () => {
       $("panel").hidden = true;
-      player.pause();
+      playback.cancel();
     };
     $("launcher").onclick = () => {
       if (!launcherMoved) $("panel").hidden ? void open() : close();
@@ -57728,14 +57726,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     });
     $("cancel").onclick = () => controller?.abort();
     $("download").onclick = download;
-    const updateInputs = () => {
-      try {
-        timeline.setSelection({ start: parseTime($("start").value), end: parseTime($("end").value) }, true);
-      } catch (e) {
-        status2(e.message, true);
-      }
-    };
-    $("start").onchange = $("end").onchange = updateInputs;
     $("markStart").onclick = () => {
       const s = timeline.getSelection(), t = player.position();
       try {
@@ -57752,11 +57742,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         status2(e.message, true);
       }
     };
-    $("playSelection").onclick = () => {
-      player.seek(timeline.getSelection().start);
-      playingSelection = true;
-      video.play().catch((e) => status2(e.message, true));
-    };
+    $("togglePlayback").onclick = () => playback.toggle();
     $("shortcut").value = formatShortcut(shortcut);
     $("shortcut").onfocus = () => {
       $("shortcut").classList.add("recording");

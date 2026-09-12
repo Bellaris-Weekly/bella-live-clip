@@ -11,11 +11,9 @@
 <div class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>
 <h2 id="recordTitle"></h2><p id="recordMeta"></p>
 <div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>
-<div class="preview-toolbar"><button id="playSelection" class="text-button">▶ 播放选区</button><span id="clock"></span><div><button id="zoomOut" class="text-button" aria-label="缩小时间轴">−</button><button id="zoomIn" class="text-button" aria-label="放大时间轴">＋</button><button id="focusRange" class="text-button">聚焦选区</button><button id="showAll" class="text-button">整场</button></div></div>
+<div class="preview-toolbar"><button id="markStart" class="text-button">设为开始</button><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><span id="clock">00:00:00.000</span></div><button id="markEnd" class="text-button">设为结束</button></div>
 <div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>
-<div id="timelineLabels"></div><input id="pan" type="range" min="0" value="0" aria-label="移动时间轴可见范围"/>
-<p class="hint">按住时间轴预览画面 · 拖动边界后松手，自动放大选区</p>
-<div class="trim-fields"><label>开始<input id="start" value="00:00:00.000" aria-label="选区开始时间"/></label><button id="markStart" class="text-button">当前画面设为开始</button><label>结束<input id="end" value="00:01:00.000" aria-label="选区结束时间"/></label><button id="markEnd" class="text-button">设为结束</button></div>
+<div id="timelineLabels"></div>
 <div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p>
 </section>
 <section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>

@@ -1,4 +1,4 @@
-import {clamp, zoomWindow, panWindow, validateRange} from './core.js';
+import {clamp, formatTime, zoomWindow, panWindow, validateRange} from './core.js';
 
 export function fitSelection(start,end,total) {
  const width=Math.min(total,(end-start)*1.12);
@@ -14,7 +14,7 @@ export function dragSelection(session,x,width,selection,total) {
  else next.end=Math.max(target,selection.start+gap);
  return next;
 }
-export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,pan,zoomIn,zoomOut,showAll,focus,onPreview,onChange,onScrubStart,onScrubEnd}) {
+export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,onPreview,onScrubStart,onScrubEnd}) {
  let total=0,selection={start:0,end:1},view={start:0,end:1},drag=null,current=0,locked=false,frame=0,pending;
  const pct=t=>clamp((t-view.start)/(view.end-view.start)*100,0,100);
  const timeLabel=t=>{const h=Math.floor(t/3600),m=Math.floor(t/60)%60,s=Math.floor(t)%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');};
@@ -24,17 +24,15 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   playhead.style.left=`${pct(current)}%`;playhead.hidden=current<view.start||current>view.end;
   for(const [el,value]of[[startHandle,selection.start],[endHandle,selection.end]]){el.setAttribute('aria-valuenow',value.toFixed(3));el.setAttribute('aria-valuemin',0);el.setAttribute('aria-valuemax',total);el.disabled=locked||!total;}
   ticks.replaceChildren();for(let i=0;i<5;i++){const span=document.createElement('span');span.textContent=timeLabel(view.start+(view.end-view.start)*i/4);ticks.append(span);}
-  labels.textContent=`${timeLabel(view.start)} — ${timeLabel(view.end)} · 选中 ${(selection.end-selection.start).toFixed(3)} 秒`;
-  pan.max=Math.max(0,total-(view.end-view.start));pan.step=.001;pan.value=view.start;pan.disabled=locked||Number(pan.max)<=0;
-  zoomIn.disabled=locked||!total;zoomOut.disabled=locked||view.end-view.start>=total;
+  labels.textContent=`${formatTime(selection.start,true)} — ${formatTime(selection.end,true)} · 选中 ${(selection.end-selection.start).toFixed(3)} 秒`;
  }
- function setSelection(next,refit=false){validateRange(next.start,next.end,total);selection=next;if(refit)view=fitSelection(next.start,next.end,total);render();onChange({...selection});}
+ function setSelection(next,refit=false){validateRange(next.start,next.end,total);selection=next;if(refit)view=fitSelection(next.start,next.end,total);render();}
  function refit(){track.classList.add('refitting');view=fitSelection(selection.start,selection.end,total);render();setTimeout(()=>track.classList.remove('refitting'),180);}
  function apply(x){
   if(!drag)return;
   const rect=track.getBoundingClientRect();let target;
   if(drag.type==='playhead')target=clamp(drag.view.start+(x-rect.left)/rect.width*(drag.view.end-drag.view.start),0,total);
-  else{selection=dragSelection(drag,x,rect.width,selection,total);target=selection[drag.type];view={start:Math.min(view.start,selection.start),end:Math.max(view.end,selection.end)};onChange({...selection});}
+  else{selection=dragSelection(drag,x,rect.width,selection,total);target=selection[drag.type];view={start:Math.min(view.start,selection.start),end:Math.max(view.end,selection.end)};}
   current=target;render();onPreview(target);
  }
  function flush(){cancelAnimationFrame(frame);frame=0;if(pending!==undefined){apply(pending);pending=undefined;}}
@@ -47,9 +45,6 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
  function finish(e){if(!drag)return;flush();const type=drag.type;drag=null;if(track.hasPointerCapture(e.pointerId))track.releasePointerCapture(e.pointerId);if(type!=='playhead')refit();onScrubEnd?.(current);}
  track.addEventListener('pointerup',finish);track.addEventListener('pointercancel',finish);
  track.addEventListener('wheel',e=>{if(locked||!total||drag)return;e.preventDefault();const r=track.getBoundingClientRect();view=e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)?panWindow(view,total,(e.deltaX||e.deltaY)/r.width*(view.end-view.start)):zoomWindow(view,total,Math.exp(e.deltaY*.005),(e.clientX-r.left)/r.width);render();},{passive:false});
- function zoom(factor){view=zoomWindow(view,total,factor,clamp(((selection.start+selection.end)/2-view.start)/(view.end-view.start),0,1));render();}
- zoomIn.onclick=()=>zoom(.5);zoomOut.onclick=()=>zoom(2);showAll.onclick=()=>{view={start:0,end:total};render();};focus.onclick=refit;
- pan.oninput=()=>{const width=view.end-view.start;view={start:Number(pan.value),end:Number(pan.value)+width};render();};
- for(const [el,type]of[[startHandle,'start'],[endHandle,'end']])el.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const step=(e.shiftKey?10:1)*(view.end-view.start)/1000;const next=dragSelection({type,x:0,view,anchor:selection[type]},e.key==='ArrowRight'?step:-step,view.end-view.start,selection,total);setSelection(next,true);onPreview(next[type]);};
+ for(const [el,type]of[[startHandle,'start'],[endHandle,'end']])el.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const step=(e.shiftKey?10:1)*(view.end-view.start)/1000;const next=dragSelection({type,x:0,view,anchor:selection[type]},e.key==='ArrowRight'?step:-step,view.end-view.start,selection,total);onScrubStart?.();setSelection(next,true);onPreview(next[type]);onScrubEnd?.(next[type]);};
  return {reset(duration,next){total=duration;view={start:0,end:total};setSelection(next);},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;render();}},lock(value){locked=value;render();},refit};
 }
