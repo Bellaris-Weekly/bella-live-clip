@@ -64,13 +64,12 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}
 #fullVideo{display:block;width:100%;height:100%}
 #videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}
-.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:0 0 14px}
-.preview-toolbar>#markStart{justify-self:start;margin-left:-8px}
-.preview-toolbar>#markEnd{justify-self:end;margin-right:-8px}
+.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}
+.mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}
+.preview-toolbar>#clock{justify-self:end}
 .playback-center{display:flex;align-items:center;justify-content:center}
 #togglePlayback{width:40px;height:36px;padding:6px}
 #togglePlayback .glyph{width:22px;height:22px}
-.preview-time{display:flex;justify-content:flex-end;align-items:center;height:28px;padding:4px 0}
 #clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
 #timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
 #ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}
@@ -120,3 +119,16 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 
 /* Opening punctuation hangs into the gutter so the visible title edge aligns. */
 .hanging-title{text-indent:-.5em}
+
+.export-summary{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-variant-numeric:tabular-nums}
+#selectionDuration{font-weight:600}
+#estimatedSize{font-size:11px;color:var(--muted)}
+.export-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+@container(max-width:440px){
+.preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}
+.mark-buttons{gap:0;margin-left:-4px}
+.mark-buttons .text-button{padding:6px 4px;font-size:10px}
+#clock{font-size:10px}
+.export-actions{grid-template-columns:1fr}
+#downloadFull{margin-top:0}
+}

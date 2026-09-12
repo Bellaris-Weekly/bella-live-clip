@@ -36,6 +36,19 @@ export function formatPlaybackTime(seconds) {
   return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 
+export function formatCompactTime(seconds) {
+  const ms=Math.round(Math.max(0,seconds)*1000);
+  const h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60;
+  const sec=`${String(s).padStart(h||m?2:1,'0')}.${String(ms%1000).padStart(3,'0')}`;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${sec}` : m ? `${m}:${sec}` : sec;
+}
+
+export function formatDuration(seconds) {
+  const tenths=Math.round(Math.max(0,seconds)*10);
+  const h=Math.floor(tenths/36000),m=Math.floor(tenths/600)%60,s=(tenths%600)/10;
+  return `${h ? h+'时' : ''}${h||m ? m+'分' : ''}${s.toFixed(1)}秒`;
+}
+
 export function formatDate(unix, withSeconds = false) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
