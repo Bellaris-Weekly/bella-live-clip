@@ -1,0 +1,30 @@
+{
+  "name": "bella-live-clip",
+  "version": "2.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Bilibili live and replay clip downloader userscript",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "serve": "node scripts/dev-server.mjs",
+    "check": "node --check bella-live-clip.user.js",
+    "verify": "npm run build && npm run check && npm run check:version && npm test",
+    "check:version": "node scripts/check-version.mjs"
+  },
+  "dependencies": {
+    "hls.js": "1.6.16",
+    "mediabunny": "1.56.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bellaris-Weekly/bella-live-clip.git"
+  }
+}

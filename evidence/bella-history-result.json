@@ -1,0 +1,30 @@
+{
+  "name": "bella",
+  "selection_seconds": [
+    600,
+    620
+  ],
+  "downloaded_segments": 6,
+  "downloaded_bytes": 32281094,
+  "whole_playlist_seconds": 7346.06,
+  "segment_start_seconds": 596.9599999999998,
+  "segment_end_seconds": 621.9799999999996,
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "codec_name": "aac"
+      }
+    ],
+    "format": {
+      "duration": "25.011000",
+      "size": "32281770"
+    }
+  }
+}

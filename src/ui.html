@@ -1,0 +1,25 @@
+<button id="launcher" aria-label="直播片段助手">✂<span>片段</span></button>
+<section id="panel" hidden aria-label="直播片段助手">
+<header id="header"><div><h1>直播片段</h1><small>留住这一刻</small></div><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键"/><button id="close" class="icon" aria-label="收起面板">×</button></div></header>
+<div id="body">
+<section id="library">
+<div class="page-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>选一场，留下一段。</h2><p>浏览近 14 天的直播回放</p></div><button id="refreshLibrary" class="text-button">刷新场次</button></div>
+<div id="members" class="members"><button data-member="bella"><i class="bella"></i>贝拉</button><button data-member="diana"><i class="diana"></i>嘉然</button><button data-member="eileen"><i class="eileen"></i>乃琳</button></div>
+<div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p>
+</section>
+<section id="editPage" hidden>
+<div class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>
+<h2 id="recordTitle"></h2><p id="recordMeta"></p>
+<div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>
+<div class="preview-toolbar"><button id="playSelection" class="text-button">▶ 播放选区</button><span id="clock"></span><div><button id="zoomOut" class="text-button" aria-label="缩小时间轴">−</button><button id="zoomIn" class="text-button" aria-label="放大时间轴">＋</button><button id="focusRange" class="text-button">聚焦选区</button><button id="showAll" class="text-button">整场</button></div></div>
+<div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>
+<div id="timelineLabels"></div><input id="pan" type="range" min="0" value="0" aria-label="移动时间轴可见范围"/>
+<p class="hint">按住时间轴预览画面 · 拖动边界后松手，自动放大选区</p>
+<div class="trim-fields"><label>开始<input id="start" value="00:00:00.000" aria-label="选区开始时间"/></label><button id="markStart" class="text-button">当前画面设为开始</button><label>结束<input id="end" value="00:01:00.000" aria-label="选区结束时间"/></label><button id="markEnd" class="text-button">设为结束</button></div>
+<div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p>
+</section>
+<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>
+</div>
+<footer><div id="status" role="status" aria-live="polite">准备就绪</div><progress id="progress" max="100" value="0" hidden></progress><div class="footer-actions"><button id="resetWindow" class="text-button">重置窗口</button><button id="cancel" class="button secondary" hidden>取消</button><button id="download" class="button" hidden>下载选区 MP4 ↓</button></div><div id="downloads"></div></footer>
+<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>
+</section>

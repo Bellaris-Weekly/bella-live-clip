@@ -1,0 +1,27 @@
+// ==UserScript==
+// @name         bella-live-clip
+// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
+// @version      2.0.1
+// @author       贝极星周报
+// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
+// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
+// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js
+// @description  贝拉、乃琳、嘉然直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。
+// @match        https://*.bilibili.com/*
+// @match        https://bilibili.com/*
+// @connect      api.live.bilibili.com
+// @connect      live.bilibili.com
+// @connect      bilivideo.com
+// @connect      bilivideo.cn
+// @connect      hdslb.com
+// @connect      acgvideo.com
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @run-at       document-idle
+// @noframes
+// @license      MIT (own code) + MPL-2.0 + Apache-2.0
+// ==/UserScript==
+// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16
+// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1

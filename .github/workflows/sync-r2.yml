@@ -1,0 +1,65 @@
+name: Sync userscript to Cloudflare R2
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # 同仓库分支的 PR 已经被 push 事件覆盖，这里只放行 push 和来自 fork 的 PR，
+    # 避免同一个 commit 跑两遍。
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Check built artifact is committed
+        run: |
+          npm run build
+          git diff --exit-code -- bella-live-clip.user.js
+
+  upload:
+    needs: test
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload userscript
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_BUCKET" ]; then
+            echo "::notice::R2 credentials are not configured; upload skipped."
+            echo "R2 upload skipped: configure the four repository secrets and rerun this workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          aws s3 cp bella-live-clip.user.js "s3://${R2_BUCKET}/bella-live-clip.user.js" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --content-type "application/javascript" \
+            --content-disposition "inline" \
+            --cache-control "no-cache, no-store, must-revalidate"

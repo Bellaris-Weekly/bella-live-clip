@@ -1,0 +1,30 @@
+{
+  "kind": "live-recent",
+  "segments": 6,
+  "bytes": 25867206,
+  "cdn_headers": {
+    "Content-Type": "video/iso.segment",
+    "Access-Control-Allow-Headers": "Origin, Referer, Range, Pragma",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Expose-Headers": "Origin, Referer, Range, Pragma"
+  },
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "codec_name": "aac"
+      }
+    ],
+    "format": {
+      "duration": "25.012000",
+      "size": "25867696"
+    }
+  }
+}

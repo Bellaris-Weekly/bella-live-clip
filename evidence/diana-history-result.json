@@ -1,0 +1,30 @@
+{
+  "name": "diana",
+  "selection_seconds": [
+    600,
+    620
+  ],
+  "downloaded_segments": 6,
+  "downloaded_bytes": 25888180,
+  "whole_playlist_seconds": 4762.1,
+  "segment_start_seconds": 597.18,
+  "segment_end_seconds": 622.1999999999997,
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "codec_name": "aac"
+      }
+    ],
+    "format": {
+      "duration": "25.005000",
+      "size": "25888610"
+    }
+  }
+}
