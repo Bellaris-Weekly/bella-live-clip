@@ -4,7 +4,7 @@ import {createPlayer} from './full-preview.js';
 import {createPlayback} from './playback.js';
 import {createTimeline} from './timeline.js';
 import {exportSelection} from './media.js';
-import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
+import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
 
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
@@ -13,7 +13,8 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
  let page='library',record=null,initialized=false,controller=null,busy=false,ready=false,libraryScroll=0;
  const cache=new Map(),urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
- const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;};
+ const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
+ function updateFeedback(){$('feedback').hidden=!busy&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
  const viewport=()=>({width:innerWidth,height:innerHeight});
  const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
  let rect=constrainRect(get('windowV2',defaults()),viewport());
@@ -23,7 +24,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);$('clock').textContent=formatTime(t,true);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').textContent=paused?'▶':'⏸';$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
- function controls(){root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});timeline.lock(busy||!ready);for(const id of ['togglePlayback','markStart','markEnd'])$(id).disabled=busy||!ready;$('download').hidden=page!=='edit';$('download').disabled=busy||!ready;$('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;}
+ function controls(){root.querySelectorAll('#body button,#body input,#body select').forEach(el=>{el.disabled=busy;});timeline.lock(busy||!ready);for(const id of ['togglePlayback','markStart','markEnd'])$(id).disabled=busy||!ready;$('download').hidden=page!=='edit';$('download').disabled=busy||!ready;$('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();}
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
  async function job(action){if(busy)return;const own=new AbortController();controller=own;busy=true;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{busy=false;controller=null;controls();}}
  function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
@@ -37,7 +38,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
    const info=document.createElement('div');info.className='card-info';const title=document.createElement('strong');title.textContent=r.title;const date=document.createElement('p');date.textContent=`${formatDate(r.start)} · ${member.name}`;info.append(title,date);card.append(cover,info);card.onclick=()=>{libraryScroll=$('body').scrollTop;void enterRecord(r);};$('cards').append(card);
   }
  }
- async function library(refresh=false){playback.cancel();player.clear();ready=false;showPage('library');renderCards();if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');return;}await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');});}
+ async function library(refresh=false){playback.cancel();player.clear();clearDownloads();ready=false;showPage('library');renderCards();if(!refresh&&cache.has(member.id)){status('选择想剪辑的那场直播。');return;}await job(async signal=>{status('正在获取直播场次…');cache.set(member.id,await api.history(member,signal));renderCards();status('选择想剪辑的那场直播。');});}
  async function loadRecord(next,signal){
   playback.cancel();record=next;ready=false;clearDownloads();showPage('edit');$('recordTitle').textContent=record.title;$('recordMeta').textContent=`${record.member} · ${formatDate(record.start)}${record.live?' · 本场直播':' · 历史回放'}`;
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
@@ -53,19 +54,15 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  });}
  async function open(){$('panel').hidden=false;if(!initialized){initialized=true;await(room?currentRoom():library());}}
  const close=()=>{$('panel').hidden=true;playback.cancel();};
- $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};$('close').onclick=close;
+ $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
  $('cancel').onclick=()=>controller?.abort();$('download').onclick=download;
  $('markStart').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:t,end:Math.max(s.end,t+.001)},true);}catch(e){status(e.message,true);}};
  $('markEnd').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:Math.min(s.start,t-.001),end:t},true);}catch(e){status(e.message,true);}};
  $('togglePlayback').onclick=()=>playback.toggle();
-  $('shortcut').value = formatShortcut(shortcut);
-  $('shortcut').onfocus = () => { $('shortcut').classList.add('recording'); $('shortcut').value='按下快捷键'; };
-  $('shortcut').onblur = () => { $('shortcut').classList.remove('recording'); $('shortcut').value=formatShortcut(shortcut); };
-  $('shortcut').onkeydown = e => { e.preventDefault(); e.stopPropagation(); if(e.key==='Escape') return $('shortcut').blur(); const value=normalizeShortcut(e); if(value) { shortcut=value; set('shortcut',value); $('shortcut').blur(); } };
   document.addEventListener('keydown', e => { if (!isEditing(e) && matchesShortcut(e,shortcut)) { e.preventDefault(); $('panel').hidden ? void open() : close(); } });
-  $('resetWindow').onclick = () => { rect=defaults(); applyRect(); set('windowV2',rect); $('launcher').style.cssText=''; set('launcher',null); };
+  const resetWindow = () => { rect=defaults(); applyRect(); set('windowV2',rect); $('launcher').style.cssText=''; set('launcher',null); };
   function drag(element,onMove,onEnd) {
     element.addEventListener('pointerdown',e=>{
       if(e.button!==0 || e.target.closest('button,input,select') && element!==$('launcher')) return;
@@ -75,7 +72,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
       element.addEventListener('pointermove',move); element.addEventListener('pointerup',finish); element.addEventListener('pointercancel',finish);
     });
   }
-  drag($('header'),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));
+  for(const id of ['libraryToolbar','editorToolbar'])drag($(id),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));
   root.querySelectorAll('[data-edge]').forEach(el=>drag(el,(dx,dy,r)=>{rect=resizeRect(r,el.dataset.edge,dx,dy,viewport()); applyRect();},()=>set('windowV2',rect)));
   let launcherMoved=false, launcherStart;
   const savedLauncher=get('launcher',null);
@@ -84,5 +81,5 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('launcher').addEventListener('pointerdown',()=>{launcherMoved=false; launcherStart=$('launcher').getBoundingClientRect();});
   drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
   window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
- window.addEventListener('pagehide',()=>{controller?.abort();player.clear();clearDownloads();});controls();return {open,root};
+ window.addEventListener('pagehide',()=>{controller?.abort();player.clear();clearDownloads();});controls();return {open,resetWindow,root};
 }

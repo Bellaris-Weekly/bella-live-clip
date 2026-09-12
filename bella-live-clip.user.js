@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bella-live-clip
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.0.4
+// @version      2.0.5
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -148,10 +148,10 @@
   });
 
   // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="直播片段助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="直播片段助手">\n<header id="header"><div><h1>直播片段</h1><small>留住这一刻</small></div><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键"/><button id="close" class="icon" aria-label="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div class="page-heading"><div><span class="eyebrow">LIVE ARCHIVE</span><h2>选一场，留下一段。</h2><p>浏览近 14 天的直播回放</p></div><button id="refreshLibrary" class="text-button">刷新场次</button></div>\n<div id="members" class="members"></div>\n<div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p>\n</section>\n<section id="editPage" hidden>\n<div class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p>\n<div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><button id="markStart" class="text-button">设为开始</button><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><span id="clock">00:00:00.000</span></div><button id="markEnd" class="text-button">设为结束</button></div>\n<div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div id="timelineLabels"></div>\n<div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n</div>\n<footer><div id="status" role="status" aria-live="polite">准备就绪</div><progress id="progress" max="100" value="0" hidden></progress><div class="footer-actions"><button id="resetWindow" class="text-button">重置窗口</button><button id="cancel" class="button secondary" hidden>取消</button><button id="download" class="button" hidden>下载选区 MP4 ↓</button></div><div id="downloads"></div></footer>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var ui_default = '<button id="launcher" aria-label="直播片段助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="直播片段助手">\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p>\n</section>\n<section id="editPage" hidden>\n<div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p>\n<div id="playerWrap"><video id="fullVideo" controls playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><button id="markStart" class="text-button">设为开始</button><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><span id="clock">00:00:00.000</span></div><button id="markEnd" class="text-button">设为结束</button></div>\n<div id="timeline" aria-label="剪辑时间轴"><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div id="timelineLabels"></div>\n<div class="export-row"><label for="exportMode">导出方式</label><select id="exportMode"><option value="copy">原画快速 · 不重新编码</option><option value="precise">精确裁剪 · 重新编码</option></select></div><p class="hint">仅下载选中的内容；断流区间会分成独立文件。切点受视频帧与音频采样粒度影响。</p><button id="download" class="button export-button" hidden>下载选区 MP4 ↓</button>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui.css
-  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}\n*{box-sizing:border-box}\n[hidden]{display:none!important}\nbutton,input,select{font:inherit;color:inherit}\nbutton{cursor:pointer}\nbutton:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}\nbutton:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}\nbutton{border:0}\nh1,h2,p{margin:0}\nh1{font-size:20px}\nh2{font-size:23px;line-height:1.5}\ninput,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}\nsmall,.hint{color:var(--muted);font-size:11px}\n.hint{margin-top:10px;line-height:1.7}\n.text-button{background:transparent;color:var(--text);padding:7px;border-radius:7px;font-size:12px}\n.text-button:hover{background:var(--hover)}\n.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}\n.button:hover{background:#e9e9e9}\n#download{background:var(--accent);color:#fff}\n#download:hover{background:var(--accent-hover)}\n.secondary{background:var(--hover);color:var(--text)}\n.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;touch-action:none}\n#launcher span{font-size:10px}\n#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}\n#header{flex:none;display:flex;justify-content:space-between;align-items:center;padding:17px 25px;border-bottom:1px solid var(--line);cursor:grab;touch-action:none;user-select:none}\n.header-tools{display:flex;align-items:center;gap:10px}\n#shortcut{width:112px;text-align:center;font-size:10px;border:0;background:var(--hover);cursor:pointer}\n#shortcut.recording{outline:2px solid var(--text)}\n#body{flex:1;min-height:0;overflow:auto;padding:24px;overscroll-behavior:contain;scrollbar-width:thin}\nfooter{flex:none;background:var(--surface);border-top:1px solid var(--line);padding:12px 24px 16px;border-radius:0 0 20px 20px}\n#status{font-size:12px;color:var(--muted)}\n#status[data-error=true]{color:#ad4936}\n.footer-actions{display:flex;gap:10px;align-items:center;margin-top:10px}\n#resetWindow{margin-right:auto;color:var(--muted)}\nprogress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}\n#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n\n.page-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}\n.page-heading p{color:var(--muted);margin-top:6px}\n.eyebrow{display:block;font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:7px}\n.members{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}\n.members button{flex:1 0 90px;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;border:1px solid var(--line);padding:13px;border-radius:12px;font-size:15px;font-weight:600}\n.members button:hover{background:var(--surface)}\n.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}\n.members i{width:9px;height:9px;border-radius:50%}\n.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}\n.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}\n.record-card:hover{box-shadow:0 4px 14px #0000000a;border-color:var(--border-strong)}\n.cover{aspect-ratio:16/9;position:relative;background:var(--hover);overflow:hidden}\n.cover img{width:100%;height:100%;object-fit:cover}\n.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#a3a3a3}\n.duration{position:absolute;right:10px;bottom:10px;background:#171717b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}\n.card-info{padding:14px 15px 16px}\n.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:1.6;min-height:44px}\n.card-info p{font-size:11px;color:var(--muted);margin-top:8px}\n.empty{text-align:center;color:var(--muted);padding:70px 15px}\n.empty p{margin:12px 0 24px}\n\n.editor-heading{display:flex;justify-content:space-between;margin-bottom:10px}\n#recordTitle{font-size:19px}\n#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 18px}\n#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}\n#fullVideo{display:block;width:100%;height:100%}\n#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}\n.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:13px 0}\n.preview-toolbar>#markStart{justify-self:start}\n.preview-toolbar>#markEnd{justify-self:end}\n.playback-center{display:flex;flex-direction:column;align-items:center;gap:3px}\n#togglePlayback{font-size:22px;line-height:1;width:44px;height:40px;padding:8px}\n#clock{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}\n#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}\n#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}\n#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}\n#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}\n#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}\n#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}\n#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:10px;font-variant-numeric:tabular-nums}\n.export-row{display:flex;gap:15px;align-items:center;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}\n.export-row select{flex:1}\n.resize{position:absolute;z-index:5;touch-action:none}\n.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}\n.resize[data-edge=n]{top:-5px}\n.resize[data-edge=s]{bottom:-5px}\n.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}\n.resize[data-edge=e]{right:-5px}\n.resize[data-edge=w]{left:-5px}\n.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}\n.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}\n.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}\n.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}\n.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}\n@container(max-width:520px){#body{padding:16px}\n.page-heading h2{font-size:20px}\n.cards{grid-template-columns:1fr}\n}\n@media(prefers-reduced-motion:reduce){*{transition:none!important}\n}\n";
+  var ui_default2 = ":host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}\n*{box-sizing:border-box}\n[hidden]{display:none!important}\nbutton,input,select{font:inherit;color:inherit}\nbutton{cursor:pointer}\nbutton:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}\nbutton:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:3px}\nbutton{border:0}\nh1,h2,p{margin:0}\nh1{font-size:20px}\nh2{font-size:23px;line-height:1.5}\ninput,select{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px;min-width:0}\nsmall,.hint{color:var(--muted);font-size:11px}\n.hint{margin-top:10px;line-height:1.7}\n.text-button{background:transparent;color:var(--text);padding:7px;border-radius:7px;font-size:12px}\n.text-button:hover{background:var(--hover)}\n.button{background:var(--hover);color:var(--text);border-radius:10px;padding:11px 20px;font-weight:600}\n.button:hover{background:#e9e9e9}\n#download{background:var(--accent);color:#fff}\n#download:hover{background:var(--accent-hover)}\n.secondary{background:var(--hover);color:var(--text)}\n.icon{font-size:26px;background:transparent;padding:0 8px;color:var(--muted)}\n\n#launcher{position:fixed;right:22px;bottom:46px;z-index:2147483638;width:58px;height:62px;border:1px solid var(--line);border-radius:18px;background:var(--paper);color:var(--text);box-shadow:0 4px 16px #00000012;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:26px;touch-action:none}\n#launcher span{font-size:10px}\n#launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}\n\n#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}\n#body{flex:1;min-height:0;overflow:auto;padding:20px;overscroll-behavior:contain;scrollbar-width:thin}\n#status{font-size:12px;color:var(--muted)}\n#status[data-error=true]{color:#ad4936}\nprogress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}\n#downloads a{display:block;color:var(--text);font-size:12px;margin-top:8px;overflow-wrap:anywhere}\n\n.library-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;margin-bottom:18px;cursor:grab;touch-action:none}\n.members{display:grid;grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:6px;min-width:0}\n.refresh-button{font-size:22px;padding:4px;width:30px;height:34px}\n.members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);padding:9px 4px;border-radius:8px;font-size:13px;font-weight:500}\n.members button:hover{background:var(--surface)}\n.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}\n.members i{width:6px;height:6px;flex:none;border-radius:50%}\n.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}\n.record-card{padding:0;text-align:left;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s}\n.record-card:hover{box-shadow:0 4px 14px #0000000a;border-color:var(--border-strong)}\n.cover{aspect-ratio:16/9;position:relative;background:var(--hover);overflow:hidden}\n.cover img{width:100%;height:100%;object-fit:cover}\n.cover-placeholder{display:grid;place-items:center;height:100%;font-size:40px;color:#a3a3a3}\n.duration{position:absolute;right:10px;bottom:10px;background:#171717b5;color:white;padding:2px 7px;border-radius:5px;font-size:10px}\n.card-info{padding:12px 14px 14px}\n.card-info strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px;line-height:1.6;min-height:0}\n.card-info p{font-size:11px;color:var(--muted);margin-top:8px}\n.empty{text-align:center;color:var(--muted);padding:70px 15px}\n.empty p{margin:12px 0 24px}\n\n.editor-heading{cursor:grab;touch-action:none;display:flex;justify-content:space-between;margin-bottom:10px}\n#recordTitle{font-size:19px}\n#recordMeta{font-size:11px;color:var(--muted);margin:5px 0 18px}\n#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}\n#fullVideo{display:block;width:100%;height:100%}\n#videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}\n.preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:13px 0}\n.preview-toolbar>#markStart{justify-self:start}\n.preview-toolbar>#markEnd{justify-self:end}\n.playback-center{display:flex;flex-direction:column;align-items:center;gap:3px}\n#togglePlayback{font-size:22px;line-height:1;width:44px;height:40px;padding:8px}\n#clock{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}\n#timeline{position:relative;height:62px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}\n#ticks{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 5px;font-size:9px;color:var(--muted);pointer-events:none}\n#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}\n#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}\n#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;width:12px;height:66px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}\n#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}\n#timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:10px;font-variant-numeric:tabular-nums}\n.export-row{display:flex;gap:15px;align-items:center;border-top:1px solid var(--line);margin-top:22px;padding-top:18px}\n.export-row select{flex:1}\n.resize{position:absolute;z-index:5;touch-action:none}\n.resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}\n.resize[data-edge=n]{top:-5px}\n.resize[data-edge=s]{bottom:-5px}\n.resize[data-edge=e],.resize[data-edge=w]{top:18px;bottom:18px;width:10px;cursor:ew-resize}\n.resize[data-edge=e]{right:-5px}\n.resize[data-edge=w]{left:-5px}\n.resize[data-edge=nw],.resize[data-edge=ne],.resize[data-edge=sw],.resize[data-edge=se]{width:18px;height:18px}\n.resize[data-edge=nw]{top:-5px;left:-5px;cursor:nwse-resize}\n.resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}\n.resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}\n.resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}\n@container(max-width:520px){#body{padding:16px}\n\n.cards{grid-template-columns:1fr}\n}\n@media(prefers-reduced-motion:reduce){*{transition:none!important}\n}\n\n.export-button{display:block;width:100%;margin-top:16px}\n.feedback{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}\n";
 
   // node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
@@ -33271,15 +33271,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
     return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
   }
-  function formatShortcut(shortcut) {
-    return [
-      shortcut.ctrlKey && "Ctrl",
-      shortcut.altKey && "Alt",
-      shortcut.shiftKey && "Shift",
-      shortcut.metaKey && "⌘",
-      shortcut.code.replace(/^Key|^Digit/, "")
-    ].filter(Boolean).join("+");
-  }
   function matchesShortcut(event, shortcut) {
     return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
   }
@@ -57518,7 +57509,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const status2 = (text, error = false) => {
       $("status").textContent = text;
       $("status").dataset.error = error;
+      updateFeedback();
     };
+    function updateFeedback() {
+      $("feedback").hidden = !busy && $("status").dataset.error !== "true" && !$("downloads").childElementCount;
+    }
     const viewport = () => ({ width: innerWidth, height: innerHeight });
     const defaults2 = () => constrainRect({ left: innerWidth - 820, top: 20, width: 800, height: 880 }, viewport());
     let rect = constrainRect(get("windowV2", defaults2()), viewport());
@@ -57548,6 +57543,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       $("cancel").hidden = !busy;
       $("progress").hidden = !busy;
       $("launcher").dataset.busy = busy;
+      $("cancel").disabled = false;
+      updateFeedback();
     }
     function showPage(next) {
       page = next;
@@ -57625,6 +57622,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     async function library(refresh = false) {
       playback.cancel();
       player.clear();
+      clearDownloads();
       ready = false;
       showPage("library");
       renderCards();
@@ -57712,7 +57710,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     $("launcher").onclick = () => {
       if (!launcherMoved) $("panel").hidden ? void open() : close();
     };
-    $("close").onclick = close;
     $("back").onclick = () => void library();
     $("browseHistory").onclick = () => void library();
     $("retryCurrent").onclick = currentRoom;
@@ -57743,33 +57740,13 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
     };
     $("togglePlayback").onclick = () => playback.toggle();
-    $("shortcut").value = formatShortcut(shortcut);
-    $("shortcut").onfocus = () => {
-      $("shortcut").classList.add("recording");
-      $("shortcut").value = "按下快捷键";
-    };
-    $("shortcut").onblur = () => {
-      $("shortcut").classList.remove("recording");
-      $("shortcut").value = formatShortcut(shortcut);
-    };
-    $("shortcut").onkeydown = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.key === "Escape") return $("shortcut").blur();
-      const value = normalizeShortcut(e);
-      if (value) {
-        shortcut = value;
-        set("shortcut", value);
-        $("shortcut").blur();
-      }
-    };
     document.addEventListener("keydown", (e) => {
       if (!isEditing(e) && matchesShortcut(e, shortcut)) {
         e.preventDefault();
         $("panel").hidden ? void open() : close();
       }
     });
-    $("resetWindow").onclick = () => {
+    const resetWindow = () => {
       rect = defaults2();
       applyRect();
       set("windowV2", rect);
@@ -57794,7 +57771,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         element.addEventListener("pointercancel", finish);
       });
     }
-    drag($("header"), (dx, dy, r) => {
+    for (const id of ["libraryToolbar", "editorToolbar"]) drag($(id), (dx, dy, r) => {
       rect = constrainRect({ ...r, left: r.left + dx, top: r.top + dy }, viewport());
       applyRect();
     }, () => set("windowV2", rect));
@@ -57833,7 +57810,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       clearDownloads();
     });
     controls();
-    return { open, root };
+    return { open, resetWindow, root };
   }
 
   // src/network.js
@@ -57966,5 +57943,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       set: (key, value) => GM_setValue(`biliClip.${key}`, value)
     });
     GM_registerMenuCommand("打开直播片段助手", app.open);
+    GM_registerMenuCommand("重置窗口位置", app.resetWindow);
   }
 })();
