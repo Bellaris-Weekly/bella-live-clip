@@ -4,7 +4,7 @@ import {createPlayer} from './full-preview.js';
 import {createPlayback} from './playback.js';
 import {createTimeline} from './timeline.js';
 import {exportSelection} from './media.js';
-import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
+import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
 
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
@@ -54,6 +54,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  });}
  async function open(){$('panel').hidden=false;if(!initialized){initialized=true;await(room?currentRoom():library());}}
  const close=()=>{$('panel').hidden=true;playback.cancel();};
+ $('close').onclick=close;
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
@@ -61,6 +62,10 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  $('markStart').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:t,end:Math.max(s.end,t+.001)},true);}catch(e){status(e.message,true);}};
  $('markEnd').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:Math.min(s.start,t-.001),end:t},true);}catch(e){status(e.message,true);}};
  $('togglePlayback').onclick=()=>playback.toggle();
+  $('shortcut').value=formatShortcut(shortcut);
+  $('shortcut').onfocus=()=>{$('shortcut').classList.add('recording');$('shortcut').value='按下快捷键';};
+  $('shortcut').onblur=()=>{$('shortcut').classList.remove('recording');$('shortcut').value=formatShortcut(shortcut);};
+  $('shortcut').onkeydown=e=>{e.preventDefault();e.stopPropagation();if(e.key==='Escape')return $('shortcut').blur();const value=normalizeShortcut(e);if(value){shortcut=value;set('shortcut',value);$('shortcut').blur();}};
   document.addEventListener('keydown', e => { if (!isEditing(e) && matchesShortcut(e,shortcut)) { e.preventDefault(); $('panel').hidden ? void open() : close(); } });
   const resetWindow = () => { rect=defaults(); applyRect(); set('windowV2',rect); $('launcher').style.cssText=''; set('launcher',null); };
   function drag(element,onMove,onEnd) {
@@ -72,7 +77,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
       element.addEventListener('pointermove',move); element.addEventListener('pointerup',finish); element.addEventListener('pointercancel',finish);
     });
   }
-  for(const id of ['libraryToolbar','editorToolbar'])drag($(id),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));
+  drag($('header'),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));
   root.querySelectorAll('[data-edge]').forEach(el=>drag(el,(dx,dy,r)=>{rect=resizeRect(r,el.dataset.edge,dx,dy,viewport()); applyRect();},()=>set('windowV2',rect)));
   let launcherMoved=false, launcherStart;
   const savedLauncher=get('launcher',null);

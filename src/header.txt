@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         bella-live-clip
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.0.5
+// @version      2.0.6
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
