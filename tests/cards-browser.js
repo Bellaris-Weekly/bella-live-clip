@@ -14,7 +14,12 @@ export async function runCardChecks(app, query) {
   assert(cards.every(c=>!/贝拉|嘉然|乃琳/.test(c.textContent)),'卡片出现姓名文字');
   assert(!cards[5].querySelector('.record-type')&&!cards[5].querySelector('.participant'),'无日程时猜测了参与者');
   assert(cards.every(c=>c.scrollWidth<=c.clientWidth),'卡片横向溢出');
-  assert(cards.every(c=>c.getBoundingClientRect().width<=244),'卡片超过宽度上限');
+  const panelWidth=root.getElementById('panel').clientWidth;
+  const expectedColumns=panelWidth<350?1:panelWidth>=720?3:2;
+  const firstRow=cards.filter(c=>Math.abs(c.getBoundingClientRect().top-cards[0].getBoundingClientRect().top)<1);
+  assert(firstRow.length===expectedColumns,'卡片列数错误');
+  const grid=root.getElementById('cards').getBoundingClientRect();
+  assert(Math.abs(firstRow[0].getBoundingClientRect().left-grid.left)<1&&Math.abs(firstRow.at(-1).getBoundingClientRect().right-grid.right)<1,'卡片两侧留下多余空白');
   assert(cards[0].querySelector('.card-date').textContent==='1209月 · 周六19:36','日期块北京时间错误');
   checks.push('无封面、原标题、无可见姓名、实际时长、未匹配回退、布局无溢出');
   if(!query.has('schedule-error')){

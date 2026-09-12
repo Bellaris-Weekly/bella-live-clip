@@ -19,7 +19,7 @@ const api={history:async member=>historyFor(member),current:async()=>({...record
  if(url.startsWith('https://api.live.bilibili.com/live_user/')){signal?.throwIfAborted();const uid=new URL(url).searchParams.get('uid');return {data:JSON.stringify({code:0,data:{info:{face:query.has('avatar-error')&&uid==='672328094'?location.origin+'/missing-avatar.png':faces[uid]}}}),url};}
  const response=await fetch(url,{signal});return {data:type==='arraybuffer'?await response.arrayBuffer():await response.text(),url:response.url};
 }};
-const app=createApp({api,pageUrl:query.has('live')?'https://live.bilibili.com/22632424':location.href,get:(key,fallback)=>key==='windowV2'&&query.has('narrow')?{left:20,top:20,width:360,height:780}:fallback});app.open();
+const app=createApp({api,pageUrl:query.has('live')?'https://live.bilibili.com/22632424':location.href,get:(key,fallback)=>key==='windowV2'&&(query.has('narrow')||query.has('medium'))?{left:20,top:20,width:query.has('medium')?480:360,height:780}:fallback});app.open();
 const cardTest=document.createElement('button');cardTest.textContent='验证场次卡片';cardTest.id='cardTest';document.getElementById('test').after(cardTest);
 cardTest.onclick=()=>runCardChecks(app,query);
 document.getElementById('test').onclick=async()=>{
