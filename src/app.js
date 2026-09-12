@@ -13,7 +13,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const $=id=>root.getElementById(id),video=$('fullVideo');const room=roomIdFromUrl(pageUrl);
  for(const [id,name]of[['close','close'],['refreshLibrary','refresh'],['togglePlayback','play']])$(id).innerHTML=icon(name);
  $('back').innerHTML=icon('back')+'<span>选择直播</span>';
- $('download').innerHTML='<span>下载选区 MP4</span>'+icon('download');
+ $('download').innerHTML='<span>导出</span>'+icon('download');
  $('launcher').innerHTML=icon('scissors')+'<span>片段</span>';
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
@@ -47,7 +47,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   for(const id of ['markStart','markEnd'])$(id).disabled=busy||!ready||whole;
   $('togglePlayback').disabled=busy||!ready;$('wholeRecording').disabled=busy||!ready;
   $('exportMode').closest('.export-row').hidden=whole;
-  $('download').innerHTML=`<span>下载${whole?'整场':'选区'} MP4</span>`+icon('download');
+  $('download').innerHTML=`<span>导出${whole?'整场':''}</span>`+icon('download');
   $('download').hidden=page!=='edit';$('download').disabled=busy||!ready;
   $('cancel').hidden=!busy;$('progress').hidden=!busy;$('launcher').dataset.busy=busy;$('cancel').disabled=false;updateFeedback();
  }
