@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.5.1
+// @version      2.6.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -30,7 +30,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.5.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.6.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -1123,24 +1123,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     flush();
     if (!groups.length) throw new Error("这个时间段尚无可下载的视频分片，请调整时间或稍后重试。");
     return { groups, duration: total };
-  }
-  async function mapConcurrent(items, concurrency, task, signal) {
-    const result = new Array(items.length);
-    let cursor = 0, failed = false;
-    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (!failed && cursor < items.length) {
-        signal?.throwIfAborted();
-        const index = cursor++;
-        try {
-          result[index] = await task(items[index], index);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    });
-    await Promise.all(workers);
-    return result;
   }
   function selectPlaylistRange(parsed, start, end) {
     const plans = [];
@@ -19054,9 +19036,9 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
           duration: overrideDuration
         };
       }
-      const mediaDuration2 = this.media.duration;
+      const mediaDuration = this.media.duration;
       const msDuration = isFiniteNumber(mediaSource.duration) ? mediaSource.duration : 0;
-      if (playlistEnd > msDuration && playlistEnd > mediaDuration2 || !isFiniteNumber(mediaDuration2)) {
+      if (playlistEnd > msDuration && playlistEnd > mediaDuration || !isFiniteNumber(mediaDuration)) {
         return {
           duration: playlistEnd
         };
@@ -19291,10 +19273,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
         this.shiftAndExecuteNext(type);
         return;
       }
-      const mediaDuration2 = isFiniteNumber(media.duration) ? media.duration : Infinity;
+      const mediaDuration = isFiniteNumber(media.duration) ? media.duration : Infinity;
       const msDuration = isFiniteNumber(mediaSource.duration) ? mediaSource.duration : Infinity;
       const removeStart = Math.max(0, startOffset);
-      const removeEnd = Math.min(endOffset, mediaDuration2, msDuration);
+      const removeEnd = Math.min(endOffset, mediaDuration, msDuration);
       if (removeEnd > removeStart && (!track.ending || track.ended)) {
         track.ended = false;
         this.log(`Removing [${removeStart},${removeEnd}] from the ${type} SourceBuffer`);
@@ -34814,6 +34796,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   var lerp = (from, to, t) => {
     return from + (to - from) * t;
   };
+  var modEuclid = (value, modulus) => {
+    return value - Math.floor(value / modulus) * modulus;
+  };
   var UNDETERMINED_LANGUAGE = "und";
   var roundIfAlmostInteger = (value) => {
     const rounded = Math.round(value);
@@ -35549,6 +35534,32 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   var findAacFrequencyIndex = (sampleRate) => {
     const index = aacFrequencyTable.indexOf(sampleRate);
     return index === -1 ? 15 : index;
+  };
+  var buildAdtsHeaderTemplate = (config) => {
+    const header = new Uint8Array(7);
+    const bitstream = new Bitstream(header);
+    const { coreObjectType, frequencyIndex, channelConfiguration } = config;
+    const profile = coreObjectType - 1;
+    bitstream.writeBits(12, 4095);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(2, 0);
+    bitstream.writeBits(1, 1);
+    bitstream.writeBits(2, profile);
+    bitstream.writeBits(4, frequencyIndex);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(3, channelConfiguration);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.writeBits(1, 0);
+    bitstream.skipBits(13);
+    bitstream.writeBits(11, 2047);
+    bitstream.writeBits(2, 0);
+    return { header, bitstream };
+  };
+  var writeAdtsFrameLength = (bitstream, frameLength) => {
+    bitstream.pos = 30;
+    bitstream.writeBits(13, frameLength);
   };
 
   // node_modules/mediabunny/dist/modules/shared/ac3-misc.js
@@ -45285,102 +45296,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     void reader.cancel().catch(() => {
     });
   }) : null;
-  var BlobSource = class extends Source {
-    /**
-     * Creates a new {@link BlobSource} backed by the specified
-     * [`Blob`](https://developer.mozilla.org/en-US/docs/Web/API/Blob).
-     */
-    constructor(blob, options = {}) {
-      if (!(blob instanceof Blob)) {
-        throw new TypeError("blob must be a Blob.");
-      }
-      if (!options || typeof options !== "object") {
-        throw new TypeError("options must be an object.");
-      }
-      if (options.maxCacheSize !== void 0 && (!isNumber(options.maxCacheSize) || options.maxCacheSize < 0)) {
-        throw new TypeError("options.maxCacheSize, when provided, must be a non-negative number.");
-      }
-      if (options.useStreamReader !== void 0 && typeof options.useStreamReader !== "boolean") {
-        throw new TypeError("options.useStreamReader, when provided, must be a boolean.");
-      }
-      if (options.handleUnhandledError !== void 0 && typeof options.handleUnhandledError !== "function") {
-        throw new TypeError("options.handleUnhandledError, when provided, must be a function.");
-      }
-      super();
-      this._readers = /* @__PURE__ */ new WeakMap();
-      this._blob = blob;
-      this._options = options;
-      this._orchestrator = new ReadOrchestrator({
-        maxCacheSize: options.maxCacheSize ?? 8 * 2 ** 20,
-        maxWorkerCount: 4,
-        runWorker: this._runWorker.bind(this),
-        onIdleWorkerRemoved: (worker) => {
-          const reader = this._readers.get(worker);
-          if (reader) {
-            this._readers.delete(worker);
-            blobReaderRegistry?.unregister(worker);
-            void reader.cancel().catch(() => {
-            });
-          }
-        },
-        prefetchProfile: PREFETCH_PROFILES.fileSystem,
-        handleUnhandledError: options.handleUnhandledError
-      });
-      this._orchestrator.fileSize = blob.size;
-    }
-    /** @internal */
-    _getFileSize() {
-      return this._orchestrator.fileSize;
-    }
-    /** @internal */
-    _read(start, end, minReadPosition, maxReadPosition) {
-      return this._orchestrator.read(start, end, minReadPosition, maxReadPosition);
-    }
-    /** @internal */
-    async _runWorker(worker) {
-      assert(worker.strictTarget);
-      let reader = this._readers.get(worker);
-      if (reader === void 0) {
-        if ("stream" in this._blob && !isWebKit() && this._options.useStreamReader !== false) {
-          const slice = this._blob.slice(worker.currentPos);
-          reader = slice.stream().getReader();
-          blobReaderRegistry?.register(worker, reader, worker);
-        } else {
-          reader = null;
-        }
-        this._readers.set(worker, reader);
-      }
-      while (worker.currentPos < worker.targetPos && !worker.aborted) {
-        if (reader) {
-          const { done, value } = await reader.read();
-          if (done) {
-            this._orchestrator.onWorkerFinished(worker);
-            throw new Error("Blob reader stopped unexpectedly before all requested data was read.");
-          }
-          if (worker.aborted) {
-            break;
-          }
-          this._dispatchRead(worker.currentPos, worker.currentPos + value.length);
-          this._orchestrator.supplyWorkerData(worker, value);
-        } else {
-          const data = await this._blob.slice(worker.currentPos, worker.targetPos).arrayBuffer();
-          if (worker.aborted) {
-            break;
-          }
-          this._dispatchRead(worker.currentPos, worker.currentPos + data.byteLength);
-          this._orchestrator.supplyWorkerData(worker, new Uint8Array(data));
-        }
-      }
-      this._orchestrator.signalWorkerStoppedRunning(worker);
-      if (worker.aborted) {
-        await reader?.cancel();
-      }
-    }
-    /** @internal */
-    _dispose() {
-      this._orchestrator.dispose();
-    }
-  };
   var URL_SOURCE_MIN_LOAD_AMOUNT = 0.5 * 2 ** 20;
   var CustomSource = class extends Source {
     /** Creates a new {@link CustomSource} whose behavior is specified by `options`.  */
@@ -54076,15 +53991,15 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     return maxEndTimestamp - minTimestamp;
   };
   var trak = (trackData, creationTime) => {
-    const trackMetadata = getTrackMetadata(trackData);
+    const trackMetadata2 = getTrackMetadata(trackData);
     const needsEditList = trackData.startTimestampOffset !== null && trackData.startTimestampOffset !== 0;
     return box("trak", void 0, [
       tkhd(trackData, creationTime),
       needsEditList ? edts(trackData) : null,
       mdia(trackData, creationTime),
-      trackMetadata.name !== void 0 ? box("udta", void 0, [
+      trackMetadata2.name !== void 0 ? box("udta", void 0, [
         box("name", [
-          ...textEncoder.encode(trackMetadata.name)
+          ...textEncoder.encode(trackMetadata2.name)
         ])
       ]) : null
     ]);
@@ -54139,8 +54054,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     assert(offset !== null);
     if (offset > 0) {
       const startOffset = intoTimescale(offset, GLOBAL_TIMESCALE);
-      const mediaDuration2 = intoTimescale(presentationSpan(trackData), GLOBAL_TIMESCALE);
-      const needs64Bits = !isU32(startOffset) || !isU32(mediaDuration2);
+      const mediaDuration = intoTimescale(presentationSpan(trackData), GLOBAL_TIMESCALE);
+      const needs64Bits = !isU32(startOffset) || !isU32(mediaDuration);
       const u32OrU64 = needs64Bits ? u64 : u32;
       const i32OrI64 = needs64Bits ? i64 : i32;
       return box("edts", void 0, [
@@ -54155,7 +54070,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           fixed_16_16(1),
           // Media rate
           // #2
-          u32OrU64(mediaDuration2),
+          u32OrU64(mediaDuration),
           // Segment duration
           i32OrI64(0),
           // Media time
@@ -54165,8 +54080,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       ]);
     } else {
       const mediaTime = intoTimescale(-offset, trackData.timescale);
-      const mediaDuration2 = Math.max(0, intoTimescale(presentationSpan(trackData), GLOBAL_TIMESCALE) + intoTimescale(offset, GLOBAL_TIMESCALE));
-      const needs64Bits = !isI32(mediaTime) || !isU32(mediaDuration2);
+      const mediaDuration = Math.max(0, intoTimescale(presentationSpan(trackData), GLOBAL_TIMESCALE) + intoTimescale(offset, GLOBAL_TIMESCALE));
+      const needs64Bits = !isI32(mediaTime) || !isU32(mediaDuration);
       const u32OrU64 = needs64Bits ? u64 : u32;
       const i32OrI64 = needs64Bits ? i64 : i32;
       return box("edts", void 0, [
@@ -54174,7 +54089,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           u32(1),
           // Entry count
           // #1
-          u32OrU64(mediaDuration2),
+          u32OrU64(mediaDuration),
           // Segment duration
           i32OrI64(mediaTime),
           // Media time
@@ -57037,6 +56952,592 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
   };
 
+  // node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-muxer.js
+  /*!
+   * Copyright (c) 2026-present, Vanilagy and contributors
+   *
+   * This Source Code Form is subject to the terms of the Mozilla Public
+   * License, v. 2.0. If a copy of the MPL was not distributed with this
+   * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+   */
+  var PAT_PID = 0;
+  var PMT_PID = 4096;
+  var FIRST_TRACK_PID = 256;
+  var VIDEO_STREAM_ID_BASE = 224;
+  var AUDIO_STREAM_ID_BASE = 192;
+  var AVC_AUD_NAL = new Uint8Array([9, 240]);
+  var HEVC_AUD_NAL = new Uint8Array([70, 1]);
+  var MpegTsMuxer = class extends Muxer {
+    constructor(output, format2) {
+      super(output);
+      this.trackDatas = [];
+      this.tablesWritten = false;
+      this.continuityCounters = /* @__PURE__ */ new Map();
+      this.packetBuffer = new Uint8Array(TS_PACKET_SIZE);
+      this.packetView = toDataView(this.packetBuffer);
+      this.allTracksKnown = promiseWithResolvers();
+      this.videoTrackIndex = 0;
+      this.audioTrackIndex = 0;
+      this.adaptationFieldBuffer = new Uint8Array(184);
+      this.payloadBuffer = new Uint8Array(184);
+      this.format = format2;
+    }
+    async start() {
+      const release = await this.mutex.acquire();
+      this.writer = await this.output._getRootWriter(true);
+      release();
+    }
+    async getMimeType() {
+      await this.allTracksKnown.promise;
+      return buildMpegTsMimeType(this.trackDatas.map((x) => x.codecString));
+    }
+    getVideoTrackData(track, meta) {
+      const existingTrackData = this.trackDatas.find((x) => x.track === track);
+      if (existingTrackData) {
+        return existingTrackData;
+      }
+      validateVideoChunkMetadata(meta, track.source._codec);
+      assert(meta?.decoderConfig);
+      const codec = track.source._codec;
+      assert(codec === "avc" || codec === "hevc");
+      const streamType = codec === "avc" ? 27 : 36;
+      const pid = FIRST_TRACK_PID + this.trackDatas.length;
+      const streamId = VIDEO_STREAM_ID_BASE + this.videoTrackIndex++;
+      const newTrackData = {
+        track,
+        pid,
+        streamType,
+        streamId,
+        codecString: meta.decoderConfig.codec,
+        timestampProcessingQueue: [],
+        packetQueue: [],
+        inputIsAnnexB: null,
+        inputIsAdts: null,
+        avcDecoderConfig: null,
+        hevcDecoderConfig: null,
+        adtsHeader: null,
+        adtsHeaderBitstream: null,
+        firstPacketWritten: false,
+        closed: false
+      };
+      this.trackDatas.push(newTrackData);
+      if (this.allTracksAreKnown()) {
+        this.allTracksKnown.resolve();
+      }
+      return newTrackData;
+    }
+    getAudioTrackData(track, meta) {
+      const existingTrackData = this.trackDatas.find((x) => x.track === track);
+      if (existingTrackData) {
+        return existingTrackData;
+      }
+      validateAudioChunkMetadata(meta, track.source._codec);
+      assert(meta?.decoderConfig);
+      const codec = track.source._codec;
+      assert(codec === "aac" || codec === "mp3" || codec === "ac3" || codec === "eac3" || codec === "dts");
+      let streamType;
+      let streamId;
+      switch (codec) {
+        case "aac":
+          {
+            streamType = 15;
+            streamId = AUDIO_STREAM_ID_BASE + this.audioTrackIndex++;
+          }
+          ;
+          break;
+        case "mp3":
+          {
+            streamType = 3;
+            streamId = AUDIO_STREAM_ID_BASE + this.audioTrackIndex++;
+          }
+          ;
+          break;
+        case "ac3":
+          {
+            streamType = 129;
+            streamId = 189;
+          }
+          ;
+          break;
+        case "eac3":
+          {
+            streamType = 135;
+            streamId = 189;
+          }
+          ;
+          break;
+        case "dts":
+          {
+            streamType = 130;
+            streamId = 189;
+          }
+          ;
+          break;
+      }
+      const pid = FIRST_TRACK_PID + this.trackDatas.length;
+      const newTrackData = {
+        track,
+        pid,
+        streamType,
+        streamId,
+        codecString: meta.decoderConfig.codec,
+        timestampProcessingQueue: [],
+        packetQueue: [],
+        inputIsAnnexB: null,
+        inputIsAdts: null,
+        avcDecoderConfig: null,
+        hevcDecoderConfig: null,
+        adtsHeader: null,
+        adtsHeaderBitstream: null,
+        firstPacketWritten: false,
+        closed: false
+      };
+      this.trackDatas.push(newTrackData);
+      if (this.allTracksAreKnown()) {
+        this.allTracksKnown.resolve();
+      }
+      return newTrackData;
+    }
+    async addEncodedVideoPacket(track, packet, meta) {
+      const release = await this.mutex.acquire();
+      try {
+        const trackData = this.getVideoTrackData(track, meta);
+        this.validateTimestamp(trackData.track, packet.timestamp, packet.type === "key");
+        const preparedData = this.prepareVideoPacket(trackData, packet, meta);
+        if (packet.type === "key") {
+          await this.flushTimestampQueue(trackData);
+        }
+        trackData.timestampProcessingQueue.push({
+          data: preparedData,
+          presentationTimestamp: packet.timestamp,
+          decodeTimestamp: null,
+          isKeyframe: packet.type === "key"
+        });
+      } finally {
+        release();
+      }
+    }
+    async addEncodedAudioPacket(track, packet, meta) {
+      const release = await this.mutex.acquire();
+      try {
+        const trackData = this.getAudioTrackData(track, meta);
+        this.validateTimestamp(trackData.track, packet.timestamp, packet.type === "key");
+        const preparedData = this.prepareAudioPacket(trackData, packet, meta);
+        if (packet.type === "key") {
+          await this.flushTimestampQueue(trackData);
+        }
+        trackData.timestampProcessingQueue.push({
+          data: preparedData,
+          presentationTimestamp: packet.timestamp,
+          decodeTimestamp: null,
+          isKeyframe: packet.type === "key"
+        });
+      } finally {
+        release();
+      }
+    }
+    async addSubtitleCue() {
+      throw new Error("MPEG-TS does not support subtitles.");
+    }
+    prepareVideoPacket(trackData, packet, meta) {
+      const codec = trackData.track.source._codec;
+      if (trackData.inputIsAnnexB === null) {
+        const description = meta?.decoderConfig?.description;
+        trackData.inputIsAnnexB = !description;
+        if (!trackData.inputIsAnnexB) {
+          const bytes2 = toUint8Array(description);
+          if (codec === "avc") {
+            trackData.avcDecoderConfig = deserializeAvcDecoderConfigurationRecord(bytes2);
+          } else {
+            trackData.hevcDecoderConfig = deserializeHevcDecoderConfigurationRecord(bytes2);
+          }
+        }
+      }
+      if (trackData.inputIsAnnexB) {
+        return this.prepareAnnexBVideoPacket(packet.data, codec);
+      } else {
+        return this.prepareLengthPrefixedVideoPacket(trackData, packet, codec);
+      }
+    }
+    prepareAnnexBVideoPacket(data, codec) {
+      const nalUnits = [];
+      for (const loc of iterateNalUnitsInAnnexB(data)) {
+        const nalUnit = data.subarray(loc.offset, loc.offset + loc.length);
+        const isAud = codec === "avc" ? extractNalUnitTypeForAvc(nalUnit[0]) === AvcNalUnitType.AUD : extractNalUnitTypeForHevc(nalUnit[0]) === HevcNalUnitType.AUD_NUT;
+        if (!isAud) {
+          nalUnits.push(nalUnit);
+        }
+      }
+      const aud = codec === "avc" ? AVC_AUD_NAL : HEVC_AUD_NAL;
+      nalUnits.unshift(aud);
+      return concatNalUnitsInAnnexB(nalUnits);
+    }
+    prepareLengthPrefixedVideoPacket(trackData, packet, codec) {
+      const data = packet.data;
+      const lengthSize = codec === "avc" ? trackData.avcDecoderConfig.lengthSizeMinusOne + 1 : trackData.hevcDecoderConfig.lengthSizeMinusOne + 1;
+      const nalUnits = [];
+      for (const loc of iterateNalUnitsInLengthPrefixed(data, lengthSize)) {
+        const nalUnit = data.subarray(loc.offset, loc.offset + loc.length);
+        const isAud = codec === "avc" ? extractNalUnitTypeForAvc(nalUnit[0]) === AvcNalUnitType.AUD : extractNalUnitTypeForHevc(nalUnit[0]) === HevcNalUnitType.AUD_NUT;
+        if (!isAud) {
+          nalUnits.push(nalUnit);
+        }
+      }
+      if (packet.type === "key") {
+        if (codec === "avc") {
+          const config = trackData.avcDecoderConfig;
+          for (const pps of config.pictureParameterSets) {
+            nalUnits.unshift(pps);
+          }
+          for (const sps of config.sequenceParameterSets) {
+            nalUnits.unshift(sps);
+          }
+        } else {
+          const config = trackData.hevcDecoderConfig;
+          for (const arr of config.arrays) {
+            if (arr.nalUnitType === HevcNalUnitType.PPS_NUT) {
+              for (const nal of arr.nalUnits) {
+                nalUnits.unshift(nal);
+              }
+            }
+          }
+          for (const arr of config.arrays) {
+            if (arr.nalUnitType === HevcNalUnitType.SPS_NUT) {
+              for (const nal of arr.nalUnits) {
+                nalUnits.unshift(nal);
+              }
+            }
+          }
+          for (const arr of config.arrays) {
+            if (arr.nalUnitType === HevcNalUnitType.VPS_NUT) {
+              for (const nal of arr.nalUnits) {
+                nalUnits.unshift(nal);
+              }
+            }
+          }
+        }
+      }
+      const aud = codec === "avc" ? AVC_AUD_NAL : HEVC_AUD_NAL;
+      nalUnits.unshift(aud);
+      return concatNalUnitsInAnnexB(nalUnits);
+    }
+    prepareAudioPacket(trackData, packet, meta) {
+      const codec = trackData.track.source._codec;
+      if (codec === "mp3" || codec === "ac3" || codec === "eac3" || codec === "dts") {
+        return packet.data;
+      }
+      if (trackData.inputIsAdts === null) {
+        const description = meta?.decoderConfig?.description;
+        trackData.inputIsAdts = !description;
+        if (!trackData.inputIsAdts) {
+          const config = parseAacAudioSpecificConfig(toUint8Array(description));
+          const template = buildAdtsHeaderTemplate(config);
+          trackData.adtsHeader = template.header;
+          trackData.adtsHeaderBitstream = template.bitstream;
+        }
+      }
+      if (trackData.inputIsAdts) {
+        return packet.data;
+      }
+      assert(trackData.adtsHeader);
+      assert(trackData.adtsHeaderBitstream);
+      const header = trackData.adtsHeader;
+      const frameLength = packet.data.byteLength + header.byteLength;
+      writeAdtsFrameLength(trackData.adtsHeaderBitstream, frameLength);
+      const result = new Uint8Array(frameLength);
+      result.set(header, 0);
+      result.set(packet.data, header.byteLength);
+      return result;
+    }
+    allTracksAreKnown() {
+      for (const track of this.output.tracks) {
+        if (!track.source._closed && !this.trackDatas.some((x) => x.track === track)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    async flushTimestampQueue(trackData, alsoInterleave = true) {
+      if (trackData.timestampProcessingQueue.length === 0) {
+        return;
+      }
+      const sortedTimestamps = trackData.timestampProcessingQueue.map((packet) => packet.presentationTimestamp).sort((a, b) => a - b);
+      for (let i = 0; i < trackData.timestampProcessingQueue.length; i++) {
+        const queuedPacket = trackData.timestampProcessingQueue[i];
+        queuedPacket.decodeTimestamp = sortedTimestamps[i];
+        trackData.packetQueue.push(queuedPacket);
+      }
+      trackData.timestampProcessingQueue.length = 0;
+      if (alsoInterleave) {
+        await this.interleavePackets();
+      }
+    }
+    async interleavePackets(isFinalCall = false) {
+      if (!this.tablesWritten) {
+        if (!this.allTracksAreKnown() && !isFinalCall) {
+          return;
+        }
+        this.writeTables();
+      }
+      outer: while (true) {
+        let trackWithMinTimestamp = null;
+        let minTimestamp = Infinity;
+        for (const trackData of this.trackDatas) {
+          if (!isFinalCall && trackData.packetQueue.length === 0 && !trackData.closed) {
+            break outer;
+          }
+          if (trackData.packetQueue.length > 0 && trackData.packetQueue[0].presentationTimestamp < minTimestamp) {
+            trackWithMinTimestamp = trackData;
+            minTimestamp = trackData.packetQueue[0].presentationTimestamp;
+          }
+        }
+        if (!trackWithMinTimestamp) {
+          break;
+        }
+        const queuedPacket = trackWithMinTimestamp.packetQueue.shift();
+        this.writePesPacket(trackWithMinTimestamp, queuedPacket);
+      }
+      if (!isFinalCall) {
+        await this.writer.flush();
+      }
+    }
+    writeTables() {
+      assert(!this.tablesWritten);
+      this.writePsiSection(PAT_PID, PAT_SECTION);
+      this.writePsiSection(PMT_PID, buildPmt(this.trackDatas));
+      this.tablesWritten = true;
+    }
+    writePsiSection(pid, section) {
+      let offset = 0;
+      let isFirst = true;
+      while (offset < section.length) {
+        const pointerFieldSize = isFirst ? 1 : 0;
+        const availablePayload = 184 - pointerFieldSize;
+        const remainingData = section.length - offset;
+        const chunkSize = Math.min(availablePayload, remainingData);
+        let payload;
+        if (isFirst) {
+          payload = this.payloadBuffer.subarray(0, 1 + chunkSize);
+          payload[0] = 0;
+          payload.set(section.subarray(offset, offset + chunkSize), 1);
+        } else {
+          payload = section.subarray(offset, offset + chunkSize);
+        }
+        this.writeTsPacket(pid, isFirst, null, payload);
+        offset += chunkSize;
+        isFirst = false;
+      }
+    }
+    writePesPacket(trackData, queuedPacket) {
+      const includeDts = trackData.track.type === "video";
+      const headerDataLength = includeDts ? 10 : 5;
+      const pesHeaderBuffer = new Uint8Array(9 + headerDataLength);
+      const pesView = toDataView(pesHeaderBuffer);
+      const ptsDtsBitstream = new Bitstream(pesHeaderBuffer.subarray(9));
+      setUint24(pesView, 0, 1, false);
+      pesHeaderBuffer[3] = trackData.streamId;
+      const pesPacketLength = trackData.track.type === "video" ? 0 : Math.min(8 + queuedPacket.data.length, 65535);
+      pesView.setUint16(4, pesPacketLength, false);
+      pesView.setUint8(6, 132);
+      pesView.setUint8(7, includeDts ? 192 : 128);
+      pesView.setUint8(8, headerDataLength);
+      const unwrappedPts = Math.round(queuedPacket.presentationTimestamp * TIMESCALE);
+      const pts = modEuclid(unwrappedPts, TIMESTAMP_MODULUS);
+      ptsDtsBitstream.pos = 0;
+      ptsDtsBitstream.writeBits(4, includeDts ? 3 : 2);
+      ptsDtsBitstream.writeBits(3, Math.floor(pts / 2 ** 30));
+      ptsDtsBitstream.writeBits(1, 1);
+      ptsDtsBitstream.writeBits(15, Math.floor(pts / 2 ** 15) % 2 ** 15);
+      ptsDtsBitstream.writeBits(1, 1);
+      ptsDtsBitstream.writeBits(15, pts % 2 ** 15);
+      ptsDtsBitstream.writeBits(1, 1);
+      if (includeDts) {
+        assert(queuedPacket.decodeTimestamp !== null);
+        const unwrappedDts = Math.round(queuedPacket.decodeTimestamp * TIMESCALE);
+        const dts = modEuclid(unwrappedDts, TIMESTAMP_MODULUS);
+        ptsDtsBitstream.writeBits(4, 1);
+        ptsDtsBitstream.writeBits(3, Math.floor(dts / 2 ** 30));
+        ptsDtsBitstream.writeBits(1, 1);
+        ptsDtsBitstream.writeBits(15, Math.floor(dts / 2 ** 15) % 2 ** 15);
+        ptsDtsBitstream.writeBits(1, 1);
+        ptsDtsBitstream.writeBits(15, dts % 2 ** 15);
+        ptsDtsBitstream.writeBits(1, 1);
+      }
+      const totalLength = pesHeaderBuffer.length + queuedPacket.data.length;
+      let offset = 0;
+      let isFirstTsPacket = true;
+      while (offset < totalLength) {
+        const pusi = isFirstTsPacket;
+        const remainingData = totalLength - offset;
+        const randomAccessIndicator = isFirstTsPacket && queuedPacket.isKeyframe;
+        const discontinuityIndicator = isFirstTsPacket && !trackData.firstPacketWritten;
+        const basePaddingNeeded = Math.max(0, 184 - remainingData);
+        let adaptationFieldSize;
+        if (randomAccessIndicator || discontinuityIndicator) {
+          adaptationFieldSize = Math.max(2, basePaddingNeeded);
+        } else {
+          adaptationFieldSize = basePaddingNeeded;
+        }
+        let adaptationField = null;
+        if (adaptationFieldSize > 0) {
+          const buf = this.adaptationFieldBuffer;
+          if (adaptationFieldSize === 1) {
+            buf[0] = 0;
+          } else {
+            buf[0] = adaptationFieldSize - 1;
+            buf[1] = Number(discontinuityIndicator) << 7 | Number(randomAccessIndicator) << 6;
+            buf.fill(255, 2, adaptationFieldSize);
+          }
+          adaptationField = buf.subarray(0, adaptationFieldSize);
+        }
+        const payloadSize = Math.min(184 - adaptationFieldSize, remainingData);
+        const payload = this.payloadBuffer.subarray(0, payloadSize);
+        let payloadOffset = 0;
+        if (offset < pesHeaderBuffer.length) {
+          const headerBytes = Math.min(pesHeaderBuffer.length - offset, payloadSize);
+          payload.set(pesHeaderBuffer.subarray(offset, offset + headerBytes), 0);
+          payloadOffset = headerBytes;
+        }
+        const dataStart = Math.max(0, offset - pesHeaderBuffer.length);
+        const dataEnd = dataStart + (payloadSize - payloadOffset);
+        if (payloadOffset < payloadSize) {
+          payload.set(queuedPacket.data.subarray(dataStart, dataEnd), payloadOffset);
+        }
+        this.writeTsPacket(trackData.pid, pusi, adaptationField, payload);
+        offset += payloadSize;
+        isFirstTsPacket = false;
+      }
+      trackData.firstPacketWritten = true;
+    }
+    writeTsPacket(pid, pusi, adaptationField, payload) {
+      const cc = this.continuityCounters.get(pid) ?? 0;
+      const hasPayload = payload.length > 0;
+      const adaptCtrl = adaptationField ? hasPayload ? 3 : 2 : hasPayload ? 1 : 0;
+      this.packetBuffer[0] = 71;
+      this.packetView.setUint16(1, (pusi ? 16384 : 0) | pid & 8191, false);
+      this.packetBuffer[3] = adaptCtrl << 4 | cc & 15;
+      if (hasPayload) {
+        this.continuityCounters.set(pid, cc + 1 & 15);
+      }
+      let offset = 4;
+      if (adaptationField) {
+        this.packetBuffer.set(adaptationField, offset);
+        offset += adaptationField.length;
+      }
+      this.packetBuffer.set(payload, offset);
+      offset += payload.length;
+      if (offset < TS_PACKET_SIZE) {
+        this.packetBuffer.fill(255, offset);
+      }
+      const startPos = this.writer.getPos();
+      this.writer.write(this.packetBuffer);
+      if (this.format._options.onPacket) {
+        this.format._options.onPacket(this.packetBuffer.slice(), startPos);
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    async onTrackClose(track) {
+      const release = await this.mutex.acquire();
+      const trackData = this.trackDatas.find((x) => x.track === track);
+      if (trackData) {
+        trackData.closed = true;
+        await this.flushTimestampQueue(trackData, false);
+      }
+      if (this.allTracksAreKnown()) {
+        this.allTracksKnown.resolve();
+      }
+      await this.interleavePackets();
+      release();
+    }
+    async finalize() {
+      const release = await this.mutex.acquire();
+      this.allTracksKnown.resolve();
+      for (const trackData of this.trackDatas) {
+        trackData.closed = true;
+        await this.flushTimestampQueue(trackData, false);
+      }
+      await this.interleavePackets(true);
+      release();
+    }
+  };
+  var MPEG_TS_CRC_POLYNOMIAL = 79764919;
+  var MPEG_TS_CRC_TABLE = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let crc = n << 24;
+    for (let k = 0; k < 8; k++) {
+      crc = crc & 2147483648 ? crc << 1 ^ MPEG_TS_CRC_POLYNOMIAL : crc << 1;
+    }
+    MPEG_TS_CRC_TABLE[n] = crc >>> 0 & 4294967295;
+  }
+  var computeMpegTsCrc32 = (data) => {
+    let crc = 4294967295;
+    for (let i = 0; i < data.length; i++) {
+      const byte = data[i];
+      crc = (crc << 8 ^ MPEG_TS_CRC_TABLE[crc >>> 24 ^ byte]) >>> 0;
+    }
+    return crc;
+  };
+  var PAT_SECTION = new Uint8Array(16);
+  {
+    const view3 = toDataView(PAT_SECTION);
+    PAT_SECTION[0] = 0;
+    view3.setUint16(1, 45069, false);
+    view3.setUint16(3, 1, false);
+    PAT_SECTION[5] = 193;
+    PAT_SECTION[6] = 0;
+    PAT_SECTION[7] = 0;
+    view3.setUint16(8, 1, false);
+    view3.setUint16(10, 57344 | PMT_PID & 8191, false);
+    view3.setUint32(12, computeMpegTsCrc32(PAT_SECTION.subarray(0, 12)), false);
+  }
+  var buildPmt = (trackDatas) => {
+    let totalEsBytes = 0;
+    for (const trackData of trackDatas) {
+      totalEsBytes += 5;
+      if (trackData.streamType === 129) {
+        totalEsBytes += AC3_REGISTRATION_DESCRIPTOR.length;
+      } else if (trackData.streamType === 135) {
+        totalEsBytes += EAC3_REGISTRATION_DESCRIPTOR.length;
+      }
+    }
+    const sectionLength = 9 + totalEsBytes + 4;
+    const section = new Uint8Array(3 + sectionLength - 4);
+    const view3 = toDataView(section);
+    section[0] = 2;
+    view3.setUint16(1, 45056 | sectionLength & 4095, false);
+    view3.setUint16(3, 1, false);
+    section[5] = 193;
+    section[6] = 0;
+    section[7] = 0;
+    view3.setUint16(8, 57344 | 8191, false);
+    view3.setUint16(10, 61440, false);
+    let offset = 12;
+    for (const trackData of trackDatas) {
+      section[offset++] = trackData.streamType;
+      view3.setUint16(offset, 57344 | trackData.pid & 8191, false);
+      offset += 2;
+      if (trackData.streamType === 129) {
+        view3.setUint16(offset, 61440 | AC3_REGISTRATION_DESCRIPTOR.length, false);
+        offset += 2;
+        section.set(AC3_REGISTRATION_DESCRIPTOR, offset);
+        offset += AC3_REGISTRATION_DESCRIPTOR.length;
+      } else if (trackData.streamType === 135) {
+        view3.setUint16(offset, 61440 | EAC3_REGISTRATION_DESCRIPTOR.length, false);
+        offset += 2;
+        section.set(EAC3_REGISTRATION_DESCRIPTOR, offset);
+        offset += EAC3_REGISTRATION_DESCRIPTOR.length;
+      } else {
+        view3.setUint16(offset, 61440, false);
+        offset += 2;
+      }
+    }
+    const crc = computeMpegTsCrc32(section);
+    const result = new Uint8Array(section.length + 4);
+    result.set(section, 0);
+    toDataView(result).setUint32(section.length, crc, false);
+    return result;
+  };
+
   // node_modules/mediabunny/dist/modules/src/resample.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
@@ -58846,6 +59347,59 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         return " Switching to MP4 will grant support for this codec.";
       }
       return "";
+    }
+  };
+  var MpegTsOutputFormat = class extends OutputFormat {
+    /** Creates a new {@link MpegTsOutputFormat} configured with the specified `options`. */
+    constructor(options = {}) {
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options must be an object.");
+      }
+      if (options.onPacket !== void 0 && typeof options.onPacket !== "function") {
+        throw new TypeError("options.onPacket, when provided, must be a function.");
+      }
+      super();
+      this._options = options;
+    }
+    /** @internal */
+    _createMuxer(output) {
+      return new MpegTsMuxer(output, this);
+    }
+    /** @internal */
+    get _name() {
+      return "MPEG-TS";
+    }
+    getSupportedTrackCounts() {
+      const maxVideo = 16;
+      const maxAudio = 32;
+      const maxTotal = maxVideo + maxAudio;
+      return {
+        video: { min: 0, max: maxVideo },
+        audio: { min: 0, max: maxAudio },
+        subtitle: { min: 0, max: 0 },
+        total: { min: 0, max: maxTotal }
+      };
+    }
+    get fileExtension() {
+      return ".ts";
+    }
+    get mimeType() {
+      return "video/MP2T";
+    }
+    getSupportedCodecs() {
+      return [
+        ...VIDEO_CODECS.filter((codec) => ["avc", "hevc"].includes(codec)),
+        ...AUDIO_CODECS.filter((codec) => ["aac", "mp3", "ac3", "eac3", "dts"].includes(codec))
+      ];
+    }
+    get supportsVideoRotationMetadata() {
+      return false;
+    }
+    get supportsTimestampedMediaData() {
+      return true;
+    }
+    get negativeTimestampSupport() {
+      return "prefer-non-negative";
     }
   };
 
@@ -60743,82 +61297,526 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   globalThis[MEDIABUNNY_LOADED_SYMBOL] = true;
 
   // src/media/encoding.js
-  async function preciseVideoOptions(track) {
-    const [width, height, stats] = await Promise.all([
+  var VIDEO_STATS_PACKETS = 120;
+  async function supportsConfig(config, signal) {
+    signal?.throwIfAborted();
+    if (typeof VideoEncoder === "undefined") return false;
+    try {
+      return (await VideoEncoder.isConfigSupported(config)).supported;
+    } catch {
+      return false;
+    } finally {
+      signal?.throwIfAborted();
+    }
+  }
+  async function readVideoEncodingSettings(track, { signal } = {}) {
+    signal?.throwIfAborted();
+    const [width, height, displayWidth, displayHeight, stats, sourceDecoderConfig] = await Promise.all([
+      track.getCodedWidth(),
+      track.getCodedHeight(),
       track.getSquarePixelWidth(),
       track.getSquarePixelHeight(),
-      track.computePacketStats()
+      track.computePacketStats(VIDEO_STATS_PACKETS),
+      track.getDecoderConfig()
     ]);
-    const bitrate = Math.ceil(Math.max(stats.averageBitrate * 2, width * height * stats.averagePacketRate * 0.12));
-    const quality = new Quality({ bitrate });
-    const hardware = await canEncodeVideo("avc", { width, height, quality, hardwareAcceleration: "prefer-hardware" });
-    return { codec: "avc", quality, hardwareAcceleration: hardware ? "prefer-hardware" : "no-preference" };
-  }
-
-  // src/media/export.js
-  async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {
-  } } = {}) {
     signal?.throwIfAborted();
-    const input = new Input({ source: new BlobSource(blob), formats: [MP42, MPEG_TS] });
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
-    let conversion;
+    const bitrate = Math.round(stats.averageBitrate), frameRate = stats.averagePacketRate;
+    if (!(bitrate > 0 && Number.isFinite(bitrate) && frameRate > 0 && Number.isFinite(frameRate))) {
+      throw new Error("这段录像没有可用的视频码率或帧率信息，无法完成精确编码。");
+    }
+    const quality = new Quality({ bitrate, bitrateMode: "variable" });
+    const options = { codec: "avc", quality, latencyMode: "quality" };
+    const codec = sourceDecoderConfig?.codec.replace(/^avc3\./i, "avc1.");
+    const isAvc = /^avc1\.[\da-f]{6}$/i.test(codec ?? "");
+    let canSplice = false;
+    if (isAvc) {
+      for (const hardwareAcceleration of ["prefer-hardware", "no-preference"]) {
+        if (await supportsConfig({
+          codec,
+          width,
+          height,
+          displayWidth,
+          displayHeight,
+          bitrate,
+          framerate: frameRate,
+          bitrateMode: "variable",
+          latencyMode: "quality",
+          hardwareAcceleration,
+          avc: { format: "avc" }
+        }, signal)) {
+          Object.assign(options, { fullCodecString: codec, hardwareAcceleration });
+          canSplice = true;
+          break;
+        }
+      }
+    }
+    if (!canSplice) {
+      const hardware = await canEncodeVideo("avc", {
+        width,
+        height,
+        quality,
+        latencyMode: "quality",
+        hardwareAcceleration: "prefer-hardware"
+      });
+      signal?.throwIfAborted();
+      options.hardwareAcceleration = hardware ? "prefer-hardware" : "no-preference";
+    }
+    options.onEncoderConfig = (config) => {
+      config.framerate = frameRate;
+    };
+    return { width, height, bitrate, frameRate, sourceDecoderConfig, canSplice, encodingOptions: options };
+  }
+  async function* encodeVideoRange(track, { start, end, origin = 0, settings, signal }) {
+    settings ??= await readVideoEncodingSettings(track, { signal });
+    signal?.throwIfAborted();
+    const packets = [];
+    let decoderConfig, canceling;
+    const output = new Output({ format: new MpegTsOutputFormat(), target: new NullTarget() });
+    const source = new VideoSampleSource({ ...settings.encodingOptions, onEncodedPacket(packet, metadata) {
+      decoderConfig = metadata?.decoderConfig ?? decoderConfig;
+      packets.push({ packet, decoderConfig });
+    } });
+    output.addVideoTrack(source);
+    const samples = new VideoSampleSink(track).samples(start, end);
+    let rejectAbort;
+    const aborted = new Promise((_, reject) => {
+      rejectAbort = reject;
+    });
+    void aborted.catch(() => {
+    });
     const cancel = () => {
-      if (conversion) void conversion.cancel();
+      rejectAbort(signal.reason);
+      canceling ??= Promise.all([samples.return(), output.cancel()]);
+      void canceling.catch(() => {
+      });
     };
     signal?.addEventListener("abort", cancel, { once: true });
     try {
-      const options = { input, output, copy: precise ? false : { mode: "forced" }, showWarnings: false };
-      if (start !== void 0 || end !== void 0) options.trim = { start, end };
-      if (precise) {
-        options.video = preciseVideoOptions;
-        options.audio = { codec: "aac", bitrate: 192e3 };
+      await output.start();
+      let first = true;
+      for await (const sample of samples) {
+        try {
+          signal?.throwIfAborted();
+          const clippedStart = Math.max(start, sample.timestamp);
+          const clippedEnd = Math.min(end, sample.timestamp + sample.duration);
+          if (clippedEnd <= clippedStart) continue;
+          sample.setTimestamp(clippedStart - origin);
+          sample.setDuration(clippedEnd - clippedStart);
+          await Promise.race([source.add(sample, first ? { keyFrame: true } : void 0), aborted]);
+          first = false;
+        } finally {
+          sample.close();
+        }
+        while (packets.length) {
+          signal?.throwIfAborted();
+          yield packets.shift();
+        }
       }
-      conversion = await Conversion.init(options);
       signal?.throwIfAborted();
-      if (!conversion.isValid || conversion.discardedTracks.length) {
-        throw new Error(precise ? "当前浏览器无法完成这段录像的精确编码，请使用原画下载或更新 Chrome / Edge。" : "这段录像无法完整封装为 MP4，已停止导出，避免丢失声音或画面。");
+      await output.finalize();
+      while (packets.length) {
+        signal?.throwIfAborted();
+        yield packets.shift();
       }
-      conversion.onProgress = onProgress;
-      await conversion.execute();
-      signal?.throwIfAborted();
-      return new Blob([output.target.buffer], { type: "video/mp4" });
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      throw error;
     } finally {
       signal?.removeEventListener("abort", cancel);
+      await samples.return();
+      if (canceling) await canceling;
       if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
-      input.dispose();
+      packets.length = 0;
     }
   }
-  async function mediaDuration(blob) {
-    const input = new Input({ source: new BlobSource(blob), formats: [MP42] });
+
+  // src/media/avc-packets.js
+  var PARAMETER_SET_TYPES = /* @__PURE__ */ new Set([7, 8, 13]);
+  var EXTENDED_AVCC_PROFILES = /* @__PURE__ */ new Set([100, 110, 122, 144]);
+  var UnsupportedAvcError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "UnsupportedAvcError";
+    }
+  };
+  function bytesOf(value) {
+    return ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : new Uint8Array(value);
+  }
+  function sameBytes(left, right) {
+    return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
+  }
+  function avccUnits(data, lengthSize) {
+    const units = [];
+    for (let offset = 0; offset < data.byteLength; ) {
+      if (offset + lengthSize > data.byteLength) throw new Error("AVC 数据的长度字段不完整。");
+      let length = 0;
+      for (let i = 0; i < lengthSize; i++) length = length * 256 + data[offset++];
+      if (!length || offset + length > data.byteLength) throw new Error("AVC 数据长度与内容不符。");
+      units.push(data.subarray(offset, offset + length));
+      offset += length;
+    }
+    if (!units.length) throw new Error("AVC 数据包为空。");
+    return units;
+  }
+  function annexBUnits(data) {
+    const units = [];
+    let start = -1;
+    for (let index = 2; index < data.byteLength; index++) {
+      if (data[index] !== 1 || data[index - 1] !== 0 || data[index - 2] !== 0) continue;
+      let end2 = index - 2;
+      while (end2 > 0 && data[end2 - 1] === 0) end2--;
+      if (start >= 0) {
+        if (end2 <= start) throw new Error("AVC 数据包含空的 NAL 单元。");
+        units.push(data.subarray(start, end2));
+      } else if (end2 !== 0) {
+        throw new Error("AVC Annex B 数据的起始标记无效。");
+      }
+      start = index + 1;
+    }
+    if (start < 0) throw new Error("AVC Annex B 数据缺少起始标记。");
+    let end = data.byteLength;
+    while (end > start && data[end - 1] === 0) end--;
+    if (end <= start) throw new Error("AVC 数据包含空的 NAL 单元。");
+    units.push(data.subarray(start, end));
+    return units;
+  }
+  function readConfiguration(description) {
+    if (description.byteLength < 7 || description[0] !== 1) throw new Error("AVC 解码参数无效。");
+    const lengthSize = (description[4] & 3) + 1;
+    if (lengthSize === 3) throw new UnsupportedAvcError("这段录像使用了不支持的 AVC 长度格式。");
+    let offset = 6;
+    const parameterSets = [];
+    function group(count, type) {
+      for (let i = 0; i < count; i++) {
+        if (offset + 2 > description.byteLength) throw new Error("AVC 参数集长度不完整。");
+        const length = description[offset] * 256 + description[offset + 1];
+        offset += 2;
+        if (!length || offset + length > description.byteLength) throw new Error("AVC 参数集不完整。");
+        const unit = description.subarray(offset, offset + length);
+        if ((unit[0] & 31) !== type) throw new Error("AVC 参数集类型不符。");
+        parameterSets.push(unit);
+        offset += length;
+      }
+    }
+    group(description[5] & 31, 7);
+    if (offset >= description.byteLength) throw new Error("AVC 解码参数缺少 PPS 数量。");
+    group(description[offset++], 8);
+    if (EXTENDED_AVCC_PROFILES.has(description[1]) && offset < description.byteLength) {
+      if (offset + 4 > description.byteLength) throw new Error("AVC 扩展解码参数不完整。");
+      offset += 3;
+      group(description[offset++], 13);
+    }
+    if (!parameterSets.some((unit) => (unit[0] & 31) === 7) || !parameterSets.some((unit) => (unit[0] & 31) === 8)) {
+      throw new UnsupportedAvcError("录像缺少完整的 AVC 参数集，无法安全复用原始视频。");
+    }
+    return { lengthSize, parameterSets };
+  }
+  function extendedSpsFields(sps) {
+    const rbsp = [];
+    for (let index = 0; index < sps.byteLength; index++) {
+      if (sps[index] === 3 && index >= 2 && sps[index - 1] === 0 && sps[index - 2] === 0) continue;
+      rbsp.push(sps[index]);
+    }
+    let bit = 32;
+    function nextBit() {
+      if (bit >= rbsp.length * 8) throw new Error("AVC SPS 参数不完整。");
+      return rbsp[bit >> 3] >> 7 - (bit++ & 7) & 1;
+    }
+    function unsignedExpGolomb() {
+      let zeros = 0;
+      while (nextBit() === 0) zeros++;
+      let value = 1;
+      for (let index = 0; index < zeros; index++) value = value * 2 + nextBit();
+      return value - 1;
+    }
+    unsignedExpGolomb();
+    const chromaFormat = unsignedExpGolomb();
+    if (chromaFormat === 3) nextBit();
+    const lumaDepth = unsignedExpGolomb(), chromaDepth = unsignedExpGolomb();
+    if (chromaFormat > 3 || lumaDepth > 7 || chromaDepth > 7) throw new Error("AVC SPS 色彩格式无效。");
+    return [252 | chromaFormat, 248 | lumaDepth, 248 | chromaDepth];
+  }
+  function configurationFromAnnexB(units) {
+    const parameterSets = units.filter((unit) => PARAMETER_SET_TYPES.has(unit[0] & 31)).filter((unit, index, all) => all.findIndex((other) => sameBytes(unit, other)) === index).map((unit) => unit.slice());
+    const sps = parameterSets.filter((unit) => (unit[0] & 31) === 7);
+    const pps = parameterSets.filter((unit) => (unit[0] & 31) === 8);
+    const extensions = parameterSets.filter((unit) => (unit[0] & 31) === 13);
+    if (!sps.length || !pps.length) {
+      throw new UnsupportedAvcError("录像首个关键帧缺少完整的 AVC 参数集，无法安全复用原始视频。");
+    }
+    if (sps[0].byteLength < 4) throw new Error("AVC SPS 参数不完整。");
+    if (sps.length > 31 || pps.length > 255 || extensions.length > 255) throw new Error("AVC 参数集数量超出封装范围。");
+    const data = [1, sps[0][1], sps[0][2], sps[0][3], 255, 224 | sps.length];
+    function append(group) {
+      for (const unit of group) {
+        if (unit.byteLength > 65535) throw new Error("AVC 参数集长度超出封装范围。");
+        data.push(unit.byteLength >> 8, unit.byteLength & 255, ...unit);
+      }
+    }
+    append(sps);
+    data.push(pps.length);
+    append(pps);
+    if (EXTENDED_AVCC_PROFILES.has(sps[0][1])) {
+      data.push(...extendedSpsFields(sps[0]), extensions.length);
+      append(extensions);
+    } else if (extensions.length) {
+      throw new UnsupportedAvcError("这段录像的 AVC 扩展参数无法安全复用。");
+    }
+    return { description: Uint8Array.from(data), parameterSets };
+  }
+  function joinAvcc(units) {
+    const data = new Uint8Array(units.reduce((size, unit) => size + 4 + unit.byteLength, 0));
+    const view3 = new DataView(data.buffer);
+    let offset = 0;
+    for (const unit of units) {
+      view3.setUint32(offset, unit.byteLength);
+      data.set(unit, offset + 4);
+      offset += 4 + unit.byteLength;
+    }
+    return data;
+  }
+  function createAvcNormalizer(decoderConfig, firstPacket) {
+    let description = decoderConfig.description ? bytesOf(decoderConfig.description).slice() : null;
+    let lengthSize = 0, parameterSets;
+    if (description?.byteLength) {
+      ({ lengthSize, parameterSets } = readConfiguration(description));
+      description[4] = description[4] & 252 | 3;
+    } else {
+      if (!firstPacket) throw new UnsupportedAvcError("需要录像首个关键帧才能读取 AVC 参数。");
+      ({ description, parameterSets } = configurationFromAnnexB(annexBUnits(firstPacket.data)));
+    }
+    const config = {
+      ...decoderConfig,
+      codec: `avc1.${Array.from(description.subarray(1, 4), (byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+      description
+    };
+    function inspect(packet) {
+      const units = lengthSize ? avccUnits(packet.data, lengthSize) : annexBUnits(packet.data);
+      const samples = [];
+      let idr = false;
+      for (const unit of units) {
+        const type = unit[0] & 31;
+        if (PARAMETER_SET_TYPES.has(type)) {
+          if (!parameterSets.some((expected) => sameBytes(unit, expected))) {
+            throw new UnsupportedAvcError("录像中的 AVC 参数发生变化，无法安全复用原始视频。");
+          }
+        } else samples.push(unit);
+        if (type === 5) idr = true;
+      }
+      return { units, samples, idr };
+    }
+    return {
+      decoderConfig: config,
+      isIdr(packet) {
+        return inspect(packet).idr;
+      },
+      normalize(packet) {
+        const { units, samples, idr } = inspect(packet);
+        const type = idr ? "key" : "delta";
+        if (lengthSize === 4 && samples.length === units.length) {
+          return packet.type === type ? packet : packet.clone({ type });
+        }
+        return packet.clone({ data: joinAvcc(samples), type });
+      }
+    };
+  }
+
+  // src/media/smart-trim.js
+  var verified = { verifyKeyPackets: true };
+  function sameAvcConfiguration(a, b) {
+    const bytes2 = (value) => new Uint8Array(value.buffer ?? value, value.byteOffset ?? 0, value.byteLength);
+    const first = bytes2(a.description), second = bytes2(b.description);
+    return a.codec === b.codec && a.codedWidth === b.codedWidth && a.codedHeight === b.codedHeight && (a.displayAspectWidth ?? a.codedWidth) * (b.displayAspectHeight ?? b.codedHeight) === (b.displayAspectWidth ?? b.codedWidth) * (a.displayAspectHeight ?? a.codedHeight) && ["primaries", "transfer", "matrix", "fullRange"].every((key) => (a.colorSpace?.[key] ?? null) === (b.colorSpace?.[key] ?? null)) && first.length === second.length && first.every((value, index) => value === second[index]);
+  }
+  async function planVideoCut(track, { start, end, normalizer, signal }) {
+    const sink = new EncodedPacketSink(track), tick = 1 / await track.getTimeResolution();
+    async function previousIdr(time) {
+      let packet = await sink.getKeyPacket(time, verified);
+      while (packet && !normalizer.isIdr(packet)) {
+        signal?.throwIfAborted();
+        packet = await sink.getKeyPacket(packet.timestamp - tick, verified);
+      }
+      return packet;
+    }
+    let first = await previousIdr(start);
+    if (!first) first = await sink.getFirstKeyPacket(verified);
+    while (first && (first.timestamp < start - tick / 2 || !normalizer.isIdr(first))) {
+      signal?.throwIfAborted();
+      first = await sink.getNextKeyPacket(first, verified);
+    }
+    const reachesEnd = end >= await track.computeDuration() - tick / 2;
+    const last2 = reachesEnd ? void 0 : await previousIdr(end);
+    signal?.throwIfAborted();
+    if (!first || first.timestamp >= end || !reachesEnd && (!last2 || first.timestamp >= last2.timestamp)) {
+      return { headEnd: end, tailStart: end, first: null, last: null };
+    }
+    return { headEnd: Math.max(start, first.timestamp), tailStart: reachesEnd ? end : Math.min(end, last2.timestamp), first, last: last2 };
+  }
+  async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) {
+    async function* encode(from, to) {
+      if (to <= from) return;
+      let encoded;
+      for await (const value of encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal })) {
+        if (!encoded) {
+          encoded = createAvcNormalizer(value.decoderConfig, value.packet);
+          if (plan.first && !sameAvcConfiguration(encoded.decoderConfig, normalizer.decoderConfig)) {
+            throw new UnsupportedAvcError("边界编码参数与原片不同，无法保证播放器兼容");
+          }
+          if (!encoded.isIdr(value.packet)) throw new UnsupportedAvcError("边界编码没有生成独立关键帧");
+        }
+        stats.encodedFrames++;
+        yield { packet: encoded.normalize(value.packet), decoderConfig: encoded.decoderConfig };
+      }
+    }
+    yield* encode(start, plan.headEnd);
+    if (plan.first) {
+      const sink = new EncodedPacketSink(track);
+      for await (const packet of sink.packets(plan.first, plan.last, verified)) {
+        signal?.throwIfAborted();
+        if (packet.timestamp < plan.headEnd - 1e-6 || packet.timestamp + packet.duration > plan.tailStart + 1e-6) {
+          throw new UnsupportedAvcError("关键帧之间存在跨边界画面引用");
+        }
+        stats.copiedFrames++;
+        yield {
+          packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
+          decoderConfig: normalizer.decoderConfig
+        };
+      }
+    }
+    yield* encode(plan.tailStart, end);
+  }
+  async function* audioPackets(track, { start, end, signal }) {
+    const sink = new EncodedPacketSink(track), decoderConfig = await track.getDecoderConfig();
+    let first = await sink.getKeyPacket(start) ?? await sink.getFirstKeyPacket();
+    if (first && first.timestamp + first.duration <= start) first = await sink.getNextKeyPacket(first);
+    if (first) first = await sink.getKeyPacket(first.timestamp - 1 / await track.getTimeResolution()) ?? first;
+    if (!first) return;
+    for await (const packet of sink.packets(first)) {
+      signal?.throwIfAborted();
+      if (packet.timestamp >= end) break;
+      yield { packet: packet.clone({
+        timestamp: packet.timestamp - start,
+        duration: Math.min(packet.duration, end - packet.timestamp)
+      }), decoderConfig };
+    }
+  }
+  async function trackMetadata(track) {
+    const [languageCode, name, disposition] = await Promise.all([
+      track.getLanguageCode(),
+      track.getName(),
+      track.getDisposition()
+    ]);
+    return { languageCode, name: name ?? void 0, disposition };
+  }
+  async function smartTrim(input, { start, end, signal, onProgress, onProcessingStart }) {
+    const tracks = await input.getTracks();
+    const videos = tracks.filter((track2) => track2.type === "video"), audios = tracks.filter((track2) => track2.type === "audio");
+    if (videos.length !== 1 || tracks.length !== videos.length + audios.length || await videos[0].getCodec() !== "avc" || (await Promise.all(audios.map((track2) => track2.getCodec()))).some((codec) => codec !== "aac")) {
+      throw new UnsupportedAvcError("当前音视频格式不支持安全拼接");
+    }
+    const track = videos[0], settings = await readVideoEncodingSettings(track, { signal });
+    const firstPacket = await new EncodedPacketSink(track).getFirstKeyPacket(verified);
+    if (!firstPacket) throw new UnsupportedAvcError("录像缺少可用关键帧");
+    const normalizer = createAvcNormalizer(settings.sourceDecoderConfig, firstPacket);
+    const plan = await planVideoCut(track, { start, end, normalizer, signal });
+    if (plan.first && (plan.headEnd > start || plan.tailStart < end) && !settings.canSplice) {
+      throw new UnsupportedAvcError("浏览器无法编码与原片相同的 H.264 规格");
+    }
+    const stats = { strategy: "smart", encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate };
+    onProcessingStart();
+    onProgress(0, { ...stats, message: plan.first ? "仅编码头尾，中间保留原画" : "选区较短，按原码率编码" });
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
+    const video = new EncodedVideoPacketSource("avc");
+    output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
+    const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) }];
+    for (const audio of audios) {
+      const source = new EncodedAudioPacketSource("aac");
+      output.addAudioTrack(source, await trackMetadata(audio));
+      streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
+    }
+    return muxPackets(output, streams, { start, end, signal, onProgress, stats, video });
+  }
+  async function muxPackets(output, streams, { start, end, signal, onProgress, stats, video }) {
+    let count = 0, progress = 0, canceling;
+    const cancel = () => {
+      canceling ??= output.cancel();
+      void canceling.catch(() => {
+      });
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
-      return await input.computeDuration();
+      signal?.throwIfAborted();
+      await output.start();
+      for (const stream of streams) stream.next = await stream.iterator.next();
+      while (streams.some((stream) => !stream.next.done)) {
+        signal?.throwIfAborted();
+        const stream = streams.filter((item) => !item.next.done).reduce((a, b) => a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b);
+        const { packet, decoderConfig } = stream.next.value;
+        if (stream.source === video) count++;
+        await stream.source.add(packet, { decoderConfig });
+        progress = Math.max(progress, Math.min(0.99, (packet.timestamp + packet.duration) / (end - start)));
+        onProgress(progress, stats);
+        stream.next = await stream.iterator.next();
+        if (stream.next.done) stream.source.close();
+      }
+      for (const stream of streams) stream.source.close();
+      await output.finalize();
+      signal?.throwIfAborted();
+      if (video && !count) throw new Error("选区内没有可导出的画面。");
+      const blob = new Blob([output.target.buffer], { type: "video/mp4" });
+      onProgress(1, stats);
+      return blob;
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      throw error;
     } finally {
-      input.dispose();
+      signal?.removeEventListener("abort", cancel);
+      await Promise.allSettled(streams.map((stream) => stream.iterator.return()));
+      if (canceling) await canceling;
+      if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
     }
   }
-  async function exportSelection(api, record, groups, selection, { signal, precise = false, onProgress = () => {
-  } }) {
-    const outputs = [];
-    let bytes2 = 0;
-    const parsed = { groups: groups.filter((group) => selection.start < group.streamEnd - record.start).map((group) => ({ ...group, offset: group.start - record.start })) };
-    for (const plan of selectPlaylistRange(parsed, selection.start, selection.end)) {
-      const segments = plan.map ? [plan.map, ...plan.segments] : plan.segments;
-      let done = 0;
-      const chunks = await mapConcurrent(segments, 3, async (segment) => {
-        const r = await api.request(segment.url, { type: "arraybuffer", range: segment.range, signal });
-        bytes2 += r.data.byteLength;
-        onProgress({ phase: "download", done: ++done, count: segments.length, bytes: bytes2 });
-        return r.data;
-      }, signal);
-      const normalized = await convertMp4(new Blob(chunks), { signal });
-      const duration = await mediaDuration(normalized);
-      const start = Math.min(plan.start, duration), end = Math.min(plan.end, duration);
-      if (end <= start) throw new Error("选区与录像时间线不一致，请刷新后重新定位。");
-      const blob = await convertMp4(normalized, { start, end, precise, signal, onProgress: (p) => onProgress({ phase: "encode", progress: p, bytes: bytes2 }) });
-      outputs.push({ blob, start: plan.offset + start, end: plan.offset + end });
+  async function encodeSelection(input, { start, end, signal, onProgress, onProcessingStart }) {
+    const tracks = await input.getTracks();
+    if (!tracks.some((track) => track.type === "video") || tracks.some((track) => !["video", "audio"].includes(track.type))) {
+      throw new Error("当前音视频轨道无法完整编码，请使用原画下载。");
     }
-    if (!outputs.length) throw new Error("选区中没有可用录像，请调整起止位置。");
-    return outputs;
+    if ((await Promise.all(tracks.filter((track) => track.type === "audio").map((track) => track.getCodec()))).some((codec) => codec !== "aac")) {
+      throw new Error("精确模式目前需要 AAC 音频，请使用原画下载以保留声音。");
+    }
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
+    const streams = [];
+    for (const track of tracks) {
+      signal?.throwIfAborted();
+      const options = { start, end, origin: start, signal };
+      if (track.type === "video") {
+        if (!await track.canDecode()) throw new Error("当前浏览器无法解码这段录像，请使用原画下载或更新 Chrome / Edge。");
+        const source = new EncodedVideoPacketSource("avc");
+        const settings = await readVideoEncodingSettings(track, { signal });
+        output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
+        streams.push({ source, iterator: encodeVideoRange(track, { ...options, settings }) });
+      } else {
+        const source = new EncodedAudioPacketSource("aac");
+        output.addAudioTrack(source, await trackMetadata(track));
+        streams.push({ source, iterator: audioPackets(track, options) });
+      }
+    }
+    onProcessingStart();
+    return muxPackets(output, streams, { start, end, signal, onProgress, stats: { strategy: "full" } });
+  }
+  async function trimPrecise(input, { start = 0, end, signal, onProgress = () => {
+  }, onProcessingStart = () => {
+  } } = {}) {
+    signal?.throwIfAborted();
+    end ??= await input.computeDuration();
+    try {
+      return await smartTrim(input, { start, end, signal, onProgress, onProcessingStart });
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      if (!(error instanceof UnsupportedAvcError)) throw error;
+      onProgress(0, { strategy: "full", message: "当前素材无法安全拼接，已改为按原码率整段编码" });
+      return encodeSelection(input, { start, end, signal, onProgress, onProcessingStart });
+    }
   }
 
   // src/media/recording.js
@@ -60970,6 +61968,220 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         if (file) await file.abort();
       }
     }
+  }
+
+  // src/media/segment-loader.js
+  var segmentKey = (segment) => JSON.stringify([segment.url, segment.range ?? null]);
+  function createSegmentLoader(api, segments, { map, signal, onRead = () => {
+  } } = {}) {
+    const controller = new AbortController();
+    const entries = /* @__PURE__ */ new Map(), demanded = [], queue = [], tasks = /* @__PURE__ */ new Set();
+    const positions = new Map(segments.map((segment, index) => [segmentKey(segment), index]));
+    const mapKey = map && segmentKey(map), firstKey = segmentKey(segments[0]), lastKey = segmentKey(segments.at(-1));
+    let lookaheadKey, frontier = -1, active = 0, closed = false;
+    const abort = () => controller.abort(signal.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    function prune() {
+      const keep = /* @__PURE__ */ new Set([...demanded, lookaheadKey, mapKey, firstKey, lastKey]);
+      for (const [key, entry] of entries) {
+        if (entry.settled && !keep.has(key)) entries.delete(key);
+      }
+    }
+    function pump() {
+      while (active < 2 && queue.length) {
+        const entry = queue.shift();
+        active++;
+        const task = (async () => {
+          try {
+            controller.signal.throwIfAborted();
+            const response = await api.request(entry.segment.url, {
+              type: "arraybuffer",
+              range: entry.segment.range,
+              signal: controller.signal
+            });
+            controller.signal.throwIfAborted();
+            const data = new Uint8Array(response.data);
+            onRead(data.byteLength, entry.segment);
+            entry.resolve(data);
+          } catch (error) {
+            controller.abort(error);
+            entry.reject(controller.signal.reason);
+          } finally {
+            entry.settled = true;
+            active--;
+            prune();
+            pump();
+          }
+        })();
+        tasks.add(task);
+        void task.finally(() => tasks.delete(task));
+      }
+    }
+    function request(segment, speculative = false) {
+      const key = segmentKey(segment);
+      let entry = entries.get(key);
+      if (!entry) {
+        let resolve, reject;
+        const promise = new Promise((yes, no) => {
+          resolve = yes;
+          reject = no;
+        });
+        void promise.catch(() => {
+        });
+        entry = { segment, promise, resolve, reject, settled: false };
+        entries.set(key, entry);
+        if (speculative) queue.push(entry);
+        else queue.unshift(entry);
+        pump();
+      } else if (!speculative) {
+        const index = queue.indexOf(entry);
+        if (index >= 0) {
+          queue.splice(index, 1);
+          queue.unshift(entry);
+        }
+      }
+      return entry.promise;
+    }
+    async function read(segment) {
+      controller.signal.throwIfAborted();
+      const key = segmentKey(segment), index = positions.get(key);
+      if (key !== mapKey && key !== firstKey && key !== lastKey) {
+        const previous = demanded.indexOf(key);
+        if (previous >= 0) demanded.splice(previous, 1);
+        demanded.push(key);
+        if (demanded.length > 2) demanded.shift();
+      }
+      const result = request(segment);
+      if (index !== void 0 && index > frontier && index + 1 < segments.length) {
+        frontier = index;
+        const next = segments[index + 1];
+        lookaheadKey = segmentKey(next);
+        request(next, true);
+      }
+      prune();
+      const data = await result;
+      controller.signal.throwIfAborted();
+      return data;
+    }
+    return {
+      read,
+      signal: controller.signal,
+      beginProcessing() {
+        frontier = -1;
+        lookaheadKey = void 0;
+        prune();
+      },
+      async close() {
+        if (closed) return;
+        closed = true;
+        signal?.removeEventListener("abort", abort);
+        controller.abort();
+        while (tasks.size) await Promise.allSettled([...tasks]);
+        entries.clear();
+      }
+    };
+  }
+
+  // src/media/export.js
+  async function convertInput(input, { start, end, precise = false, signal, onProgress = () => {
+  }, onProcessingStart = () => {
+  } } = {}) {
+    signal?.throwIfAborted();
+    if (precise) return trimPrecise(input, { start, end, signal, onProgress, onProcessingStart });
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
+    let conversion, canceling;
+    const cancel = () => {
+      if (conversion) canceling = conversion.cancel();
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const options = { input, output, copy: { mode: "forced" }, showWarnings: false };
+      if (start !== void 0 || end !== void 0) options.trim = { start, end };
+      conversion = await Conversion.init(options);
+      signal?.throwIfAborted();
+      if (!conversion.isValid || conversion.discardedTracks.length) {
+        throw new Error("这段录像无法完整封装为 MP4，已停止导出，避免丢失声音或画面。");
+      }
+      conversion.onProgress = onProgress;
+      onProcessingStart();
+      await conversion.execute();
+      signal?.throwIfAborted();
+      return new Blob([output.target.buffer], { type: "video/mp4" });
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      throw error;
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+      if (canceling) await canceling;
+      if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
+    }
+  }
+  async function exportSelection(api, record, groups, selection, { signal, precise = false, onProgress = () => {
+  } } = {}) {
+    signal?.throwIfAborted();
+    const parsed = { groups: groups.filter((group) => selection.start < group.streamEnd - record.start).map((group) => ({ ...group, offset: group.start - record.start })) };
+    const plans = selectPlaylistRange(parsed, selection.start, selection.end);
+    if (!plans.length) throw new Error("选区中没有可用录像，请调整起止位置。");
+    const resources = new Set(plans.flatMap((plan) => plan.map ? [plan.map, ...plan.segments] : plan.segments).map(segmentKey));
+    const downloaded = /* @__PURE__ */ new Set(), outputs = [];
+    const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
+    let bytes2 = 0, completedDuration = 0, processing = 0, progress = 0, message;
+    function report(phase = "processing") {
+      progress = phase === "complete" ? 1 : Math.max(
+        progress,
+        Math.min(0.99, 0.35 * downloaded.size / resources.size + 0.65 * processing)
+      );
+      onProgress({ progress, downloaded: downloaded.size, count: resources.size, bytes: bytes2, phase, processing, message });
+    }
+    report("download");
+    for (const plan of plans) {
+      const durationWeight = plan.end - plan.start;
+      const loader = createSegmentLoader(api, plan.segments, {
+        map: plan.map,
+        signal,
+        onRead(size, segment) {
+          bytes2 += size;
+          downloaded.add(segmentKey(segment));
+          report();
+        }
+      });
+      const input = new Input({ source: recordingSource([plan], loader.read), formats: [HLS, MP42, MPEG_TS] });
+      try {
+        const duration = await input.computeDuration();
+        loader.signal.throwIfAborted();
+        const start = Math.min(plan.start, duration), end = Math.min(plan.end, duration);
+        if (end <= start) throw new Error("选区与录像时间线不一致，请刷新后重新定位。");
+        const blob = await convertInput(input, {
+          start,
+          end,
+          precise,
+          signal: loader.signal,
+          onProcessingStart: loader.beginProcessing,
+          onProgress(value, detail) {
+            const local = typeof value === "number" ? value : value.progress;
+            const notice = typeof value === "number" ? detail : value;
+            if (notice?.message) message = notice.message;
+            processing = Math.max(processing, (completedDuration + durationWeight * local) / totalDuration);
+            report();
+          }
+        });
+        loader.signal.throwIfAborted();
+        outputs.push({ blob, start: plan.offset + start, end: plan.offset + end });
+        completedDuration += durationWeight;
+        processing = completedDuration / totalDuration;
+        report();
+      } catch (error) {
+        if (loader.signal.aborted) throw loader.signal.reason;
+        throw error;
+      } finally {
+        input.dispose();
+        await loader.close();
+      }
+    }
+    signal?.throwIfAborted();
+    report("complete");
+    return outputs;
   }
 
   // src/media/file-name.js
@@ -61222,8 +62434,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         clearDownloads();
         status2("正在下载选中的录像…");
         const outputs = await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress: (p) => {
-          $("progress").value = p.phase === "download" ? p.done / p.count * 75 : 75 + p.progress * 25;
-          status2(p.phase === "download" ? `下载分片 ${p.done}/${p.count} · ${formatBytes(p.bytes)}` : "正在生成 MP4…");
+          $("progress").value = p.progress * 100;
+          status2(`${p.message ? p.message + " · " : ""}已下载 ${p.downloaded}/${p.count} 片 · 处理 ${Math.round(p.processing * 100)}% · ${formatBytes(p.bytes)}`);
         } });
         for (const [i, output] of outputs.entries()) {
           const a = document.createElement("a");

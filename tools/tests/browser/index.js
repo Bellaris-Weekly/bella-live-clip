@@ -4,6 +4,7 @@ import {MEMBERS} from '../../../src/domain/records.js';
 import {runCardChecks} from './cards.js';
 import {runSessionChecks} from './session.js';
 import {runExportChecks} from './export.js';
+import {runSmartExportChecks,runStreamingExportChecks} from './smart-export.js';
 import {inspectMedia} from '../support/media-info.mjs';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
 import { convertMp4, exportSelection } from '../../../src/media/export.js';
@@ -43,6 +44,8 @@ const cardTest=document.createElement('button');cardTest.textContent='验证场�
 cardTest.onclick=()=>runCardChecks(app,query,preloadProbe);
 const exportTest=document.createElement('button');exportTest.textContent='精确导出对比';cardTest.after(exportTest);
 exportTest.onclick=()=>runExportChecks();
+const smartTest=document.createElement('button');smartTest.textContent='验证智能导出';exportTest.after(smartTest);smartTest.onclick=()=>runSmartExportChecks();
+const streamTest=document.createElement('button');streamTest.textContent='验证分片并行导出';smartTest.after(streamTest);streamTest.onclick=()=>runStreamingExportChecks();
 if(query.has('slow-media')){
  const sessionTest=document.createElement('button');sessionTest.textContent='验证场次清理与刷新';cardTest.after(sessionTest);
  sessionTest.onclick=()=>runSessionChecks(app,mediaReads);
