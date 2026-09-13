@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.4.0
+// @version      2.4.1
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -50062,7 +50062,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     assert(false);
   };
-  var QUALITY_HIGH = /* @__PURE__ */ new Quality("high");
   var canEncodeVideo = async (codec, options = {}) => {
     const {
       width = 1280,
@@ -60624,6 +60623,19 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   globalThis[MEDIABUNNY_LOADED_SYMBOL] = true;
 
+  // src/media/encoding.js
+  async function preciseVideoOptions(track) {
+    const [width, height, stats] = await Promise.all([
+      track.getSquarePixelWidth(),
+      track.getSquarePixelHeight(),
+      track.computePacketStats()
+    ]);
+    const bitrate = Math.ceil(Math.max(stats.averageBitrate * 2, width * height * stats.averagePacketRate * 0.12));
+    const quality = new Quality({ bitrate });
+    const hardware = await canEncodeVideo("avc", { width, height, quality, hardwareAcceleration: "prefer-hardware" });
+    return { codec: "avc", quality, hardwareAcceleration: hardware ? "prefer-hardware" : "no-preference" };
+  }
+
   // src/media/export.js
   async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {
   } } = {}) {
@@ -60639,7 +60651,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       const options = { input, output, copy: precise ? false : { mode: "forced" }, showWarnings: false };
       if (start !== void 0 || end !== void 0) options.trim = { start, end };
       if (precise) {
-        options.video = { codec: "avc", bitrate: QUALITY_HIGH };
+        options.video = preciseVideoOptions;
         options.audio = { codec: "aac", bitrate: 192e3 };
       }
       conversion = await Conversion.init(options);

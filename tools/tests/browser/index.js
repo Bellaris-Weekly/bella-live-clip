@@ -2,6 +2,7 @@ import { createApp } from '../../../src/app/application.js';
 import {MEMBERS} from '../../../src/domain/records.js';
 import {runCardChecks} from './cards.js';
 import {runSessionChecks} from './session.js';
+import {runExportChecks} from './export.js';
 import {inspectMedia} from '../support/media-info.mjs';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
 import { convertMp4, exportSelection } from '../../../src/media/export.js';
@@ -35,6 +36,8 @@ const app=createApp({api,pageUrl:query.has('live')?'https://live.bilibili.com/22
 preloadProbe.openCalledAt=performance.now();app.open();
 const cardTest=document.createElement('button');cardTest.textContent='验证场次卡片';cardTest.id='cardTest';document.getElementById('test').after(cardTest);
 cardTest.onclick=()=>runCardChecks(app,query,preloadProbe);
+const exportTest=document.createElement('button');exportTest.textContent='精确导出对比';cardTest.after(exportTest);
+exportTest.onclick=()=>runExportChecks();
 if(query.has('slow-media')){
  const sessionTest=document.createElement('button');sessionTest.textContent='验证场次清理与刷新';cardTest.after(sessionTest);
  sessionTest.onclick=()=>runSessionChecks(app,mediaReads);

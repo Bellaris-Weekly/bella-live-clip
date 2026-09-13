@@ -1,7 +1,8 @@
 import {
-  Input, BlobSource, MP4, MPEG_TS, Output, BufferTarget, Mp4OutputFormat, Conversion, QUALITY_HIGH,
+  Input, BlobSource, MP4, MPEG_TS, Output, BufferTarget, Mp4OutputFormat, Conversion,
 } from 'mediabunny';
 import { mapConcurrent, selectPlaylistRange } from './playlist.js';
+import { preciseVideoOptions } from './encoding.js';
 
 export async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {} } = {}) {
   signal?.throwIfAborted();
@@ -13,7 +14,7 @@ export async function convertMp4(blob, { start, end, precise = false, signal, on
   try {
     const options = { input, output, copy: precise ? false : { mode: 'forced' }, showWarnings: false };
     if (start !== undefined || end !== undefined) options.trim = { start, end };
-    if (precise) { options.video = { codec: 'avc', bitrate: QUALITY_HIGH }; options.audio = { codec: 'aac', bitrate: 192000 }; }
+    if (precise) { options.video = preciseVideoOptions; options.audio = { codec: 'aac', bitrate: 192000 }; }
     conversion = await Conversion.init(options);
     signal?.throwIfAborted();
     if (!conversion.isValid || conversion.discardedTracks.length) {
