@@ -1,11 +1,16 @@
 // Runs against the full application, including asynchronous schedule enrichment.
-export async function runCardChecks(app, query) {
+export async function runCardChecks(app, query, preloadProbe) {
  const result=document.getElementById('result'),root=app.root;
  const assert=(condition,message)=>{if(!condition)throw new Error(message);};
  const until=async condition=>{for(let i=0;i<100;i++){if(condition())return;await new Promise(resolve=>setTimeout(resolve,50));}throw new Error('等待界面超时');};
- const checks=[];
+  const checks=[];
  try{
   await until(()=>root.querySelectorAll('.record-card').length===6&&!root.getElementById('refreshLibrary').disabled);
+  if(query.has('preload')){
+   assert(preloadProbe.historyCalls>0&&preloadProbe.historyStartedAt[0]<=preloadProbe.openCalledAt,'打开面板前没有开始预加载');
+   assert(preloadProbe.historyCalls===1,'打开面板重复请求了直播列表');
+   checks.push('打开面板前已预加载且复用同一列表请求');
+  }
   await until(()=>query.has('schedule-error')?root.getElementById('scheduleNote').textContent.includes('暂不可用'):root.querySelectorAll('.record-type').length===5);
   const cards=[...root.querySelectorAll('.record-card')];
   assert(!root.querySelector('.cover'),'仍然显示封面');

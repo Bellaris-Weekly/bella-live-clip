@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.2.5
+// @version      2.3.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -794,6 +794,67 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       }) };
     }
   };
+
+  // src/app/library-loader.js
+  function waitFor(promise, signal) {
+    if (!signal) return promise;
+    signal.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      const cleanup = () => signal.removeEventListener("abort", abort);
+      signal.addEventListener("abort", abort, { once: true });
+      promise.then((value) => {
+        cleanup();
+        resolve(value);
+      }, (error) => {
+        cleanup();
+        reject(error);
+      });
+    });
+  }
+  function createLibraryLoader({ api, schedules }) {
+    const cache = /* @__PURE__ */ new Map();
+    const requests = /* @__PURE__ */ new Map();
+    const controllers = /* @__PURE__ */ new Set();
+    function load(member, { refresh = false, signal } = {}) {
+      const id = member.id;
+      const cached = cache.get(id);
+      if (!refresh && cached?.ready) return waitFor(Promise.resolve(cached), signal);
+      let request = requests.get(id);
+      if (refresh) request?.controller.abort();
+      if (!request || refresh) {
+        const controller = new AbortController();
+        const promise = (async () => {
+          const records = refresh || !cached ? await api.history(member, controller.signal) : cached.records;
+          controller.signal.throwIfAborted();
+          const result = await schedules.enrich(records, { signal: controller.signal, refresh });
+          controller.signal.throwIfAborted();
+          const next = { records: result.records, failed: result.failed, ready: !result.failed };
+          cache.set(id, next);
+          return next;
+        })();
+        request = { promise, controller };
+        requests.set(id, request);
+        controllers.add(controller);
+        const cleanup = () => {
+          if (requests.get(id)?.promise === promise) requests.delete(id);
+          controllers.delete(controller);
+        };
+        promise.then(cleanup, cleanup);
+      }
+      return waitFor(request.promise, signal);
+    }
+    function preload(member) {
+      return load(member).catch(() => null);
+    }
+    function get(member) {
+      return cache.get(member.id) || null;
+    }
+    function abortAll() {
+      controllers.forEach((controller) => controller.abort());
+    }
+    return { load, preload, get, abortAll };
+  }
 
   // src/media/playlist.js
   function attributes(text) {
@@ -60689,8 +60750,9 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text));
     }
     const schedules = new ScheduleService(api.request);
+    const libraries = createLibraryLoader({ api, schedules });
     let scheduleController = null, exportMode = "copy";
-    const cache = /* @__PURE__ */ new Map(), urls = [];
+    const urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     const status2 = (text, error = false) => {
       $("status").textContent = text;
@@ -60800,7 +60862,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     function renderCards() {
       const focusedKey = root.activeElement?.dataset.recordKey, scroll = $("body").scrollTop;
       root.querySelectorAll("[data-member]").forEach((el) => el.setAttribute("aria-pressed", el.dataset.member === member.id));
-      const records = cache.get(member.id) || [];
+      const records = libraries.get(member)?.records || [];
       $("cards").replaceChildren();
       $("libraryEmpty").hidden = records.length > 0;
       $("libraryEmpty").textContent = "近 14 天暂无可用回放";
@@ -60816,52 +60878,29 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       $("body").scrollTop = scroll;
       controls();
     }
-    function enrichCards(refresh) {
-      if ($("panel").hidden) return;
-      scheduleController?.abort();
-      const own = new AbortController();
-      scheduleController = own;
-      const selected = member.id, records = cache.get(selected) || [];
-      $("scheduleNote").textContent = "正在补充直播日程…";
-      $("scheduleNote").hidden = !records.length;
-      void (async () => {
-        try {
-          const result = await schedules.enrich(records, { signal: own.signal, refresh });
-          if (own.signal.aborted || member.id !== selected || page !== "library") return;
-          cache.set(selected, result.records);
-          renderCards();
-          $("scheduleNote").hidden = !result.failed;
-          $("scheduleNote").textContent = result.failed ? "部分日程暂不可用，可刷新重试。" : "";
-        } catch (e) {
-          if (!own.signal.aborted) {
-            $("scheduleNote").hidden = false;
-            $("scheduleNote").textContent = "日程暂不可用，可刷新重试。";
-          }
-        }
-      })();
+    function showScheduleResult(result) {
+      $("scheduleNote").hidden = !result.failed;
+      $("scheduleNote").textContent = result.failed ? "部分日程暂不可用，可刷新重试。" : "";
     }
     async function library(refresh = false) {
       leavePage();
       showPage("library");
       renderCards();
-      if (!refresh && cache.has(member.id)) {
-        status2("选择想剪辑的那场直播。");
-        enrichCards(false);
-        return;
-      }
+      const selected = member;
       await job(async (signal) => {
-        status2("正在获取直播场次…");
-        cache.set(member.id, await api.history(member, signal));
+        status2(refresh ? "正在刷新直播场次…" : "正在获取直播场次…");
+        const result = await libraries.load(selected, { refresh, signal });
+        if (signal.aborted || member !== selected) return;
         renderCards();
+        showScheduleResult(result);
         status2("选择想剪辑的那场直播。");
-        enrichCards(refresh);
       });
     }
     function renderRecordMeta() {
       $("recordMeta").textContent = [record.member, formatDate(record.start), record.schedule?.type].filter(Boolean).join(" · ");
     }
     function enrichRecordType() {
-      if (record.schedule || $("panel").hidden) return;
+      if (record.schedule !== void 0 || $("panel").hidden) return;
       scheduleController?.abort();
       const own = new AbortController();
       scheduleController = own;
@@ -60964,8 +61003,16 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       if (!initialized) {
         initialized = true;
         await (room ? currentRoom() : library());
-      } else if (page === "library") enrichCards(false);
-      else if (page === "edit") enrichRecordType();
+      } else if (page === "library") {
+        renderCards();
+        const selected = member;
+        void libraries.load(selected).then((result) => {
+          if (member !== selected || page !== "library" || $("panel").hidden) return;
+          renderCards();
+          showScheduleResult(result);
+        }).catch(() => {
+        });
+      } else if (page === "edit") enrichRecordType();
     }
     const close = () => {
       $("panel").hidden = true;
@@ -61107,9 +61154,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     });
     window.addEventListener("pagehide", () => {
       controller?.abort();
+      libraries.abortAll();
       leavePage();
     });
     controls();
+    if (!room) void libraries.preload(member);
     return { open, resetWindow, root };
   }
 
