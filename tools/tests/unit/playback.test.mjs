@@ -4,7 +4,7 @@ import {createPlayback,bindVideoControls} from '../../../src/media/playback.js';
 import {createTimeline} from '../../../src/ui/timeline.js';
 
 class Element {
- style={};dataset={};handlers={};classList={add(){},remove(){}};
+ style={setProperty(key,value){this[key]=value;}};dataset={};handlers={};classList={add(){},remove(){}};
  setAttribute(){} replaceChildren(){} append(){}
  addEventListener(name,fn){this.handlers[name]=fn;}
  getBoundingClientRect(){return {left:0,width:100};}

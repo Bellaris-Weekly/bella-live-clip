@@ -41,7 +41,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const playback=createPlayback(video,status);
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary,onView:view=>thumbnails.update(view)});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary,onView:(view,motion)=>thumbnails.update(view,motion)});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
@@ -63,7 +63,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
   recordingController?.abort();recordingController=null;recordingPlan=null;
   estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;
-  $('wholeRecording').checked=false;playback.cancel();player.clear();thumbnails.clear();clearDownloads();updateClock(0);
+  $('wholeRecording').checked=false;timeline.stop();playback.cancel();player.clear();thumbnails.clear();clearDownloads();updateClock(0);
  }
  function renderCards(){
   const focusedKey=root.activeElement?.dataset.recordKey,scroll=$('body').scrollTop;
@@ -129,7 +129,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
     renderCards();showScheduleResult(result);
    }).catch(()=>{});
   }else if(page==='edit')enrichRecordType();}
- const close=()=>{$('panel').hidden=true;scheduleController?.abort();playback.cancel();};
+ const close=()=>{timeline.stop();$('panel').hidden=true;scheduleController?.abort();playback.cancel();};
  $('close').onclick=close;
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);

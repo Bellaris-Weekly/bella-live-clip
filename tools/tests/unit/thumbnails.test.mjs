@@ -5,7 +5,7 @@ const record={start:1000};
 const streams=[{start_time:1000,end_time:1020,stream:'first'},{start_time:1040,end_time:1060,stream:'second'}];
 const wait=()=>new Promise(resolve=>setTimeout(resolve,230));
 class Element {
- children=[];textContent='';
+ children=[];textContent='';style={};
  ownerDocument={createElement:()=>new Element()};
  replaceChildren(...children){this.children=children;}
 }
@@ -18,13 +18,13 @@ test('缩略图均匀采样当前窗口，断流留空，跨段转换到各自�
 });
 test('缩放取消旧取帧且旧结果不回填，未变视野不重取，离开清空',async()=>{
  const container=new Element(),reads=[];
- const strip=createThumbnails({container,readFrame:(_,sample,signal)=>new Promise(resolve=>reads.push({sample,signal,resolve}))});
+ const strip=createThumbnails({container,readFrame:(_,sample,signal)=>sample.time===1||sample.time===40.5?new Promise(resolve=>reads.push({sample,signal,resolve})):Promise.resolve('frame')});
  strip.load(record,streams);strip.update({start:0,end:12});await wait();
  const oldCells=container.children;assert.equal(reads.length,1);
  strip.update({start:0,end:12});await wait();assert.equal(reads.length,1);
  strip.update({start:40,end:46});assert.equal(reads[0].signal.aborted,true);
  reads[0].resolve('old');await wait();assert.equal(oldCells[0].children.length,0);assert.equal(reads.length,2);
- reads[1].resolve('new');await Promise.resolve();assert.deepEqual(container.children[0].children,['new']);
+ reads[1].resolve('new');await wait();assert.deepEqual(container.children[0].children,['new']);
  strip.clear();assert.equal(reads.at(-1).signal.aborted,true);assert.deepEqual(container.children,[]);
  reads.at(-1).resolve('late');await Promise.resolve();assert.deepEqual(container.children,[]);
 });
@@ -34,4 +34,21 @@ test('无录像和加载失败有占位，其余帧继续显示，换场次重�
  strip.load(record,streams);strip.update({start:0,end:60});await wait();
  assert.equal(calls,4);assert.equal(container.children[0].textContent,'暂无预览');assert.equal(container.children[2].textContent,'无录像');assert.deepEqual(container.children[5].children,['frame']);
  strip.load(record,streams);strip.update({start:0,end:60});await wait();assert.equal(calls,8);strip.clear();
+});
+
+
+test('缩放帧只投影已有缩略图，停稳后才取帧并替换，覆盖不同窗口',async()=>{
+ const container=new Element();let reads=0;
+ const strip=createThumbnails({container,readFrame:async()=>{reads++;return 'frame';}});
+ strip.load(record,streams);strip.update({start:0,end:60});await wait();
+ for(const view of [{start:5,end:25},{start:40,end:46}]){
+  const previous=container.children,count=reads;
+  strip.update(view,{animating:true});await wait();
+  assert.equal(reads,count);assert.equal(container.children,previous);
+  assert.ok(Number.parseFloat(previous[0].style.left)<0);
+  assert.ok(Number.parseFloat(previous[0].style.width)>0);
+  strip.update(view);assert.equal(container.children,previous,'新预览未完成前保留旧画面');await wait();
+  assert.notEqual(container.children,previous);assert.equal(container.children[0].style.left,'0%');
+ }
+ strip.clear();
 });

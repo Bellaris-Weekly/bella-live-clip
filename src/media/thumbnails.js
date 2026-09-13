@@ -36,9 +36,9 @@ export async function readThumbnail(request,sample,signal) {
 }
 
 export function createThumbnails({container,request,readFrame=readThumbnail}) {
- let record,streams=[],viewKey='',controller,timer;
+ let record,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false;
  function cancel(){clearTimeout(timer);controller?.abort();controller=null;}
- function clear(){cancel();record=null;streams=[];viewKey='';container.replaceChildren();}
+ function clear(){cancel();record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;container.replaceChildren();}
  async function render(samples,own,cells){
   for(const [i,sample]of samples.entries()){
    if(own.signal.aborted)return;
@@ -50,14 +50,31 @@ export function createThumbnails({container,request,readFrame=readThumbnail}) {
    }catch(error){if(own.signal.aborted)return;cells[i].textContent='暂无预览';}
   }
  }
- function update(view){
+ function project(){
+  if(!displayView)return;
+  const width=currentView.end-currentView.start;
+  const cells=Array.from(container.children);
+  cells.forEach((cell,i)=>{
+   const start=displayView.start+(displayView.end-displayView.start)*i/cells.length;
+   cell.style.left=`${(start-currentView.start)/width*100}%`;
+   cell.style.width=`${(displayView.end-displayView.start)/cells.length/width*100}%`;
+  });
+ }
+ function update(view,{animating=false}={}){
   if(!record)return;
+  currentView={...view};project();
+  if(animating){if(!moving){cancel();viewKey='';}moving=true;return;}
+  moving=false;
   const key=`${view.start}:${view.end}`;if(key===viewKey)return;
   viewKey=key;cancel();const own=new AbortController();controller=own;
   const samples=thumbnailSamples(record,streams,view);
   const cells=samples.map(()=>{const cell=container.ownerDocument.createElement('div');cell.className='thumbnail';cell.textContent='…';return cell;});
-  container.replaceChildren(...cells);
-  timer=setTimeout(()=>void render(samples,own,cells),200);
+  if(!displayView){container.replaceChildren(...cells);displayView={...view};project();}
+  timer=setTimeout(async()=>{
+   await render(samples,own,cells);
+   if(own.signal.aborted)return;
+   container.replaceChildren(...cells);displayView={...view};project();
+  },200);
  }
  return {load(next,parts){clear();record=next;streams=parts;},update,clear};
 }

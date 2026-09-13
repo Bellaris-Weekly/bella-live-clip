@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.3.0
+// @version      2.3.1
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,11 +32,12 @@
   var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
-  var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}
+  var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 button,input,select{font:inherit;color:inherit}
-button{margin:0;cursor:pointer;border:0}
+button{margin:0;cursor:pointer;border:0;transition:background .18s var(--ease),color .18s var(--ease),border-color .18s var(--ease),box-shadow .18s var(--ease),transform .18s var(--ease)}
+button:active:not(:disabled){transform:translateY(1px)}
 .glyph{display:block;width:18px;height:18px;flex:none;pointer-events:none}
 .glyph-play{transform:translateX(1px)}
 button:disabled,input:disabled,select:disabled{opacity:.45;cursor:default}
@@ -58,7 +59,7 @@ input,select{background:#fff;border:1px solid var(--line);border-radius:9px;padd
 #launcher .glyph{width:24px;height:24px}
 #launcher[data-busy=true]::after{content:'';position:absolute;top:7px;right:7px;width:7px;height:7px;background:var(--accent);border-radius:50%}
 
-#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 12px 48px #00000014;container-type:inline-size}
+#panel{position:fixed;z-index:2147483639;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 80px #183c2926,0 4px 16px #183c2910;animation:panel-enter .24s var(--ease) both;container-type:inline-size}
 #body{flex:1;min-height:0;overflow:auto;border-radius:0 0 20px 20px;padding:0;overscroll-behavior:contain;scrollbar-width:thin}
 #status{font-size:12px;color:var(--muted)}
 #status[data-error=true]{color:#ad4936}
@@ -70,11 +71,11 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .refresh-button{padding:8px;width:36px;height:36px}
 .members button{min-width:0;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:5px;background:#fff;border:1px solid var(--line);height:36px;padding:7px 4px;border-radius:8px;font-size:13px;line-height:20px;font-weight:500}
 .members button:hover{background:var(--surface)}
-.members button[aria-pressed=true]{background:var(--hover);border-color:var(--border-strong)}
+.members button[aria-pressed=true]{background:#e5f3ec;border-color:#9fc9b6;color:var(--accent);box-shadow:0 2px 5px #173f2510}
 .members i{width:6px;height:6px;flex:none;border-radius:50%}
 .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.record-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:13px 14px 12px;text-align:left;border-radius:12px;border:1px solid var(--line);border-top:3px solid var(--card-line);background:linear-gradient(160deg,var(--card-tint),#fff 65%);transition:border-color .15s,box-shadow .15s,transform .15s}
-.record-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px #0000000d;border-color:var(--card-line)}
+.record-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:13px 14px 12px;text-align:left;border-radius:14px;border:1px solid var(--line);border-top:3px solid var(--card-line);background:linear-gradient(150deg,var(--card-tint),#fff 75%);transition:border-color .2s var(--ease),box-shadow .2s var(--ease),transform .2s var(--ease)}
+.record-card:hover{transform:translateY(-2px);box-shadow:0 8px 22px #23473214;border-color:var(--card-line)}
 .card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px}
 .card-date{display:flex;align-items:center;gap:7px;font-variant-numeric:tabular-nums}
 .card-date>b{font-size:29px;font-weight:650;letter-spacing:-1px;line-height:36px;color:var(--card-color)}
@@ -112,7 +113,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .editor-heading{display:flex;align-items:center;justify-content:space-between;margin:0 -8px 8px}
 #recordTitle{line-height:28px;overflow-wrap:anywhere;font-size:19px}
 #recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}
-#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:13px;overflow:hidden}
+#playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:14px;overflow:hidden;box-shadow:0 6px 18px #15291c18}
 #fullVideo{display:block;width:100%;height:100%}
 #videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}
 .preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}
@@ -122,16 +123,21 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #togglePlayback{width:40px;height:36px;padding:6px}
 #togglePlayback .glyph{width:22px;height:22px}
 #clock{color:var(--muted);font-size:12px;line-height:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
-#timeline{position:relative;height:44px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
+#timeline{position:relative;z-index:1;height:54px;background:repeating-linear-gradient(90deg,#f5f5f5 0,#f5f5f5 calc(10% - 1px),#dedede calc(10% - 1px),#dedede 10%);border-radius:7px;cursor:crosshair;touch-action:none;user-select:none}
 #thumbnails{position:absolute;inset:0;display:flex;overflow:hidden;border-radius:7px;pointer-events:none}
-#thumbnails .thumbnail{flex:1;min-width:0;display:grid;place-items:center;background:#e4e7e6;color:#69736f;font-size:9px;border-right:1px solid #ffffff55}
+#thumbnails .thumbnail{position:absolute;top:0;bottom:0;min-width:0;display:grid;place-items:center;background:#e4e7e6;color:#69736f;font-size:9px;border-right:1px solid #ffffff55}
 #thumbnails canvas{width:100%;height:100%;object-fit:cover;display:block}
-#ticks{z-index:1;position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 5px 4px;font-size:9px;color:white;text-shadow:0 1px 3px #000; background:linear-gradient(transparent 55%,#0009);pointer-events:none}
-#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}
-#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}
-#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:8px;padding:0;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
+#ticks{z-index:1;position:absolute;inset:0;overflow:hidden;font-size:9px;color:white;text-shadow:0 1px 3px #000; background:linear-gradient(transparent 55%,#0009);pointer-events:none}
+#ticks span{position:absolute;bottom:4px;white-space:nowrap;padding:0 4px}
+#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#147d7010;box-shadow:0 0 0 1px #ffffff30 inset;pointer-events:none}
+#playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:white;box-shadow:0 0 0 1px #183d3580;pointer-events:none;z-index:1}
+#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:10px;padding:0;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
 #timeline [data-handle]::before{content:"";position:absolute;inset:-4px -7px}
-#timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}
+#timeline::before{content:'';position:absolute;top:-13px;left:var(--view-start,0%);width:var(--view-width,100%);height:3px;border-radius:3px;background:var(--accent);opacity:.55;pointer-events:none}
+#timeline::after{content:attr(data-zoom);position:absolute;right:0;top:-39px;color:var(--accent);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;pointer-events:none}
+#timeline.refitting::after{content:'聚焦选区 · ' attr(data-zoom)}
+#timeline [data-handle]:hover,#timeline [data-handle]:focus-visible{background:var(--accent-hover);box-shadow:0 0 0 3px #147d7025}
+#timeline [data-handle]:active{transform:translateX(-50%)}
 #timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
 .export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .export-mode{position:relative;display:grid;grid-template-columns:1fr 1fr;flex:none;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover);isolation:isolate}
@@ -152,23 +158,26 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .resize[data-edge=ne]{top:-5px;right:-5px;cursor:nesw-resize}
 .resize[data-edge=sw]{bottom:-5px;left:-5px;cursor:nesw-resize}
 .resize[data-edge=se]{bottom:-5px;right:-5px;cursor:nwse-resize}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}
 }
 
 .export-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:40px;line-height:20px;padding:10px 16px;margin-top:16px}
 .feedback{margin:0 18px 18px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
 
 #header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px var(--gutter);border-bottom:1px solid var(--line);cursor:grab;touch-action:none}
-#header h1{font-size:15px;font-weight:600;line-height:24px}
+#header h1{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:600;line-height:24px}
+#header h1::before{content:"";width:8px;height:18px;border-radius:5px;background:linear-gradient(180deg,#65ba91,var(--accent))}
 .header-tools{display:flex;align-items:center;gap:8px}
 #shortcut{width:104px;height:30px;padding:5px 7px;line-height:18px;font-size:10px;text-align:center;background:var(--surface);border-radius:6px;cursor:pointer}
 #shortcut.recording{outline:2px solid var(--text)}
 #close{display:flex;align-items:center;justify-content:center;width:30px;height:30px;margin-right:-6px;padding:6px;border-radius:6px}
 #close:hover{background:var(--hover)}
 .library-content{padding:var(--gutter)}
-.record-section{padding:10px var(--gutter) 12px;border-bottom:1px solid var(--line)}
+.record-section{padding:12px var(--gutter) 16px;border-bottom:1px solid var(--line)}
 .preview-section{padding:18px var(--gutter) 0}
-.timeline-section{margin:8px var(--gutter) 18px;padding:14px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.timeline-section{position:relative;margin:12px var(--gutter) 18px;padding:46px 14px 12px;background:linear-gradient(160deg,#f1f7f3,#f8faf9);border:1px solid var(--line);border-radius:14px}
+.timeline-section::after{content:"";position:absolute;top:33px;left:14px;right:14px;height:3px;border-radius:3px;background:#dce7e0;pointer-events:none}
+.timeline-section::before{content:"片段选区";position:absolute;top:12px;left:14px;font-size:11px;font-weight:600;color:var(--muted)}
 .export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}
 
 /* Opening punctuation hangs into the gutter so the visible title edge aligns. */
@@ -180,6 +189,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #timelineLabels{grid-column:2}
 .whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}
 @container(max-width:440px){
+#ticks span:nth-child(2),#ticks span:nth-child(4){display:none}
 .preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}
 .mark-buttons{gap:0;margin-left:-4px}
 .mark-buttons .text-button{padding:6px 4px;font-size:10px}
@@ -194,6 +204,18 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .whole-recording:has(input:checked){color:var(--accent)}
 .whole-recording:has(input:disabled){opacity:.5;cursor:default}
 @media(prefers-reduced-motion:reduce){.export-mode::before,.whole-recording input,.whole-recording input::before{transition:none}}
+
+/* Motion communicates entry and feedback; timeline geometry is animated by its viewport. */
+@keyframes panel-enter{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes page-enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+#library,#editPage,#offline{animation:page-enter .22s var(--ease) both}
+#download{box-shadow:0 4px 10px #147d7020;letter-spacing:.03em}
+#download:hover{box-shadow:0 6px 16px #147d7033;transform:translateY(-1px)}
+#download:active{transform:translateY(0);box-shadow:0 2px 5px #147d7020}
+#togglePlayback{border-radius:50%;background:var(--hover);color:var(--accent)}
+#togglePlayback:hover{background:#dcece3}
+#launcher:hover{box-shadow:0 8px 24px #183c2926;border-color:var(--border-strong)}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 `;
 
   // src/ui/controls.js
@@ -450,7 +472,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
   }, onView = () => {
   } }) {
-    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending;
+    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending, zoomFrame = 0, zooming = false, tickTimes = [];
     const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
     const timeLabel = (t) => {
       const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
@@ -475,26 +497,66 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         el.setAttribute("aria-valuemin", 0);
         el.setAttribute("aria-valuemax", total);
       }
+      if (!zooming) tickTimes = tickElements.map((_, i) => view3.start + (view3.end - view3.start) * i / 4);
       tickElements.forEach((span, i) => {
-        span.textContent = timeLabel(view3.start + (view3.end - view3.start) * i / 4);
+        const position = (tickTimes[i] - view3.start) / (view3.end - view3.start) * 100;
+        span.textContent = timeLabel(tickTimes[i]);
+        span.style.left = `${position}%`;
+        span.style.transform = `translateX(-${clamp(position, 0, 100)}%)`;
       });
+      track.dataset.zoom = `${(total / (view3.end - view3.start)).toFixed(1)}×`;
+      track.style.setProperty("--view-start", `${view3.start / total * 100}%`);
+      track.style.setProperty("--view-width", `${(view3.end - view3.start) / total * 100}%`);
       labels.textContent = formatTimeRange(selection.start, selection.end);
       renderPlayhead();
       renderLock();
-      onView({ ...view3 });
+      onView({ ...view3 }, { animating: zooming });
     }
-    function setSelection(next, refit2 = false) {
+    function stopZoom() {
+      if (!zooming) return;
+      cancelAnimationFrame(zoomFrame);
+      zoomFrame = 0;
+      zooming = false;
+      track.classList.remove("refitting");
+    }
+    function setSelection(next, refit = false) {
       validateRange(next.start, next.end, total);
+      stopZoom();
       selection = next;
-      if (refit2) view3 = fitSelection(next.start, next.end, total);
       render();
       onSelection({ ...selection });
+      if (refit) fitView();
     }
-    function refit() {
+    function fitView() {
+      stopZoom();
+      const target = fitSelection(selection.start, selection.end, total);
+      if (target.start === view3.start && target.end === view3.end) return;
+      if (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        view3 = target;
+        render();
+        return;
+      }
+      const from = { ...view3 }, span = from.end - from.start, center2 = (from.start + from.end) / 2;
+      const targetSpan = target.end - target.start, targetCenter = (target.start + target.end) / 2;
+      let began;
+      zooming = true;
       track.classList.add("refitting");
-      view3 = fitSelection(selection.start, selection.end, total);
-      render();
-      setTimeout(() => track.classList.remove("refitting"), 180);
+      function step(now2) {
+        began ??= now2;
+        const progress = clamp((now2 - began) / 420, 0, 1), ease = progress * progress * (3 - 2 * progress);
+        const width = span * Math.exp(Math.log(targetSpan / span) * ease);
+        const travel = span === targetSpan ? ease : (span - width) / (span - targetSpan);
+        const middle = center2 + (targetCenter - center2) * travel;
+        const left = clamp(middle - width / 2, 0, total - width);
+        view3 = { start: left, end: left + width };
+        if (progress === 1) {
+          stopZoom();
+          view3 = target;
+        }
+        render();
+        if (zooming) zoomFrame = requestAnimationFrame(step);
+      }
+      zoomFrame = requestAnimationFrame(step);
     }
     function apply(x) {
       if (!drag) return;
@@ -525,7 +587,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     track.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || locked || !total) return;
       e.preventDefault();
-      track.classList.remove("refitting");
+      if (zooming) {
+        stopZoom();
+        render();
+      }
       const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
       drag = { type, x: e.clientX, view: { ...view3 }, anchor: selection[type] };
       onScrubStart?.();
@@ -543,7 +608,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       const type = drag.type;
       drag = null;
       if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
-      if (type !== "playhead") refit();
+      if (type !== "playhead") fitView();
       onScrubEnd?.(current);
     }
     track.addEventListener("pointerup", finish);
@@ -551,6 +616,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     track.addEventListener("wheel", (e) => {
       if (locked || !total || drag) return;
       e.preventDefault();
+      stopZoom();
       const r = track.getBoundingClientRect();
       view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
       render();
@@ -566,6 +632,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       onScrubEnd?.(next[type]);
     };
     return { reset(duration, next = { start: 0, end: duration }) {
+      stopZoom();
       total = duration;
       view3 = { start: 0, end: total };
       setSelection(next);
@@ -576,7 +643,16 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       }
     }, lock(value) {
       locked = value;
+      if (value && zooming) {
+        stopZoom();
+        render();
+      }
       renderLock();
+    }, stop() {
+      if (zooming) {
+        stopZoom();
+        render();
+      }
     } };
   }
 
@@ -34222,7 +34298,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
   }
   function createThumbnails({ container, request, readFrame = readThumbnail }) {
-    let record, streams = [], viewKey = "", controller, timer;
+    let record, streams = [], viewKey = "", controller, timer, displayView, currentView, moving = false;
     function cancel() {
       clearTimeout(timer);
       controller?.abort();
@@ -34233,6 +34309,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       record = null;
       streams = [];
       viewKey = "";
+      displayView = null;
+      currentView = null;
+      moving = false;
       container.replaceChildren();
     }
     async function render(samples, own, cells) {
@@ -34252,8 +34331,29 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       }
     }
-    function update(view3) {
+    function project() {
+      if (!displayView) return;
+      const width = currentView.end - currentView.start;
+      const cells = Array.from(container.children);
+      cells.forEach((cell, i) => {
+        const start = displayView.start + (displayView.end - displayView.start) * i / cells.length;
+        cell.style.left = `${(start - currentView.start) / width * 100}%`;
+        cell.style.width = `${(displayView.end - displayView.start) / cells.length / width * 100}%`;
+      });
+    }
+    function update(view3, { animating = false } = {}) {
       if (!record) return;
+      currentView = { ...view3 };
+      project();
+      if (animating) {
+        if (!moving) {
+          cancel();
+          viewKey = "";
+        }
+        moving = true;
+        return;
+      }
+      moving = false;
       const key = `${view3.start}:${view3.end}`;
       if (key === viewKey) return;
       viewKey = key;
@@ -34267,8 +34367,18 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         cell.textContent = "…";
         return cell;
       });
-      container.replaceChildren(...cells);
-      timer = setTimeout(() => void render(samples, own, cells), 200);
+      if (!displayView) {
+        container.replaceChildren(...cells);
+        displayView = { ...view3 };
+        project();
+      }
+      timer = setTimeout(async () => {
+        await render(samples, own, cells);
+        if (own.signal.aborted) return;
+        container.replaceChildren(...cells);
+        displayView = { ...view3 };
+        project();
+      }, 200);
     }
     return { load(next, parts) {
       clear();
@@ -60773,7 +60883,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => {
       player.seek(t);
       updateClock(t);
-    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: updateExportSummary, onView: (view3) => thumbnails.update(view3) });
+    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: updateExportSummary, onView: (view3, motion) => thumbnails.update(view3, motion) });
     const updateClock = (t) => {
       $("clock").textContent = formatTimeRange(t, playbackTotal, " / ");
     };
@@ -60853,6 +60963,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       playbackTotal = 0;
       clipSelection = null;
       $("wholeRecording").checked = false;
+      timeline.stop();
       playback.cancel();
       player.clear();
       thumbnails.clear();
@@ -61015,6 +61126,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       } else if (page === "edit") enrichRecordType();
     }
     const close = () => {
+      timeline.stop();
       $("panel").hidden = true;
       scheduleController?.abort();
       playback.cancel();
