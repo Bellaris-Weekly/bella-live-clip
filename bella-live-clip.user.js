@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.6.0
+// @version      2.6.1
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -30,7 +30,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.6.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.6.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -61480,7 +61480,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     units.push(data.subarray(start, end));
     return units;
   }
-  function readConfiguration(description) {
+  function readAvcConfiguration(description) {
     if (description.byteLength < 7 || description[0] !== 1) throw new Error("AVC 解码参数无效。");
     const lengthSize = (description[4] & 3) + 1;
     if (lengthSize === 3) throw new UnsupportedAvcError("这段录像使用了不支持的 AVC 长度格式。");
@@ -61536,7 +61536,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     if (chromaFormat > 3 || lumaDepth > 7 || chromaDepth > 7) throw new Error("AVC SPS 色彩格式无效。");
     return [252 | chromaFormat, 248 | lumaDepth, 248 | chromaDepth];
   }
-  function configurationFromAnnexB(units) {
+  function createAvcConfiguration(units) {
     const parameterSets = units.filter((unit) => PARAMETER_SET_TYPES.has(unit[0] & 31)).filter((unit, index, all) => all.findIndex((other) => sameBytes(unit, other)) === index).map((unit) => unit.slice());
     const sps = parameterSets.filter((unit) => (unit[0] & 31) === 7);
     const pps = parameterSets.filter((unit) => (unit[0] & 31) === 8);
@@ -61579,11 +61579,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     let description = decoderConfig.description ? bytesOf(decoderConfig.description).slice() : null;
     let lengthSize = 0, parameterSets;
     if (description?.byteLength) {
-      ({ lengthSize, parameterSets } = readConfiguration(description));
+      ({ lengthSize, parameterSets } = readAvcConfiguration(description));
       description[4] = description[4] & 252 | 3;
     } else {
       if (!firstPacket) throw new UnsupportedAvcError("需要录像首个关键帧才能读取 AVC 参数。");
-      ({ description, parameterSets } = configurationFromAnnexB(annexBUnits(firstPacket.data)));
+      ({ description, parameterSets } = createAvcConfiguration(annexBUnits(firstPacket.data)));
     }
     const config = {
       ...decoderConfig,
@@ -61621,13 +61621,153 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     };
   }
 
+  // src/media/avc-parameter-sets.js
+  var sameParameterSet = (a, b) => a.length === b.length && a.every((byte, index) => byte === b[index]);
+  var ueLength = (value) => 2 * Math.floor(Math.log2(value + 1)) + 1;
+  function unescape2(unit) {
+    const data = new Uint8Array(unit.length - 1);
+    let length = 0;
+    for (let index = 1; index < unit.length; index++) {
+      if (index > 2 && unit[index] === 3 && unit[index - 1] === 0 && unit[index - 2] === 0) continue;
+      data[length++] = unit[index];
+    }
+    return data.subarray(0, length);
+  }
+  function readUe(data, start) {
+    let bit = start;
+    function next() {
+      if (bit >= data.length * 8) throw new Error("AVC 参数编号不完整。");
+      return data[bit >> 3] >> 7 - (bit++ & 7) & 1;
+    }
+    let zeros = 0;
+    while (!next()) if (++zeros > 31) throw new Error("AVC 参数编号超出范围。");
+    let value = 1;
+    for (let index = 0; index < zeros; index++) value = value * 2 + next();
+    return { start, end: bit, value: value - 1 };
+  }
+  function parameterId(unit) {
+    const data = unescape2(unit), type = unit[0] & 31;
+    const field = readUe(data, type === 7 ? 24 : 0);
+    if (field.value > (type === 7 ? 31 : 255)) throw new Error("AVC 参数编号超出范围。");
+    return field.value;
+  }
+  function rewrite(unit, fields, parameterSet) {
+    const data = unescape2(unit);
+    let bits = data.length * 8;
+    if (parameterSet) {
+      while (bits && !(data[bits - 1 >> 3] & 1 << 7 - (bits - 1 & 7))) bits--;
+      if (!bits) throw new Error("AVC 参数集缺少结束标记。");
+    }
+    const size = bits + fields.reduce((sum, field) => sum + ueLength(field.target) - (field.end - field.start), 0);
+    const result = new Uint8Array(Math.ceil(size / 8));
+    let written = 0;
+    function copy(from2, length) {
+      while (length) {
+        const count = Math.min(length, 8 - (written & 7), 8 - (from2 & 7));
+        const value = data[from2 >> 3] >> 8 - (from2 & 7) - count & (1 << count) - 1;
+        result[written >> 3] |= value << 8 - (written & 7) - count;
+        written += count;
+        from2 += count;
+        length -= count;
+      }
+    }
+    let from = 0;
+    for (const field of fields) {
+      copy(from, field.start - from);
+      written += Math.floor(Math.log2(field.target + 1));
+      for (const bit of (field.target + 1).toString(2)) {
+        if (bit === "1") result[written >> 3] |= 1 << 7 - (written & 7);
+        written++;
+      }
+      from = field.end;
+    }
+    copy(from, bits - from);
+    const escaped = [unit[0]];
+    let zeros = 0;
+    for (const byte of result) {
+      if (zeros >= 2 && byte <= 3) {
+        escaped.push(3);
+        zeros = 0;
+      }
+      escaped.push(byte);
+      zeros = byte === 0 ? zeros + 1 : 0;
+    }
+    return Uint8Array.from(escaped);
+  }
+  function compatibleGeometry(source, boundary) {
+    return source.codedWidth === boundary.codedWidth && source.codedHeight === boundary.codedHeight && (source.displayAspectWidth ?? source.codedWidth) * (boundary.displayAspectHeight ?? boundary.codedHeight) === (boundary.displayAspectWidth ?? boundary.codedWidth) * (source.displayAspectHeight ?? source.codedHeight);
+  }
+  function createAvcSplicer(source, boundaries) {
+    const parameterSets = readAvcConfiguration(new Uint8Array(source.description)).parameterSets.map((unit) => unit.slice());
+    const sps = /* @__PURE__ */ new Map(), pps = /* @__PURE__ */ new Map();
+    for (const unit of parameterSets) {
+      const type = unit[0] & 31;
+      if (type !== 7 && type !== 8) continue;
+      const map = type === 7 ? sps : pps, id = parameterId(unit);
+      if (map.has(id) && !sameParameterSet(map.get(id), unit)) throw new UnsupportedAvcError("原片包含冲突的 AVC 参数编号");
+      map.set(id, unit);
+    }
+    function allocate(map, originalId, limit, byteAligned) {
+      for (let id = 0; id <= limit; id++) {
+        if (!map.has(id) && (!byteAligned || (ueLength(id) - ueLength(originalId)) % 8 === 0)) return id;
+      }
+      throw new UnsupportedAvcError("没有可用于拼接的独立 AVC 参数编号");
+    }
+    const mappings = boundaries.map((boundary) => {
+      if (!compatibleGeometry(source, boundary)) throw new UnsupportedAvcError("边界编码改变了画面尺寸");
+      const units = readAvcConfiguration(new Uint8Array(boundary.description)).parameterSets;
+      if (units.some((unit) => (unit[0] & 31) === 13)) throw new UnsupportedAvcError("边界编码使用了 AVC 扩展参数");
+      const spsIds = /* @__PURE__ */ new Map(), ppsIds = /* @__PURE__ */ new Map();
+      for (const unit of units.filter((unit2) => (unit2[0] & 31) === 7)) {
+        const data = unescape2(unit), field = readUe(data, 24), id = parameterId(unit);
+        let target = [...sps].find(([candidate, existing]) => sameParameterSet(existing, rewrite(unit, [{ ...field, target: candidate }], true)))?.[0];
+        if (target === void 0) {
+          target = allocate(sps, id, 31, false);
+          const rewritten = rewrite(unit, [{ ...field, target }], true);
+          sps.set(target, rewritten);
+          parameterSets.push(rewritten);
+        }
+        spsIds.set(id, target);
+      }
+      for (const unit of units.filter((unit2) => (unit2[0] & 31) === 8)) {
+        const data = unescape2(unit), field = readUe(data, 0), reference = readUe(data, field.end), id = parameterId(unit);
+        const sequence = spsIds.get(reference.value);
+        if (sequence === void 0) throw new Error("AVC PPS 引用了不存在的 SPS。");
+        const rewritePps = (target2) => rewrite(unit, [{ ...field, target: target2 }, { ...reference, target: sequence }], true);
+        let target = [...pps].find(([candidate, existing]) => (ueLength(candidate) - ueLength(id)) % 8 === 0 && sameParameterSet(existing, rewritePps(candidate)))?.[0];
+        if (target === void 0) {
+          target = allocate(pps, id, 255, true);
+          const rewritten = rewritePps(target);
+          pps.set(target, rewritten);
+          parameterSets.push(rewritten);
+        }
+        ppsIds.set(id, target);
+      }
+      return ppsIds;
+    });
+    if (sps.size > 31 || pps.size > 255) throw new UnsupportedAvcError("拼接参数数量超出 MP4 容量");
+    const { description } = createAvcConfiguration(parameterSets);
+    return {
+      decoderConfig: { ...source, description },
+      normalize(packet, boundaryIndex) {
+        const mapping = mappings[boundaryIndex];
+        const units = avccUnits(packet.data, 4).filter((unit) => (unit[0] & 31) !== 6).map((unit) => {
+          const type = unit[0] & 31;
+          if ([2, 3, 4, 19, 20, 21].includes(type)) throw new UnsupportedAvcError("边界编码使用了不支持的 AVC 图像扩展");
+          if (type !== 1 && type !== 5) return unit;
+          const data = unescape2(unit);
+          const firstMb = readUe(data, 0), sliceType = readUe(data, firstMb.end), field = readUe(data, sliceType.end);
+          const target = mapping.get(field.value);
+          if (target === void 0) throw new Error("AVC 图像引用了不存在的 PPS。");
+          return target === field.value ? unit : rewrite(unit, [{ ...field, target }], false);
+        });
+        return packet.clone({ data: joinAvcc(units) });
+      }
+    };
+  }
+
   // src/media/smart-trim.js
   var verified = { verifyKeyPackets: true };
-  function sameAvcConfiguration(a, b) {
-    const bytes2 = (value) => new Uint8Array(value.buffer ?? value, value.byteOffset ?? 0, value.byteLength);
-    const first = bytes2(a.description), second = bytes2(b.description);
-    return a.codec === b.codec && a.codedWidth === b.codedWidth && a.codedHeight === b.codedHeight && (a.displayAspectWidth ?? a.codedWidth) * (b.displayAspectHeight ?? b.codedHeight) === (b.displayAspectWidth ?? b.codedWidth) * (a.displayAspectHeight ?? a.codedHeight) && ["primaries", "transfer", "matrix", "fullRange"].every((key) => (a.colorSpace?.[key] ?? null) === (b.colorSpace?.[key] ?? null)) && first.length === second.length && first.every((value, index) => value === second[index]);
-  }
   async function planVideoCut(track, { start, end, normalizer, signal }) {
     const sink = new EncodedPacketSink(track), tick = 1 / await track.getTimeResolution();
     async function previousIdr(time) {
@@ -61652,38 +61792,57 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     return { headEnd: Math.max(start, first.timestamp), tailStart: reachesEnd ? end : Math.min(end, last2.timestamp), first, last: last2 };
   }
-  async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) {
-    async function* encode(from, to) {
-      if (to <= from) return;
-      let encoded;
-      for await (const value of encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal })) {
-        if (!encoded) {
-          encoded = createAvcNormalizer(value.decoderConfig, value.packet);
-          if (plan.first && !sameAvcConfiguration(encoded.decoderConfig, normalizer.decoderConfig)) {
-            throw new UnsupportedAvcError("边界编码参数与原片不同，无法保证播放器兼容");
+  async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) {
+    const boundaries = [];
+    try {
+      for (const [from, to] of [[start, plan.headEnd], [plan.tailStart, end]]) {
+        if (to <= from) {
+          boundaries.push(null);
+          continue;
+        }
+        const iterator = encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal });
+        const boundary = { iterator };
+        boundaries.push(boundary);
+        boundary.next = await iterator.next();
+        if (boundary.next.done) throw new Error("边界选区没有可编码的画面。");
+        const value = boundary.next.value;
+        boundary.normalizer = createAvcNormalizer(value.decoderConfig, value.packet);
+        if (!boundary.normalizer.isIdr(value.packet)) throw new UnsupportedAvcError("边界编码没有生成独立关键帧");
+      }
+      const encoded = boundaries.filter(Boolean);
+      const splicer = plan.first ? createAvcSplicer(normalizer.decoderConfig, encoded.map((item) => item.normalizer.decoderConfig)) : null;
+      async function* encode(boundary) {
+        if (!boundary) return;
+        const index = encoded.indexOf(boundary);
+        while (!boundary.next.done) {
+          signal?.throwIfAborted();
+          let packet = boundary.normalizer.normalize(boundary.next.value.packet);
+          if (splicer) packet = splicer.normalize(packet, index);
+          stats.encodedFrames++;
+          yield { packet, decoderConfig: splicer?.decoderConfig ?? boundary.normalizer.decoderConfig };
+          boundary.next = await boundary.iterator.next();
+        }
+      }
+      onProcessingStart();
+      yield* encode(boundaries[0]);
+      if (plan.first) {
+        const sink = new EncodedPacketSink(track);
+        for await (const packet of sink.packets(plan.first, plan.last, verified)) {
+          signal?.throwIfAborted();
+          if (packet.timestamp < plan.headEnd - 1e-6 || packet.timestamp + packet.duration > plan.tailStart + 1e-6) {
+            throw new UnsupportedAvcError("关键帧之间存在跨边界画面引用");
           }
-          if (!encoded.isIdr(value.packet)) throw new UnsupportedAvcError("边界编码没有生成独立关键帧");
+          stats.copiedFrames++;
+          yield {
+            packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
+            decoderConfig: splicer.decoderConfig
+          };
         }
-        stats.encodedFrames++;
-        yield { packet: encoded.normalize(value.packet), decoderConfig: encoded.decoderConfig };
       }
+      yield* encode(boundaries[1]);
+    } finally {
+      await Promise.allSettled(boundaries.filter(Boolean).map((boundary) => boundary.iterator.return()));
     }
-    yield* encode(start, plan.headEnd);
-    if (plan.first) {
-      const sink = new EncodedPacketSink(track);
-      for await (const packet of sink.packets(plan.first, plan.last, verified)) {
-        signal?.throwIfAborted();
-        if (packet.timestamp < plan.headEnd - 1e-6 || packet.timestamp + packet.duration > plan.tailStart + 1e-6) {
-          throw new UnsupportedAvcError("关键帧之间存在跨边界画面引用");
-        }
-        stats.copiedFrames++;
-        yield {
-          packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
-          decoderConfig: normalizer.decoderConfig
-        };
-      }
-    }
-    yield* encode(plan.tailStart, end);
   }
   async function* audioPackets(track, { start, end, signal }) {
     const sink = new EncodedPacketSink(track), decoderConfig = await track.getDecoderConfig();
@@ -61723,12 +61882,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       throw new UnsupportedAvcError("浏览器无法编码与原片相同的 H.264 规格");
     }
     const stats = { strategy: "smart", encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate };
-    onProcessingStart();
     onProgress(0, { ...stats, message: plan.first ? "仅编码头尾，中间保留原画" : "选区较短，按原码率编码" });
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
     const video = new EncodedVideoPacketSource("avc");
     output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-    const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) }];
+    const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
     for (const audio of audios) {
       const source = new EncodedAudioPacketSource("aac");
       output.addAudioTrack(source, await trackMetadata(audio));

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Output, BufferTarget, Mp4OutputFormat, EncodedVideoPacketSource, EncodedAudioPacketSource, EncodedPacket, Input, BufferSource, MP4, EncodedPacketSink } from 'mediabunny';
-import { planVideoCut, sameAvcConfiguration, trimPrecise } from '../../../src/media/smart-trim.js';
+import { planVideoCut, trimPrecise } from '../../../src/media/smart-trim.js';
 import { createAvcNormalizer } from '../../../src/media/avc-packets.js';
 import { config } from '../support/synthetic-frame.mjs';
 
@@ -38,20 +38,6 @@ for (const [start, end, headEnd, tailStart, middle] of [[.125, 7.875, 2, 6, true
     } finally { input.dispose(); }
   });
 }
-
-test('相同尺寸和 codec 不能代替完整参数集一致，所有描述字节都参与比较', () => {
-  const base = { ...decoderConfig, description: decoderConfig.description.slice() };
-  assert.equal(sameAvcConfiguration(decoderConfig, base), true);
-  for (const index of [8, decoderConfig.description.length - 1]) {
-    const altered = { ...base, description: base.description.slice() };
-    altered.description[index] ^= 1;
-    assert.equal(sameAvcConfiguration(decoderConfig, altered), false);
-  }
-  const padded = new Uint8Array(base.description.length + 8); padded.set(base.description, 4);
-  assert.equal(sameAvcConfiguration(base, { ...base, description: new DataView(padded.buffer, 4, base.description.length) }), true);
-  assert.equal(sameAvcConfiguration(base, { ...base, colorSpace: { fullRange: true } }), false);
-  assert.equal(sameAvcConfiguration(base, { ...base, displayAspectWidth: 32, displayAspectHeight: 9 }), false);
-});
 
 test('音频预热从独立包开始，兼容关键包与依赖包交替的 AAC 轨道', async () => {
   const input = await fixture(true);

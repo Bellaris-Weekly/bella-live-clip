@@ -4,18 +4,9 @@ import {
 } from 'mediabunny';
 import { encodeVideoRange, readVideoEncodingSettings } from './encoding.js';
 import { createAvcNormalizer, UnsupportedAvcError } from './avc-packets.js';
+import { createAvcSplicer } from './avc-parameter-sets.js';
 
 const verified = { verifyKeyPackets: true };
-
-export function sameAvcConfiguration(a, b) {
-  const bytes = value => new Uint8Array(value.buffer ?? value, value.byteOffset ?? 0, value.byteLength);
-  const first = bytes(a.description), second = bytes(b.description);
-  return a.codec === b.codec && a.codedWidth === b.codedWidth && a.codedHeight === b.codedHeight
-    && (a.displayAspectWidth ?? a.codedWidth) * (b.displayAspectHeight ?? b.codedHeight)
-      === (b.displayAspectWidth ?? b.codedWidth) * (a.displayAspectHeight ?? a.codedHeight)
-    && ['primaries', 'transfer', 'matrix', 'fullRange'].every(key => (a.colorSpace?.[key] ?? null) === (b.colorSpace?.[key] ?? null))
-    && first.length === second.length && first.every((value, index) => value === second[index]);
-}
 
 // Recovery-point keyframes may belong to open GOPs. Only IDR frames close all
 // references to the previous decoder configuration and permit a safe splice.
@@ -44,38 +35,54 @@ export async function planVideoCut(track, { start, end, normalizer, signal }) {
   return { headEnd: Math.max(start, first.timestamp), tailStart: reachesEnd ? end : Math.min(end, last.timestamp), first, last };
 }
 
-async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) {
-  async function* encode(from, to) {
-    if (to <= from) return;
-    let encoded;
-    for await (const value of encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal })) {
-      if (!encoded) {
-        encoded = createAvcNormalizer(value.decoderConfig, value.packet);
-        if (plan.first && !sameAvcConfiguration(encoded.decoderConfig, normalizer.decoderConfig)) {
-          // Multiple avc1 sample descriptions decode in AVFoundation/FFmpeg,
-          // but Chromium playback fails at the change. Keep one configuration.
-          throw new UnsupportedAvcError('边界编码参数与原片不同，无法保证播放器兼容');
+async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) {
+  const boundaries = [];
+  try {
+    for (const [from, to] of [[start, plan.headEnd], [plan.tailStart, end]]) {
+      if (to <= from) { boundaries.push(null); continue; }
+      const iterator = encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal });
+      const boundary = { iterator };
+      boundaries.push(boundary);
+      boundary.next = await iterator.next();
+      if (boundary.next.done) throw new Error('边界选区没有可编码的画面。');
+      const value = boundary.next.value;
+      boundary.normalizer = createAvcNormalizer(value.decoderConfig, value.packet);
+      if (!boundary.normalizer.isIdr(value.packet)) throw new UnsupportedAvcError('边界编码没有生成独立关键帧');
+    }
+    const encoded = boundaries.filter(Boolean);
+    const splicer = plan.first ? createAvcSplicer(normalizer.decoderConfig, encoded.map(item => item.normalizer.decoderConfig)) : null;
+    async function* encode(boundary) {
+      if (!boundary) return;
+      const index = encoded.indexOf(boundary);
+      while (!boundary.next.done) {
+        signal?.throwIfAborted();
+        let packet = boundary.normalizer.normalize(boundary.next.value.packet);
+        if (splicer) packet = splicer.normalize(packet, index);
+        stats.encodedFrames++;
+        yield { packet, decoderConfig: splicer?.decoderConfig ?? boundary.normalizer.decoderConfig };
+        boundary.next = await boundary.iterator.next();
+      }
+    }
+    // Preparing both encoders may seek to the tail; resume forward HLS
+    // lookahead only once the actual interleaved packet pump starts.
+    onProcessingStart();
+    yield* encode(boundaries[0]);
+    if (plan.first) {
+      const sink = new EncodedPacketSink(track);
+      for await (const packet of sink.packets(plan.first, plan.last, verified)) {
+        signal?.throwIfAborted();
+        if (packet.timestamp < plan.headEnd - 1e-6 || packet.timestamp + packet.duration > plan.tailStart + 1e-6) {
+          throw new UnsupportedAvcError('关键帧之间存在跨边界画面引用');
         }
-        if (!encoded.isIdr(value.packet)) throw new UnsupportedAvcError('边界编码没有生成独立关键帧');
+        stats.copiedFrames++;
+        yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
+          decoderConfig: splicer.decoderConfig };
       }
-      stats.encodedFrames++;
-      yield { packet: encoded.normalize(value.packet), decoderConfig: encoded.decoderConfig };
     }
+    yield* encode(boundaries[1]);
+  } finally {
+    await Promise.allSettled(boundaries.filter(Boolean).map(boundary => boundary.iterator.return()));
   }
-  yield* encode(start, plan.headEnd);
-  if (plan.first) {
-    const sink = new EncodedPacketSink(track);
-    for await (const packet of sink.packets(plan.first, plan.last, verified)) {
-      signal?.throwIfAborted();
-      if (packet.timestamp < plan.headEnd - 1e-6 || packet.timestamp + packet.duration > plan.tailStart + 1e-6) {
-        throw new UnsupportedAvcError('关键帧之间存在跨边界画面引用');
-      }
-      stats.copiedFrames++;
-      yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
-        decoderConfig: normalizer.decoderConfig };
-    }
-  }
-  yield* encode(plan.tailStart, end);
 }
 
 async function* audioPackets(track, { start, end, signal }) {
@@ -118,13 +125,12 @@ async function smartTrim(input, { start, end, signal, onProgress, onProcessingSt
     throw new UnsupportedAvcError('浏览器无法编码与原片相同的 H.264 规格');
   }
   const stats = { strategy: 'smart', encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate };
-  onProcessingStart();
   onProgress(0, { ...stats, message: plan.first ? '仅编码头尾，中间保留原画' : '选区较短，按原码率编码' });
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
   const video = new EncodedVideoPacketSource('avc');
   output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-  const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats }) }];
+  const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
   for (const audio of audios) {
     const source = new EncodedAudioPacketSource('aac');
     output.addAudioTrack(source, await trackMetadata(audio));

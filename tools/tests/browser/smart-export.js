@@ -1,12 +1,17 @@
 import { Input, BlobSource, MP4, EncodedPacketSink } from 'mediabunny';
 import { convertMp4, exportSelection } from '../../../src/media/export.js';
+import { createAvcNormalizer } from '../../../src/media/avc-packets.js';
 import { inspectMedia } from '../support/media-info.mjs';
 
 async function packets(blob, type = 'video') {
   const input = new Input({ source: new BlobSource(blob), formats: [MP4] });
   try {
     const track = type === 'video' ? await input.getPrimaryVideoTrack() : await input.getPrimaryAudioTrack(), result = [];
-    for await (const packet of new EncodedPacketSink(track).packets()) result.push(packet);
+    let normalizer;
+    for await (const packet of new EncodedPacketSink(track).packets()) {
+      if (type === 'video') normalizer ??= createAvcNormalizer(await track.getDecoderConfig(), packet);
+      result.push(normalizer ? normalizer.normalize(packet) : packet);
+    }
     return result;
   } finally { input.dispose(); }
 }
@@ -60,7 +65,7 @@ export async function runSmartExportChecks() {
       });
       if (!audioUnchanged) throw new Error(`${name} 改变了 AAC 数据或音频时间位置`);
       item.audioUnchanged = true;
-      if (name === 'matching') {
+      if (strategy === 'smart') {
         const identical = actual.filter(packet => {
           const original = inputPackets.find(value => Math.abs(value.timestamp - start - packet.timestamp) < .00005);
           return original && original.data.length === packet.data.length && original.data.every((value, i) => value === packet.data[i]);
@@ -72,13 +77,14 @@ export async function runSmartExportChecks() {
       item.played = true;
       return output;
     }
-    await check('long', source, 1.25, Math.min(11.25, reference.duration));
+    await check('long', source, 1.25, Math.min(11.25, reference.duration), 'smart');
+    if (!(cases.at(-1).copiedFrames > 0 && cases.at(-1).encodedFrames > 0)) throw new Error('原始素材未实际验证头尾编码与中段直拷');
     await check('fractional', source, 5.123, 8.754);
     await check('short', source, 1.123, 1.454, 'smart');
     if (keys.length >= 3) await check('keyframes', source, keys[1].timestamp, keys[2].timestamp, 'smart');
-    const encodedSource = await check('encoder-source', source, 0, Math.min(12, reference.duration) - .123);
-    await check('matching', encodedSource, 1.25, Math.min(10.75, reference.duration), 'smart');
-    if (!(cases.at(-1).copiedFrames > 0 && cases.at(-1).encodedFrames > 0)) throw new Error('同配置素材未实际验证头尾编码与中段直拷');
+    const encodedSource = await check('spliced-source', source, 0, Math.min(12, reference.duration) - .123);
+    await check('repeated', encodedSource, 1.25, Math.min(10.75, reference.duration), 'smart');
+    if (!(cases.at(-1).copiedFrames > 0 && cases.at(-1).encodedFrames > 0)) throw new Error('二次剪辑素材未实际验证头尾编码与中段直拷');
     const controller = new AbortController();
     let canceled = false;
     try {
@@ -88,7 +94,7 @@ export async function runSmartExportChecks() {
     if (!canceled) throw new Error('取消后仍交付了文件');
     await check('retry', source, 2.123, 2.654);
     await save('smart-results.json', JSON.stringify({ passed: true, canceled, cases }, null, 2));
-    status.textContent = '智能导出验证通过：完整音画、精确边界、配置兼容检查、原生播放、取消与重试。\n' + JSON.stringify(cases, null, 2);
+    status.textContent = '智能导出验证通过：完整音画、精确边界、独立参数集拼接、原生播放、取消与重试。\n' + JSON.stringify(cases, null, 2);
   } catch (error) {
     status.textContent = `智能导出验证失败：${error.message}`;
     await save('smart-results.json', JSON.stringify({ passed: false, cases, error: error.stack }, null, 2));

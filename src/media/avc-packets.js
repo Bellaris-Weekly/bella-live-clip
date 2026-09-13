@@ -15,7 +15,7 @@ function sameBytes(left, right) {
   return left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
 }
 
-function avccUnits(data, lengthSize) {
+export function avccUnits(data, lengthSize) {
   const units = [];
   for (let offset = 0; offset < data.byteLength;) {
     if (offset + lengthSize > data.byteLength) throw new Error('AVC 数据的长度字段不完整。');
@@ -52,7 +52,7 @@ function annexBUnits(data) {
   return units;
 }
 
-function readConfiguration(description) {
+export function readAvcConfiguration(description) {
   if (description.byteLength < 7 || description[0] !== 1) throw new Error('AVC 解码参数无效。');
   const lengthSize = (description[4] & 3) + 1;
   if (lengthSize === 3) throw new UnsupportedAvcError('这段录像使用了不支持的 AVC 长度格式。');
@@ -112,7 +112,7 @@ function extendedSpsFields(sps) {
   return [0xfc | chromaFormat, 0xf8 | lumaDepth, 0xf8 | chromaDepth];
 }
 
-function configurationFromAnnexB(units) {
+export function createAvcConfiguration(units) {
   const parameterSets = units.filter(unit => PARAMETER_SET_TYPES.has(unit[0] & 31))
     .filter((unit, index, all) => all.findIndex(other => sameBytes(unit, other)) === index)
     .map(unit => unit.slice());
@@ -143,7 +143,7 @@ function configurationFromAnnexB(units) {
   return { description: Uint8Array.from(data), parameterSets };
 }
 
-function joinAvcc(units) {
+export function joinAvcc(units) {
   const data = new Uint8Array(units.reduce((size, unit) => size + 4 + unit.byteLength, 0));
   const view = new DataView(data.buffer);
   let offset = 0;
@@ -160,11 +160,11 @@ export function createAvcNormalizer(decoderConfig, firstPacket) {
   let description = decoderConfig.description ? bytesOf(decoderConfig.description).slice() : null;
   let lengthSize = 0, parameterSets;
   if (description?.byteLength) {
-    ({ lengthSize, parameterSets } = readConfiguration(description));
+    ({ lengthSize, parameterSets } = readAvcConfiguration(description));
     description[4] = (description[4] & 0xfc) | 3;
   } else {
     if (!firstPacket) throw new UnsupportedAvcError('需要录像首个关键帧才能读取 AVC 参数。');
-    ({ description, parameterSets } = configurationFromAnnexB(annexBUnits(firstPacket.data)));
+    ({ description, parameterSets } = createAvcConfiguration(annexBUnits(firstPacket.data)));
   }
   const config = {
     ...decoderConfig,
