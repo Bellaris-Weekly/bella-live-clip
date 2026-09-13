@@ -1,3 +1,6 @@
+import metadataText from '../header.txt';
+import {readScriptMetadata,createUpdateChecker} from '../services/updates.js';
+import {createVersionControl} from '../ui/version.js';
 import html from '../ui/template.html';
 import css from '../ui/styles.css';
 import {createControls} from '../ui/controls.js';
@@ -22,6 +25,8 @@ import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/f
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');const room=roomIdFromUrl(pageUrl);
+ const metadata=readScriptMetadata(metadataText);
+ const versionControl=createVersionControl({root,metadata,check:createUpdateChecker({request:api.request,metadata,get,set})});
  for(const [id,name]of[['close','close'],['refreshLibrary','refresh'],['togglePlayback','play']])$(id).innerHTML=icon(name);
  $('back').innerHTML=icon('back')+'<span>选择直播</span>';
  $('download').innerHTML='<span>导出</span>'+icon('download');
@@ -123,7 +128,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
    const message=document.createElement('p');message.textContent=`整场已保存到所选位置 · ${formatBytes(result.bytes)}`;$('downloads').append(message);
   });
  }
- async function open(){$('panel').hidden=false;if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
+ async function open(){$('panel').hidden=false;void versionControl.refresh();if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
    renderCards();const selected=member;void libraries.load(selected).then(result=>{
     if(member!==selected||page!=='library'||$('panel').hidden)return;
     renderCards();showScheduleResult(result);
@@ -151,7 +156,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   document.addEventListener('keydown', e => { if (!isEditing(e) && matchesShortcut(e,shortcut)) { e.preventDefault(); $('panel').hidden ? void open() : close(); } });
   function drag(element,onMove,onEnd) {
     element.addEventListener('pointerdown',e=>{
-      if(e.button!==0 || e.target.closest('button,input,select') && element!==$('launcher')) return;
+      if(e.button!==0 || e.target.closest('button,input,select,a') && element!==$('launcher')) return;
       const x=e.clientX,y=e.clientY, initial={...rect}; element.setPointerCapture(e.pointerId); e.preventDefault();
       const move=ev=>onMove(ev.clientX-x,ev.clientY-y,initial);
       const finish=()=>{ element.removeEventListener('pointermove',move); element.removeEventListener('pointerup',finish); element.removeEventListener('pointercancel',finish); onEnd?.(); };

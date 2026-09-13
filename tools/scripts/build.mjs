@@ -9,7 +9,7 @@ await build({
   target: 'chrome110',
   minify: false,
   charset: 'utf8',
-  loader: { '.html': 'text', '.css': 'text' },
+  loader: { '.txt': 'text', '.html': 'text', '.css': 'text' },
   banner: { js: readFileSync('src/header.txt', 'utf8') },
   legalComments: 'inline',
 });

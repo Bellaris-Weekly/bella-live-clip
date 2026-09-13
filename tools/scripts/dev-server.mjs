@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 import {Input,BufferSource,MP4,Output,BufferTarget,Mp4OutputFormat,Conversion} from 'mediabunny';
 const artifacts='.local/test-artifacts';
 await mkdir(artifacts,{recursive:true});
-await build({entryPoints:['tools/tests/browser/index.js'],outfile:`${artifacts}/browser.js`,bundle:true,format:'iife',target:'chrome110',loader:{'.html':'text','.css':'text'}});
+await build({entryPoints:['tools/tests/browser/index.js'],outfile:`${artifacts}/browser.js`,bundle:true,format:'iife',target:'chrome110',loader:{'.txt':'text','.html':'text','.css':'text'}});
 const fixture=process.env.BILI_CLIP_FIXTURE || '.local/media/mediabunny-test.mp4';
 const hlsFixture=process.env.BILI_CLIP_HLS_FIXTURE || `${artifacts}/preview-fragmented.mp4`;
 if(!process.env.BILI_CLIP_HLS_FIXTURE){

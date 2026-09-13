@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.4.1
+// @version      2.5.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -9,6 +9,7 @@
 // @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。
 // @match        https://*.bilibili.com/*
 // @match        https://bilibili.com/*
+// @connect      share.bellaris.fans
 // @connect      calendar.bk0717.us.ci
 // @connect      api.live.bilibili.com
 // @connect      live.bilibili.com
@@ -28,8 +29,81 @@
 // Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1
 
 (() => {
+  // src/header.txt
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.5.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+
+  // src/services/updates.js
+  var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
+  function parseVersion(version2) {
+    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version2)) throw new Error("版本信息无效");
+    return version2.split(".").map(BigInt);
+  }
+  function isNewerVersion(candidate, current) {
+    const next = parseVersion(candidate), installed = parseVersion(current);
+    for (let i = 0; i < next.length; i++) {
+      if (next[i] !== installed[i]) return next[i] > installed[i];
+    }
+    return false;
+  }
+  function readScriptMetadata(text) {
+    const block = text.match(/^\/\/ ==UserScript==\r?\n([\s\S]*?)^\/\/ ==\/UserScript==/m)?.[1];
+    if (!block) throw new Error("未收到有效的脚本元数据");
+    const value = (key) => block.match(new RegExp(`^// @${key}\\s+(\\S+)`, "m"))?.[1];
+    const version2 = value("version");
+    parseVersion(version2);
+    return { version: version2, namespace: value("namespace"), updateURL: value("updateURL"), downloadURL: value("downloadURL") };
+  }
+  function createUpdateChecker({ request, metadata, get, set, now: now2 = Date.now }) {
+    let pending;
+    return function check({ force = false } = {}) {
+      if (pending) return pending;
+      const cached = get("updateCheck", null), time = now2();
+      if (!force && cached?.installed === metadata.version && time >= cached.checkedAt && time - cached.checkedAt < CHECK_INTERVAL) {
+        return Promise.resolve(cached.result);
+      }
+      pending = (async () => {
+        let result;
+        try {
+          const url2 = new URL(metadata.updateURL);
+          url2.searchParams.set("_check", String(time));
+          const { data } = await request(url2.href, { auth: false });
+          const latest = readScriptMetadata(data);
+          if (latest.namespace !== metadata.namespace) throw new Error("更新源返回了其他脚本");
+          result = { status: isNewerVersion(latest.version, metadata.version) ? "available" : "current", version: latest.version };
+        } catch {
+          result = { status: "error" };
+        }
+        set("updateCheck", { installed: metadata.version, checkedAt: time, result });
+        return result;
+      })().finally(() => {
+        pending = null;
+      });
+      return pending;
+    };
+  }
+
+  // src/ui/version.js
+  function createVersionControl({ root, metadata, check }) {
+    const version2 = root.getElementById("version");
+    const button = root.getElementById("checkUpdate");
+    const link = root.getElementById("installUpdate");
+    version2.textContent = `v${metadata.version}`;
+    link.href = metadata.downloadURL;
+    async function refresh(force = false) {
+      button.disabled = true;
+      button.textContent = "检查中…";
+      const result = await check({ force });
+      button.disabled = false;
+      button.textContent = result.status === "error" ? "检查失败，重试" : result.status === "current" ? "已是最新 · 检查" : "检查更新";
+      link.hidden = result.status !== "available";
+      if (!link.hidden) link.textContent = `更新至 v${result.version} ↗`;
+    }
+    button.onclick = () => void refresh(true);
+    return { refresh };
+  }
+
   // src/ui/template.html
-  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><div class="header-title"><h1>贝报切片助手<span id="version"></span></h1><div class="version-tools" aria-live="polite"><button id="checkUpdate" class="text-button" type="button">检查更新</button><a id="installUpdate" target="_blank" rel="noopener noreferrer" hidden></a></div></div><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
   var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
@@ -216,6 +290,19 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #togglePlayback:hover{background:#dcece3}
 #launcher:hover{box-shadow:0 8px 24px #183c2926;border-color:var(--border-strong)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+.header-title{min-width:0}
+#version{font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}
+.version-tools{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding-left:17px;font-size:11px;line-height:18px}
+.version-tools .text-button{padding:0;font-size:11px;min-height:0;color:var(--muted)}
+#installUpdate{color:var(--accent);text-decoration:none;white-space:nowrap}
+#installUpdate:hover{text-decoration:underline}
+@container (max-width:420px){
+ #header{gap:6px;padding-inline:12px}
+ #header h1{font-size:13px;gap:5px;white-space:nowrap}
+ .header-tools{gap:2px}
+ #shortcut{width:84px;font-size:10px;padding-inline:3px}
+}
 `;
 
   // src/ui/controls.js
@@ -60870,6 +60957,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     document.documentElement.append(host);
     const $ = (id) => root.getElementById(id), video = $("fullVideo");
     const room = roomIdFromUrl(pageUrl);
+    const metadata = readScriptMetadata(header_default);
+    const versionControl = createVersionControl({ root, metadata, check: createUpdateChecker({ request: api.request, metadata, get, set }) });
     for (const [id, name] of [["close", "close"], ["refreshLibrary", "refresh"], ["togglePlayback", "play"]]) $(id).innerHTML = icon(name);
     $("back").innerHTML = icon("back") + "<span>选择直播</span>";
     $("download").innerHTML = "<span>导出</span>" + icon("download");
@@ -61140,6 +61229,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     async function open() {
       $("panel").hidden = false;
+      void versionControl.refresh();
       if (!initialized) {
         initialized = true;
         await (room ? currentRoom() : library());
@@ -61237,7 +61327,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     });
     function drag(element, onMove, onEnd) {
       element.addEventListener("pointerdown", (e) => {
-        if (e.button !== 0 || e.target.closest("button,input,select") && element !== $("launcher")) return;
+        if (e.button !== 0 || e.target.closest("button,input,select,a") && element !== $("launcher")) return;
         const x = e.clientX, y = e.clientY, initial = { ...rect };
         element.setPointerCapture(e.pointerId);
         e.preventDefault();
