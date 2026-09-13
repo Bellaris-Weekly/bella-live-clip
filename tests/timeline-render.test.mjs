@@ -67,7 +67,7 @@ test('缩放和选区调整复用刻度节点，锁定只改变边界可用状�
   f.timeline.setCurrent(50);assert.equal(f.playhead.hidden,false);assert.equal(f.playhead.style.left,'50%');
   f.timeline.setSelection({start:30,end:70});
   assert.equal(f.startHandle.style.left,'10%');assert.equal(f.endHandle.style.left,'90%');
-  assert.equal(f.labels.textContent,'0:30 — 1:10');
+  assert.equal(f.labels.textContent,'00:30 — 01:10');
   assert.equal(f.startHandle.attributes['aria-valuenow'],'30.000');
   const writes=f.staticWrites();
   for(const locked of [true,false]){

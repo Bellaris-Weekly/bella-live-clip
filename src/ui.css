@@ -95,13 +95,17 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #ticks{z-index:1;position:absolute;inset:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 5px 4px;font-size:9px;color:white;text-shadow:0 1px 3px #000; background:linear-gradient(transparent 55%,#0009);pointer-events:none}
 #selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#17171708;pointer-events:none}
 #playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:var(--accent);pointer-events:none}
-#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:12px;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
+#timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:8px;padding:0;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
+#timeline [data-handle]::before{content:"";position:absolute;inset:-4px -7px}
 #timeline.refitting [data-handle],#timeline.refitting #selection{transition:left .18s,right .18s}
 #timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
 .export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.export-mode{display:flex;flex:none;padding:2px;gap:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover)}
+.export-mode{position:relative;display:grid;grid-template-columns:1fr 1fr;flex:none;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover);isolation:isolate}
+.export-mode::before{content:"";position:absolute;left:2px;top:2px;bottom:2px;width:calc(50% - 2px);border-radius:5px;background:var(--accent);transition:transform .18s ease;z-index:-1}
+.export-mode:has([data-mode="precise"][aria-pressed="true"])::before{transform:translateX(100%)}
 .export-mode button{padding:5px 10px;border-radius:5px;background:transparent;color:var(--muted);font-size:11px;line-height:18px}
-.export-mode button[aria-pressed=true]{background:var(--paper);color:var(--text);box-shadow:0 1px 3px #00000012}
+.export-mode button[aria-pressed=true]{color:white}
+.export-mode button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .resize{position:absolute;z-index:5;touch-action:none}
 .resize[data-edge=n],.resize[data-edge=s]{left:18px;right:18px;height:10px;cursor:ns-resize}
 .resize[data-edge=n]{top:-5px}
@@ -141,10 +145,18 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .timeline-footer{position:relative;display:grid;grid-template-columns:60px minmax(0,1fr) 60px;align-items:center;gap:4px;margin-top:10px;min-height:24px}
 #timelineLabels{grid-column:2}
 .whole-recording{grid-column:3;justify-self:end;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11px;white-space:nowrap}
-#wholeRecording{width:13px;height:13px;margin:0;padding:0;accent-color:var(--accent)}
 @container(max-width:440px){
 .preview-toolbar{grid-template-columns:1fr 36px 1fr;gap:2px}
 .mark-buttons{gap:0;margin-left:-4px}
 .mark-buttons .text-button{padding:6px 4px;font-size:10px}
 #clock{font-size:10px}
 }
+
+.whole-recording input{appearance:none;position:relative;flex:none;width:26px;height:16px;margin:0;padding:0;border:0;border-radius:10px;background:#c8cecc;cursor:pointer;transition:background .18s ease}
+.whole-recording input::before{content:"";position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:white;transition:transform .18s ease}
+.whole-recording input:checked{background:var(--accent)}
+.whole-recording input:checked::before{transform:translateX(10px)}
+.whole-recording input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.whole-recording:has(input:checked){color:var(--accent)}
+.whole-recording:has(input:disabled){opacity:.5;cursor:default}
+@media(prefers-reduced-motion:reduce){.export-mode::before,.whole-recording input,.whole-recording input::before{transition:none}}

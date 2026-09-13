@@ -59,7 +59,7 @@ test('播放位置与左右边界拖动均恢复原来的播放状态，覆盖�
    const timeline=createTimeline({...elements,onPreview:t=>{video.pause();position=t;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
    timeline.reset(100,{start:10,end:80});
    timeline.setSelection({start:10.704,end:80.602});
-   assert.equal(elements.labels.textContent,'0:10 — 1:20');
+   assert.equal(elements.labels.textContent,'00:10 — 01:20');
    assert.deepEqual(timeline.getSelection(),{start:10.704,end:80.602});
    timeline.setSelection({start:10,end:80});
    const target=handle==='playhead'?elements.track:elements[handle+'Handle'];

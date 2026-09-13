@@ -1,4 +1,4 @@
-import {clamp, formatPlaybackTime, zoomWindow, panWindow, validateRange} from './core.js';
+import {clamp, formatTimeRange, zoomWindow, panWindow, validateRange} from './core.js';
 
 export function fitSelection(start,end,total) {
  const width=Math.min(total,(end-start)*1.12);
@@ -29,7 +29,7 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   selectionElement.style.left=`${pct(selection.start)}%`;selectionElement.style.right=`${100-pct(selection.end)}%`;
   for(const [el,value]of[[startHandle,selection.start],[endHandle,selection.end]]){el.setAttribute('aria-valuenow',value.toFixed(3));el.setAttribute('aria-valuemin',0);el.setAttribute('aria-valuemax',total);}
   tickElements.forEach((span,i)=>{span.textContent=timeLabel(view.start+(view.end-view.start)*i/4);});
-  labels.textContent=`${formatPlaybackTime(selection.start)} — ${formatPlaybackTime(selection.end)}`;
+  labels.textContent=formatTimeRange(selection.start,selection.end);
   renderPlayhead();renderLock();onView({...view});
  }
  function setSelection(next,refit=false){validateRange(next.start,next.end,total);selection=next;if(refit)view=fitSelection(next.start,next.end,total);render();onSelection({...selection});}

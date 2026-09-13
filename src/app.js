@@ -11,7 +11,7 @@ import {createTimeline} from './timeline.js';
 import {createThumbnails} from './thumbnails.js';
 import {exportSelection} from './media.js';
 import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from './recording.js';
-import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatDuration,formatPlaybackTime,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
+import {MEMBERS,DEFAULT_SHORTCUT,clamp,formatDuration,formatTimeRange,formatDate,formatBytes,roomIdFromUrl,normalizeShortcut,formatShortcut,matchesShortcut,isEditing,constrainRect,resizeRect,fileName} from './core.js';
 
 export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
@@ -36,7 +36,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
  const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary,onView:view=>thumbnails.update(view)});
- const updateClock=t=>{$('clock').textContent=`${formatPlaybackTime(t)} / ${formatPlaybackTime(playbackTotal)}`;};
+ const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
