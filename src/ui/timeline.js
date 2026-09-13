@@ -17,7 +17,7 @@ export function dragSelection(session,x,width,selection,total) {
  return next;
 }
 export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,onPreview,onScrubStart,onScrubEnd,onSelection=()=>{},onView=()=>{}}) {
- let total=0,selection={start:0,end:1},view={start:0,end:1},drag=null,current=0,locked=false,frame=0,pending,zoomFrame=0,zooming=false,tickTimes=[];
+ let total=0,selection={start:0,end:1},view={start:0,end:1},drag=null,current=0,locked=false,frame=0,pending,zoomFrame=0,zooming=false,zoomTarget=null,tickTimes=[];
  const pct=t=>clamp((t-view.start)/(view.end-view.start)*100,0,100);
  const timeLabel=t=>{const h=Math.floor(t/3600),m=Math.floor(t/60)%60,s=Math.floor(t)%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');};
  const tickElements=Array.from({length:5},()=>document.createElement('span'));
@@ -40,11 +40,11 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   track.style.setProperty('--view-start',`${view.start/total*100}%`);
   track.style.setProperty('--view-width',`${(view.end-view.start)/total*100}%`);
   labels.textContent=formatTimeRange(selection.start,selection.end);
-  renderPlayhead();renderLock();onView({...view},{animating:zooming});
+  renderPlayhead();renderLock();onView({...view},{animating:zooming,target:zoomTarget??view});
  }
  function stopZoom(){
   if(!zooming)return;
-  cancelAnimationFrame(zoomFrame);zoomFrame=0;zooming=false;track.classList.remove('refitting');
+  cancelAnimationFrame(zoomFrame);zoomFrame=0;zooming=false;zoomTarget=null;track.classList.remove('refitting');
  }
  function setSelection(next,refit=false){
   validateRange(next.start,next.end,total);stopZoom();selection=next;render();onSelection({...selection});if(refit)fitView();
@@ -57,7 +57,8 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   const from={...view},span=from.end-from.start,center=(from.start+from.end)/2;
   const targetSpan=target.end-target.start,targetCenter=(target.start+target.end)/2;
   let began;
-  zooming=true;track.classList.add('refitting');
+  zooming=true;zoomTarget=target;track.classList.add('refitting');
+  onView({...view},{animating:true,target});
   function step(now){
    began??=now;
    const progress=clamp((now-began)/420,0,1),ease=progress*progress*(3-2*progress);

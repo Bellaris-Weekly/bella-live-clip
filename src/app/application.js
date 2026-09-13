@@ -149,7 +149,6 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('shortcut').onblur=()=>{$('shortcut').classList.remove('recording');$('shortcut').value=formatShortcut(shortcut);};
   $('shortcut').onkeydown=e=>{e.preventDefault();e.stopPropagation();if(e.key==='Escape')return $('shortcut').blur();const value=normalizeShortcut(e);if(value){shortcut=value;set('shortcut',value);$('shortcut').blur();}};
   document.addEventListener('keydown', e => { if (!isEditing(e) && matchesShortcut(e,shortcut)) { e.preventDefault(); $('panel').hidden ? void open() : close(); } });
-  const resetWindow = () => { rect=defaults(); applyRect(); set('windowV2',rect); $('launcher').style.cssText=''; set('launcher',null); };
   function drag(element,onMove,onEnd) {
     element.addEventListener('pointerdown',e=>{
       if(e.button!==0 || e.target.closest('button,input,select') && element!==$('launcher')) return;
@@ -169,5 +168,5 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
   window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
  window.addEventListener('pagehide',()=>{controller?.abort();libraries.abortAll();leavePage();});
-  controls();if(!room)void libraries.preload(member);return {open,resetWindow,root};
+  controls();if(!room)void libraries.preload(member);return {open,root};
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.3.1
+// @version      2.3.2
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -472,7 +472,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
   }, onView = () => {
   } }) {
-    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending, zoomFrame = 0, zooming = false, tickTimes = [];
+    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending, zoomFrame = 0, zooming = false, zoomTarget = null, tickTimes = [];
     const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
     const timeLabel = (t) => {
       const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
@@ -510,13 +510,14 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       labels.textContent = formatTimeRange(selection.start, selection.end);
       renderPlayhead();
       renderLock();
-      onView({ ...view3 }, { animating: zooming });
+      onView({ ...view3 }, { animating: zooming, target: zoomTarget ?? view3 });
     }
     function stopZoom() {
       if (!zooming) return;
       cancelAnimationFrame(zoomFrame);
       zoomFrame = 0;
       zooming = false;
+      zoomTarget = null;
       track.classList.remove("refitting");
     }
     function setSelection(next, refit = false) {
@@ -540,7 +541,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       const targetSpan = target.end - target.start, targetCenter = (target.start + target.end) / 2;
       let began;
       zooming = true;
+      zoomTarget = target;
       track.classList.add("refitting");
+      onView({ ...view3 }, { animating: true, target });
       function step(now2) {
         began ??= now2;
         const progress = clamp((now2 - began) / 420, 0, 1), ease = progress * progress * (3 - 2 * progress);
@@ -34298,9 +34301,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
   }
   function createThumbnails({ container, request, readFrame = readThumbnail }) {
-    let record, streams = [], viewKey = "", controller, timer, displayView, currentView, moving = false;
+    let record, streams = [], viewKey = "", controller, timer, displayView, currentView, moving = false, ready;
     function cancel() {
       clearTimeout(timer);
+      ready = null;
       controller?.abort();
       controller = null;
     }
@@ -34315,11 +34319,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       container.replaceChildren();
     }
     async function render(samples, own, cells) {
-      for (const [i, sample] of samples.entries()) {
+      await Promise.all(samples.map(async (sample, i) => {
         if (own.signal.aborted) return;
         if (!sample.stream) {
           cells[i].textContent = "无录像";
-          continue;
+          return;
         }
         try {
           const canvas = await readFrame(request, sample, own.signal);
@@ -34329,7 +34333,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           if (own.signal.aborted) return;
           cells[i].textContent = "暂无预览";
         }
-      }
+      }));
     }
     function project() {
       if (!displayView) return;
@@ -34341,26 +34345,28 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         cell.style.width = `${(displayView.end - displayView.start) / cells.length / width * 100}%`;
       });
     }
-    function update(view3, { animating = false } = {}) {
+    function publish() {
+      if (moving || !ready) return;
+      container.replaceChildren(...ready.cells);
+      displayView = ready.view;
+      ready = null;
+      project();
+    }
+    function update(view3, { animating = false, target = view3 } = {}) {
       if (!record) return;
       currentView = { ...view3 };
+      moving = animating;
       project();
-      if (animating) {
-        if (!moving) {
-          cancel();
-          viewKey = "";
-        }
-        moving = true;
+      const key = `${target.start}:${target.end}`;
+      if (key === viewKey) {
+        publish();
         return;
       }
-      moving = false;
-      const key = `${view3.start}:${view3.end}`;
-      if (key === viewKey) return;
       viewKey = key;
       cancel();
       const own = new AbortController();
       controller = own;
-      const samples = thumbnailSamples(record, streams, view3);
+      const samples = thumbnailSamples(record, streams, target);
       const cells = samples.map(() => {
         const cell = container.ownerDocument.createElement("div");
         cell.className = "thumbnail";
@@ -34369,15 +34375,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       });
       if (!displayView) {
         container.replaceChildren(...cells);
-        displayView = { ...view3 };
+        displayView = { ...target };
         project();
       }
       timer = setTimeout(async () => {
         await render(samples, own, cells);
         if (own.signal.aborted) return;
-        container.replaceChildren(...cells);
-        displayView = { ...view3 };
-        project();
+        ready = { cells, view: { ...target } };
+        publish();
       }, 200);
     }
     return { load(next, parts) {
@@ -61206,13 +61211,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         $("panel").hidden ? void open() : close();
       }
     });
-    const resetWindow = () => {
-      rect = defaults2();
-      applyRect();
-      set("windowV2", rect);
-      $("launcher").style.cssText = "";
-      set("launcher", null);
-    };
     function drag(element, onMove, onEnd) {
       element.addEventListener("pointerdown", (e) => {
         if (e.button !== 0 || e.target.closest("button,input,select") && element !== $("launcher")) return;
@@ -61271,7 +61269,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     });
     controls();
     if (!room) void libraries.preload(member);
-    return { open, resetWindow, root };
+    return { open, root };
   }
 
   // src/services/bilibili.js
@@ -61404,6 +61402,5 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       set: (key, value) => GM_setValue(`biliClip.${key}`, value)
     });
     GM_registerMenuCommand("打开贝报切片助手", app.open);
-    GM_registerMenuCommand("重置窗口位置", app.resetWindow);
   }
 })();

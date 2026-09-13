@@ -37,18 +37,49 @@ test('无录像和加载失败有占位，其余帧继续显示，换场次重�
 });
 
 
-test('缩放帧只投影已有缩略图，停稳后才取帧并替换，覆盖不同窗口',async()=>{
- const container=new Element();let reads=0;
- const strip=createThumbnails({container,readFrame:async()=>{reads++;return 'frame';}});
- strip.load(record,streams);strip.update({start:0,end:60});await wait();
- for(const view of [{start:5,end:25},{start:40,end:46}]){
-  const previous=container.children,count=reads;
-  strip.update(view,{animating:true});await wait();
-  assert.equal(reads,count);assert.equal(container.children,previous);
-  assert.ok(Number.parseFloat(previous[0].style.left)<0);
-  assert.ok(Number.parseFloat(previous[0].style.width)>0);
-  strip.update(view);assert.equal(container.children,previous,'新预览未完成前保留旧画面');await wait();
-  assert.notEqual(container.children,previous);assert.equal(container.children[0].style.left,'0%');
+test('松手短暂延迟后并发生成六帧，动画只投影旧图，完成后整体替换',async()=>{
+ const container=new Element(),reads=[];
+ const strip=createThumbnails({container,readFrame:(_,sample,signal)=>new Promise(resolve=>reads.push({sample,signal,resolve}))});
+ strip.load(record,streams);
+ for(const target of [{start:0,end:12},{start:40,end:46}]){
+  const offset=reads.length,view={start:0,end:60};
+  strip.update(view,{animating:true,target});
+  assert.equal(reads.length,offset,'保留生成前的短暂延迟');
+  await wait();
+  assert.equal(reads.length,offset+6,'延迟结束后六张同时启动，不等待前一张完成');
+  const batch=reads.slice(offset),old=container.children;
+  assert.deepEqual(batch.map(r=>r.sample.time),thumbnailSamples(record,streams,target).map(s=>s.time));
+  strip.update({start:2,end:58},{animating:true,target});
+  assert.equal(reads.length,offset+6);assert.equal(batch[0].signal.aborted,false);
+  batch.forEach((r,i)=>r.resolve(`frame-${offset+i}`));await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(container.children,old,'动画期间不切换底图');
+  strip.update(target);
+  assert.notEqual(container.children,old);assert.equal(reads.length,offset+6,'动画结束不重复取帧');
+  assert.deepEqual(container.children.map(c=>c.children[0]),batch.map((_,i)=>`frame-${offset+i}`));
  }
  strip.clear();
+});
+
+test('新选区取消全部旧并发请求，旧结果不能回填，慢帧不阻塞其余取帧',async()=>{
+ const container=new Element(),reads=[];
+ const strip=createThumbnails({container,readFrame:(_,sample,signal)=>new Promise(resolve=>reads.push({signal,resolve}))});
+ strip.load(record,streams);
+ strip.update({start:0,end:12});await wait();
+ assert.equal(reads.length,6);
+ strip.update({start:40,end:46});await wait();
+ assert.equal(reads.length,12);assert.ok(reads.slice(0,6).every(r=>r.signal.aborted));
+ reads.slice(6).forEach(r=>r.resolve('new'));await new Promise(resolve=>setImmediate(resolve));
+ const cells=container.children;assert.ok(cells.every(c=>c.children[0]==='new'));
+ reads.slice(0,6).forEach(r=>r.resolve('old'));await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(container.children,cells);strip.clear();
+});
+
+test('延迟期间连续换选区只生成最终目标的六张图',async()=>{
+ const container=new Element(),reads=[];
+ const strip=createThumbnails({container,readFrame:async(_,sample)=>{reads.push(sample.time);return 'frame';}});
+ strip.load(record,streams);
+ strip.update({start:0,end:60},{animating:true,target:{start:0,end:12}});
+ strip.update({start:0,end:60},{animating:true,target:{start:40,end:46}});
+ assert.equal(reads.length,0);await wait();
+ assert.deepEqual(reads,[40.5,41.5,42.5,43.5,44.5,45.5]);strip.clear();
 });

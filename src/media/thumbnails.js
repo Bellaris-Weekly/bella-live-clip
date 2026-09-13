@@ -36,19 +36,19 @@ export async function readThumbnail(request,sample,signal) {
 }
 
 export function createThumbnails({container,request,readFrame=readThumbnail}) {
- let record,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false;
- function cancel(){clearTimeout(timer);controller?.abort();controller=null;}
+ let record,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready;
+ function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
  function clear(){cancel();record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;container.replaceChildren();}
  async function render(samples,own,cells){
-  for(const [i,sample]of samples.entries()){
+  await Promise.all(samples.map(async(sample,i)=>{
    if(own.signal.aborted)return;
-   if(!sample.stream){cells[i].textContent='无录像';continue;}
+   if(!sample.stream){cells[i].textContent='无录像';return;}
    try{
     const canvas=await readFrame(request,sample,own.signal);
     if(own.signal.aborted)return;
     cells[i].replaceChildren(canvas);
    }catch(error){if(own.signal.aborted)return;cells[i].textContent='暂无预览';}
-  }
+  }));
  }
  function project(){
   if(!displayView)return;
@@ -60,20 +60,23 @@ export function createThumbnails({container,request,readFrame=readThumbnail}) {
    cell.style.width=`${(displayView.end-displayView.start)/cells.length/width*100}%`;
   });
  }
- function update(view,{animating=false}={}){
+ function publish(){
+  if(moving||!ready)return;
+  container.replaceChildren(...ready.cells);displayView=ready.view;ready=null;project();
+ }
+ function update(view,{animating=false,target=view}={}){
   if(!record)return;
-  currentView={...view};project();
-  if(animating){if(!moving){cancel();viewKey='';}moving=true;return;}
-  moving=false;
-  const key=`${view.start}:${view.end}`;if(key===viewKey)return;
+  currentView={...view};moving=animating;project();
+  const key=`${target.start}:${target.end}`;
+  if(key===viewKey){publish();return;}
   viewKey=key;cancel();const own=new AbortController();controller=own;
-  const samples=thumbnailSamples(record,streams,view);
+  const samples=thumbnailSamples(record,streams,target);
   const cells=samples.map(()=>{const cell=container.ownerDocument.createElement('div');cell.className='thumbnail';cell.textContent='…';return cell;});
-  if(!displayView){container.replaceChildren(...cells);displayView={...view};project();}
+  if(!displayView){container.replaceChildren(...cells);displayView={...target};project();}
   timer=setTimeout(async()=>{
    await render(samples,own,cells);
    if(own.signal.aborted)return;
-   container.replaceChildren(...cells);displayView={...view};project();
+   ready={cells,view:{...target}};publish();
   },200);
  }
  return {load(next,parts){clear();record=next;streams=parts;},update,clear};

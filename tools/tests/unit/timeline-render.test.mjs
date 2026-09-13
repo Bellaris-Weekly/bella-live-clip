@@ -94,6 +94,8 @@ test('左右边界松手后整条视野连续放大，刻度保留时间参照�
   f.track.handlers.pointerup(event);
   const selected=f.timeline.getSelection(),before=f.timeline.getView(),ticks=f.ticks.children.map(el=>el.textContent);
   assert.deepEqual(before,{start:0,end:duration},'松手当帧不跳到目标视野');
+  assert.equal(f.views.at(-1).motion.animating,true,'松手即通知目标视野，在动画期间开始生成倒计时');
+  assert.deepEqual(f.views.at(-1).motion.target,fitSelection(selected.start,selected.end,duration));
   f.advance(0);f.advance(210);
   const middle=f.timeline.getView(),target=fitSelection(selected.start,selected.end,duration);
   assert.ok(middle.end-middle.start<duration);
