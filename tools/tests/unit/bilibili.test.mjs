@@ -25,3 +25,22 @@ test('新增成员按配置查询回放并保留身份字段',async()=>{
   assert.equal(records[0].uid,member.uid);assert.equal(records[0].room,member.room);assert.equal(records[0].member,member.name);
  }
 });
+
+test('optional current lookup treats offline and looping rooms as absent while direct entry explains absence',async()=>{
+ for(const live_status of [0,2]){
+  const api=new BiliApi(async()=>({data:`<script>window.__NEPTUNE_IS_MY_WAIFU__=${JSON.stringify({roomInfoRes:{code:0,data:{room_info:{live_status}}}})};</script>`}));
+  assert.equal(await api.current(MEMBERS[0],undefined,{allowOffline:true}),null);
+  await assert.rejects(api.current(MEMBERS[0]),/当前没有直播/);
+ }
+});
+
+test('current lookup uses each member room and preserves full live identity',async()=>{
+ for(const member of [MEMBERS[0],MEMBERS[4]]){
+  const info={live_status:1,live_id_str:'987654321098765432',live_start_time:100,uid:member.uid,room_id:member.room,title:'当前直播'};
+  const api=new BiliApi(async url=>{assert.equal(url,`https://live.bilibili.com/${member.room}`);return {data:`<script>window.__NEPTUNE_IS_MY_WAIFU__=${JSON.stringify({roomInfoRes:{code:0,data:{room_info:info}}})};</script>`};});
+  const result=await api.current(member,undefined,{allowOffline:true});
+  assert.equal(result.key,info.live_id_str);assert.equal(result.member,member.name);assert.equal(result.room,member.room);assert.equal(result.live,true);
+ }
+ const broken=new BiliApi(async()=>({data:'unavailable'}));
+ await assert.rejects(broken.current(MEMBERS[0],undefined,{allowOffline:true}),/未找到直播场次信息/);
+});

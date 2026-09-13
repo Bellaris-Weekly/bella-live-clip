@@ -76,8 +76,8 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   $('body').scrollTop=scroll;controls();
  }
  function showScheduleResult(result){
-  $('scheduleNote').hidden=!result.failed;
-  $('scheduleNote').textContent=result.failed?'部分日程暂不可用，可刷新重试。':'';
+  $('scheduleNote').hidden=!result.failed&&!result.liveFailed;
+  $('scheduleNote').textContent=[result.liveFailed?'当前直播状态暂不可用，可刷新重试。':'',result.failed?'部分日程暂不可用，可刷新重试。':''].filter(Boolean).join(' ');
  }
  async function library(refresh=false){
   leavePage();showPage('library');renderCards();

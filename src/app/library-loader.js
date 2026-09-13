@@ -24,13 +24,23 @@ export function createLibraryLoader({ api, schedules }) {
     if (!request || refresh) {
       const controller = new AbortController();
       const promise = (async () => {
-        const records = refresh || !cached
-          ? await api.history(member, controller.signal)
-          : cached.records;
+        let records = cached?.records, liveFailed = false;
+        if (refresh || !cached || cached.liveFailed) {
+          const [history, current] = await Promise.all([
+            api.history(member, controller.signal),
+            api.current(member, controller.signal, { allowOffline: true }).catch(error => {
+              controller.signal.throwIfAborted();
+              if (error.name === 'AbortError') throw error;
+              liveFailed = true;
+              return null;
+            }),
+          ]);
+          records = current ? [current, ...history.filter(record => record.key !== current.key)] : history;
+        }
         controller.signal.throwIfAborted();
         const result = await schedules.enrich(records, { signal: controller.signal, refresh });
         controller.signal.throwIfAborted();
-        const next = { records: result.records, failed: result.failed, ready: !result.failed };
+        const next = { records: result.records, failed: result.failed, liveFailed, ready: !result.failed && !liveFailed };
         cache.set(id, next);
         return next;
       })();

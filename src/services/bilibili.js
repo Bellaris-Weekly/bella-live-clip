@@ -69,9 +69,11 @@ export class BiliApi {
     return [...new Map(records.map(record => [record.key, record])).values()].sort((a,b)=>b.start-a.start);
   }
 
-  async current(member, signal) {
+  async current(member, signal, { allowOffline = false } = {}) {
     const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
-    return recordFromRoom(roomFromHtml(data), member);
+    const info = roomFromHtml(data);
+    if (allowOffline && info.live_status !== 1) return null;
+    return recordFromRoom(info, member);
   }
 
   async clips(record, start, end, signal) {

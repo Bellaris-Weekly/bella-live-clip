@@ -15,7 +15,7 @@ export async function runCardChecks(app, query, preloadProbe) {
   const cards=[...root.querySelectorAll('.record-card')];
   assert(!root.querySelector('.cover'),'仍然显示封面');
   assert(cards[0].querySelector('.card-title').textContent==='【3D】今晚一起唱歌','原标题被替换');
-  assert(cards.every(c=>c.querySelector('.record-duration').textContent===(query.has('timeline')?'01:22:56':'00:00:24')),'没有使用实际时长');
+  assert(cards.every((c,i)=>c.querySelector('.record-duration').textContent===(query.has('live-library')&&i===0?'直播中':query.has('timeline')?'01:22:56':'00:00:24')),'没有使用实际时长');
   assert(cards.every(c=>!/贝拉|嘉然|乃琳/.test(c.textContent)),'卡片出现姓名文字');
   assert(!cards[5].querySelector('.record-type')&&!cards[5].querySelector('.participant'),'无日程时猜测了参与者');
   assert(cards.every(c=>c.scrollWidth<=c.clientWidth),'卡片横向溢出');

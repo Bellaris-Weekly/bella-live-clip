@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.3.2
+// @version      2.4.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -368,7 +368,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     card.style.setProperty("--card-color", color);
     card.style.setProperty("--card-tint", color + "0d");
     card.style.setProperty("--card-line", color + "40");
-    card.setAttribute("aria-label", [formatDate(record.start), record.title, record.schedule?.type, ...people.map((p) => p.name), `时长 ${formatTime(record.end - record.start)}`].filter(Boolean).join(" · "));
+    card.setAttribute("aria-label", [formatDate(record.start), record.title, record.live ? "直播中" : null, record.schedule?.type, ...people.map((p) => p.name), `时长 ${formatTime(record.end - record.start)}`].filter(Boolean).join(" · "));
     const heading = document.createElement("div");
     heading.className = "card-heading";
     const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(record.start * 1e3));
@@ -424,8 +424,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const duration = document.createElement("span");
     duration.className = "record-duration";
     duration.innerHTML = icon("clock");
-    duration.append(document.createTextNode(formatTime(record.end - record.start)));
-    duration.title = "实际场次时长";
+    duration.append(document.createTextNode(record.live ? "直播中" : formatTime(record.end - record.start)));
+    duration.title = record.live ? "正在直播，最新录像可能有生成延迟" : "实际场次时长";
     details.append(portraits, duration);
     card.append(heading, title, details);
     card.onclick = onSelect;
@@ -904,11 +904,23 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       if (!request || refresh) {
         const controller = new AbortController();
         const promise = (async () => {
-          const records = refresh || !cached ? await api.history(member, controller.signal) : cached.records;
+          let records = cached?.records, liveFailed = false;
+          if (refresh || !cached || cached.liveFailed) {
+            const [history, current] = await Promise.all([
+              api.history(member, controller.signal),
+              api.current(member, controller.signal, { allowOffline: true }).catch((error) => {
+                controller.signal.throwIfAborted();
+                if (error.name === "AbortError") throw error;
+                liveFailed = true;
+                return null;
+              })
+            ]);
+            records = current ? [current, ...history.filter((record) => record.key !== current.key)] : history;
+          }
           controller.signal.throwIfAborted();
           const result = await schedules.enrich(records, { signal: controller.signal, refresh });
           controller.signal.throwIfAborted();
-          const next = { records: result.records, failed: result.failed, ready: !result.failed };
+          const next = { records: result.records, failed: result.failed, liveFailed, ready: !result.failed && !liveFailed };
           cache.set(id, next);
           return next;
         })();
@@ -60995,8 +61007,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       controls();
     }
     function showScheduleResult(result) {
-      $("scheduleNote").hidden = !result.failed;
-      $("scheduleNote").textContent = result.failed ? "部分日程暂不可用，可刷新重试。" : "";
+      $("scheduleNote").hidden = !result.failed && !result.liveFailed;
+      $("scheduleNote").textContent = [result.liveFailed ? "当前直播状态暂不可用，可刷新重试。" : "", result.failed ? "部分日程暂不可用，可刷新重试。" : ""].filter(Boolean).join(" ");
     }
     async function library(refresh = false) {
       leavePage();
@@ -61377,9 +61389,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       } while (records.length < total);
       return [...new Map(records.map((record) => [record.key, record])).values()].sort((a, b) => b.start - a.start);
     }
-    async current(member, signal) {
+    async current(member, signal, { allowOffline = false } = {}) {
       const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
-      return recordFromRoom(roomFromHtml(data), member);
+      const info = roomFromHtml(data);
+      if (allowOffline && info.live_status !== 1) return null;
+      return recordFromRoom(info, member);
     }
     async clips(record, start, end, signal) {
       const data = await this.get("/xlive/web-room/v1/videoService/GetUserSliceStream", {

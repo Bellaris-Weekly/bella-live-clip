@@ -16,7 +16,7 @@ const calendar='BEGIN:VCALENDAR\r\n'+MEMBERS.slice(0,3).flatMap(member=>historyF
  const kind=['团播','突击','单播','双播','单播'][i],people=i===0?'贝拉、嘉然、乃琳':i===3?'贝拉、乃琳':member.name;
  return `BEGIN:VEVENT\r\nUID:${member.id}-${i}\r\nSUMMARY:日程主题不应该替换原标题\r\nDTSTART:${new Date(r.start*1000).toISOString().replace(/[-:]/g,'').replace('.000','')}\r\nDURATION:PT1H\r\nDESCRIPTION:${kind} | ${people}\\n\\n直播间：https://live.bilibili.com/${member.room}\r\nURL:https://live.bilibili.com/${member.room}\r\nEND:VEVENT\r\n`;
 })).join('')+'END:VCALENDAR';
-const api={history:async member=>{preloadProbe.historyCalls++;preloadProbe.historyStartedAt.push(performance.now());return historyFor(member);},current:async()=>({...record,live:true}),clips:async r=>[{stream:location.origin+'/fixture.m3u8',start_time:r.start,end_time:r.start+24}],request:async(url,{type,signal}={})=>{
+const api={history:async member=>{preloadProbe.historyCalls++;preloadProbe.historyStartedAt.push(performance.now());return historyFor(member);},current:async(member,signal,{allowOffline=false}={})=>allowOffline?(query.has('live-library')?{...historyFor(member)[0],live:true}:null):({...record,live:true}),clips:async r=>[{stream:location.origin+'/fixture.m3u8',start_time:r.start,end_time:r.start+24}],request:async(url,{type,signal}={})=>{
  if(url.startsWith('https://calendar.bk0717.us.ci/')){
   await new Promise(resolve=>setTimeout(resolve,query.has('slow-schedule')?1200:100));signal?.throwIfAborted();
   if(query.has('schedule-error'))throw new Error('模拟日程不可用');
