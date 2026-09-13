@@ -183,15 +183,16 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #launcher:hover{box-shadow:0 8px 24px #183c2926;border-color:var(--border-strong)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
-.header-title{min-width:0}
-#version{font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}
-.version-tools{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding-left:17px;font-size:11px;line-height:18px}
-.version-tools .text-button{padding:0;font-size:11px;min-height:0;color:var(--muted)}
-#installUpdate{color:var(--accent);text-decoration:none;white-space:nowrap}
-#installUpdate:hover{text-decoration:underline}
+#version{position:relative;display:inline-flex;align-items:center;padding:0 4px 0 11px;border:1px solid transparent;border-radius:5px;font-size:11px;font-weight:400;line-height:20px;color:var(--muted);white-space:nowrap;text-decoration:none;cursor:pointer}
+#version::before{content:"";position:absolute;left:4px;width:4px;height:4px;border-radius:50%;background:currentColor;opacity:0}
+#version:hover{background:var(--hover)}
+#version:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+#version[data-update=true]{color:#b84040;border-color:#d87575;background:#fff5f5}
+#version[data-update=true]::before{opacity:1}
+#version[data-update=true]:hover{background:#ffeaea}
 @container (max-width:420px){
  #header{gap:6px;padding-inline:12px}
- #header h1{font-size:13px;gap:5px;white-space:nowrap}
+ #header h1{font-size:13px;gap:4px;white-space:nowrap}
  .header-tools{gap:2px}
- #shortcut{width:84px;font-size:10px;padding-inline:3px}
+ #shortcut{width:78px;font-size:10px;padding-inline:3px}
 }
