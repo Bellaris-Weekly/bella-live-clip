@@ -5,12 +5,12 @@
   "type": "module",
   "description": "Bilibili live and replay clip downloader userscript",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "test": "node --test tests/*.test.mjs",
-    "serve": "node scripts/dev-server.mjs",
+    "build": "node tools/scripts/build.mjs",
+    "test": "node --test tools/tests/unit/*.test.mjs",
+    "serve": "node tools/scripts/dev-server.mjs",
     "check": "node --check bella-live-clip.user.js",
     "verify": "npm run build && npm run check && npm run check:version && npm test",
-    "check:version": "node scripts/check-version.mjs"
+    "check:version": "node tools/scripts/check-version.mjs"
   },
   "dependencies": {
     "hls.js": "1.6.16",

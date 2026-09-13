@@ -28,590 +28,11 @@
 // Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1
 
 (() => {
-  // src/ui.html
-  var ui_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  // src/ui/template.html
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手</h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
-  // src/core.js
-  var MEMBERS = Object.freeze([
-    { id: "bella", name: "贝拉", uid: 672353429, room: 22632424, color: "#b97259" },
-    { id: "diana", name: "嘉然", uid: 672328094, room: 22637261, color: "#c7829c" },
-    { id: "eileen", name: "乃琳", uid: 672342685, room: 22625027, color: "#7b85ad" },
-    { id: "xinyi", name: "心宜", uid: "3537115310721181", room: 30849777, color: "#c93773" },
-    { id: "sinuo", name: "思诺", uid: "3537115310721781", room: 30858592, color: "#7252c0" }
-  ]);
-  var DEFAULT_SHORTCUT = Object.freeze({
-    code: "KeyC",
-    ctrlKey: false,
-    altKey: true,
-    shiftKey: true,
-    metaKey: false
-  });
-  var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-  function formatTime(seconds, fractional = false) {
-    const ms = Math.round(Math.max(0, seconds) * 1e3);
-    const h = Math.floor(ms / 36e5);
-    const m = Math.floor(ms / 6e4) % 60;
-    const s = Math.floor(ms / 1e3) % 60;
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? "." + String(ms % 1e3).padStart(3, "0") : ""}`;
-  }
-  function formatTimeRange(start, end, separator = " — ") {
-    const values = [start, end].map((value) => Math.floor(Math.max(0, value)));
-    const hours = values.map((value) => Math.floor(value / 3600));
-    const showHours = hours.some((value) => value > 0);
-    const hourWidth = Math.max(2, ...hours.map((value) => String(value).length));
-    return values.map((value, i) => {
-      const minutes = String(Math.floor(value / 60) % 60).padStart(2, "0");
-      const seconds = String(value % 60).padStart(2, "0");
-      return `${showHours ? String(hours[i]).padStart(hourWidth, "0") + ":" : ""}${minutes}:${seconds}`;
-    }).join(separator);
-  }
-  function formatDuration(seconds) {
-    const tenths = Math.round(Math.max(0, seconds) * 10);
-    const h = Math.floor(tenths / 36e3), m = Math.floor(tenths / 600) % 60, s = tenths % 600 / 10;
-    return `${h ? h + "时" : ""}${h || m ? m + "分" : ""}${s.toFixed(1)}秒`;
-  }
-  function formatDate(unix, withSeconds = false) {
-    return new Intl.DateTimeFormat("zh-CN", {
-      timeZone: "Asia/Shanghai",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      ...withSeconds ? { second: "2-digit" } : {},
-      hourCycle: "h23"
-    }).format(new Date(unix * 1e3));
-  }
-  function formatBytes(bytes2) {
-    if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(2)} GB`;
-    if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(1)} MB`;
-    return `${(bytes2 / 1e3).toFixed(0)} KB`;
-  }
-  function validateRange(start, end, duration) {
-    if (![start, end, duration].every(Number.isFinite) || start < 0 || end <= start) {
-      throw new Error("结束时间必须晚于开始时间。");
-    }
-    if (end > duration + 1e-3) throw new Error(`结束时间超出范围，最晚为 ${formatTime(duration, true)}。`);
-    return { start, end };
-  }
-  function recordFromReplay(item, member) {
-    if (typeof item.live_key !== "string") throw new Error("场次编号格式异常，请刷新场次列表。");
-    return {
-      key: item.live_key,
-      title: item.live_info.title,
-      start: item.start_time,
-      end: item.end_time,
-      live: false,
-      uid: member.uid,
-      member: member.name,
-      room: item.room_id
-    };
-  }
-  function roomFromHtml(html) {
-    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text));
-    if (!script) throw new Error("未找到直播场次信息，请刷新直播间后重试。");
-    const raw = script.replace(/^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=\s*/, "").trim().replace(/;\s*$/, "");
-    const info = JSON.parse(raw).roomInfoRes;
-    if (info?.code !== 0 || !info.data?.room_info) throw new Error("直播间暂未返回场次信息。");
-    return info.data.room_info;
-  }
-  function recordFromRoom(info, member, now2 = Date.now() / 1e3) {
-    if (info.live_status !== 1) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
-    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str)) {
-      throw new Error("直播场次编号不可用，请刷新直播间。");
-    }
-    return {
-      key: info.live_id_str,
-      title: info.title,
-      start: info.live_start_time,
-      end: Math.floor(now2),
-      live: true,
-      uid: info.uid,
-      member: member.name,
-      room: info.room_id
-    };
-  }
-  function roomIdFromUrl(value) {
-    const url2 = new URL(value);
-    if (url2.hostname !== "live.bilibili.com") return null;
-    const match = url2.pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/);
-    return match ? Number(match[1]) : null;
-  }
-  function normalizeShortcut(value) {
-    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
-    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
-    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
-  }
-  function formatShortcut(shortcut) {
-    return [
-      shortcut.ctrlKey && "Ctrl",
-      shortcut.altKey && "Alt",
-      shortcut.shiftKey && "Shift",
-      shortcut.metaKey && "⌘",
-      shortcut.code.replace(/^Key|^Digit/, "")
-    ].filter(Boolean).join("+");
-  }
-  function matchesShortcut(event, shortcut) {
-    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
-  }
-  function isEditing(event) {
-    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
-  }
-  function constrainRect(rect, viewport) {
-    const margin = 10;
-    const maxW = Math.max(1, viewport.width - margin * 2);
-    const maxH = Math.max(1, viewport.height - margin * 2);
-    const width = clamp(rect.width, Math.min(360, maxW), maxW);
-    const height = clamp(rect.height, Math.min(480, maxH), maxH);
-    return {
-      width,
-      height,
-      left: clamp(rect.left, margin, viewport.width - margin - width),
-      top: clamp(rect.top, margin, viewport.height - margin - height)
-    };
-  }
-  function resizeRect(rect, edge, dx, dy, viewport) {
-    let { left, top, width, height } = rect;
-    const minW = Math.min(360, viewport.width - 20), minH = Math.min(480, viewport.height - 20);
-    if (edge.includes("e")) width = clamp(width + dx, minW, viewport.width - 10 - left);
-    if (edge.includes("s")) height = clamp(height + dy, minH, viewport.height - 10 - top);
-    if (edge.includes("w")) {
-      const shift = clamp(dx, 10 - left, width - minW);
-      left += shift;
-      width -= shift;
-    }
-    if (edge.includes("n")) {
-      const shift = clamp(dy, 10 - top, height - minH);
-      top += shift;
-      height -= shift;
-    }
-    return { left, top, width, height };
-  }
-  function fileName(record, start, end, part = "") {
-    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(record.start * 1e3));
-    const label = `${record.member}_${date}_${record.title}_${formatTime(start).replaceAll(":", "-")}-${formatTime(end).replaceAll(":", "-")}${part}`;
-    return label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
-  }
-  function zoomWindow(view3, total, factor, anchor = 0.5) {
-    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total), total);
-    const pivot = view3.start + span * clamp(anchor, 0, 1);
-    const start = clamp(pivot - width * anchor, 0, total - width);
-    return { start, end: start + width };
-  }
-  function panWindow(view3, total, delta) {
-    const width = view3.end - view3.start, start = clamp(view3.start + delta, 0, total - width);
-    return { start, end: start + width };
-  }
-
-  // src/schedule.js
-  var CALENDAR = "https://calendar.bk0717.us.ci";
-  var SCHEDULE_MEMBERS = MEMBERS.filter((member) => ["bella", "diana", "eileen"].includes(member.id));
-  var WINDOW = 30 * 60;
-  var CACHE_TIME = 60 * 60 * 1e3;
-  function decodeText(value) {
-    return value.replace(/\\([nN,;\\])/g, (_, escaped) => /[nN]/.test(escaped) ? "\n" : escaped);
-  }
-  function eventStart(property, value) {
-    const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
-    if (!match) return null;
-    const utc = Boolean(match[7]);
-    if (!utc && !/(?:^|;)TZID="?Asia\/Shanghai"?(?:;|$)/i.test(property)) return null;
-    const [, year, month, day, hour, minute, second] = match;
-    const time = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
-    if (new Date(time).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
-    return time / 1e3 - (utc ? 0 : 8 * 3600);
-  }
-  function parseEvent(fields) {
-    if (fields.STATUS?.value === "CANCELLED") return null;
-    const start = fields.DTSTART && eventStart(fields.DTSTART.property, fields.DTSTART.value);
-    if (start == null) return null;
-    const description = decodeText(fields.DESCRIPTION?.value || "");
-    const [type, names] = description.split("\n")[0].split("|").map((part) => part.trim());
-    if (!type || !names) return null;
-    const participantNames = names.split(/[、,，;；]/).map((name) => name.trim().split(/\s+/)[0]);
-    const participants = SCHEDULE_MEMBERS.filter((member) => participantNames.includes(member.name));
-    let room = null;
-    const roomUrl = fields.URL?.value || description.match(/直播间[：:]\s*(https?:\/\/\S+)/)?.[1];
-    try {
-      if (roomUrl) room = roomIdFromUrl(roomUrl);
-    } catch {
-      return null;
-    }
-    if (!SCHEDULE_MEMBERS.some((member) => member.room === room)) return null;
-    return { uid: fields.UID?.value || null, start, room, type, participants };
-  }
-  function parseCalendar(text) {
-    const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
-    if (!lines.includes("BEGIN:VCALENDAR") || !lines.includes("END:VCALENDAR")) {
-      throw new Error("日程没有返回有效的日历数据。");
-    }
-    const events = [];
-    let fields = null;
-    for (const line of lines) {
-      if (line === "BEGIN:VEVENT") {
-        fields = {};
-        continue;
-      }
-      if (line === "END:VEVENT") {
-        if (fields) {
-          const event = parseEvent(fields);
-          if (event) events.push(event);
-        }
-        fields = null;
-        continue;
-      }
-      const colon = line.indexOf(":");
-      if (!fields || colon < 0) continue;
-      const property = line.slice(0, colon);
-      fields[property.split(";")[0].toUpperCase()] = { property, value: line.slice(colon + 1) };
-    }
-    return events;
-  }
-  function scheduleMonths(start) {
-    return [...new Set([-WINDOW, WINDOW].map((offset) => new Date((start + offset + 8 * 3600) * 1e3).toISOString().slice(0, 7)))];
-  }
-  function matchSchedule(record, events) {
-    let nearest = null, distance = Infinity, ambiguous = false;
-    const seen = /* @__PURE__ */ new Set();
-    for (const event of events) {
-      if (event.uid && seen.has(event.uid)) continue;
-      if (event.uid) seen.add(event.uid);
-      const delta = Math.abs(record.start - event.start);
-      if (Number(record.room) !== event.room || delta > WINDOW) continue;
-      if (delta < distance) {
-        nearest = event;
-        distance = delta;
-        ambiguous = false;
-      } else if (delta === distance) ambiguous = true;
-    }
-    return ambiguous ? null : nearest;
-  }
-  var ScheduleService = class {
-    constructor(request) {
-      this.request = request;
-      this.calendars = /* @__PURE__ */ new Map();
-      this.avatars = /* @__PURE__ */ new Map();
-    }
-    async calendar(month, { signal, refresh }) {
-      signal?.throwIfAborted();
-      const cached = this.calendars.get(month);
-      if (!refresh && cached && Date.now() - cached.time < CACHE_TIME) return cached.events;
-      const { data } = await this.request(`${CALENDAR}/calendar-${month}.ics`, { auth: false, signal });
-      signal?.throwIfAborted();
-      const events = parseCalendar(data);
-      this.calendars.set(month, { events, time: Date.now() });
-      return events;
-    }
-    async avatar(member, signal) {
-      signal?.throwIfAborted();
-      if (this.avatars.has(member.id)) return this.avatars.get(member.id);
-      try {
-        const { data } = await this.request(
-          `https://api.live.bilibili.com/live_user/v1/Master/info?uid=${member.uid}`,
-          { auth: false, signal }
-        );
-        signal?.throwIfAborted();
-        const response = JSON.parse(data);
-        const face = response.code === 0 ? response.data?.info?.face : null;
-        if (typeof face !== "string" || !/^https?:\/\//.test(face)) return null;
-        this.avatars.set(member.id, face);
-        return face;
-      } catch (error) {
-        signal?.throwIfAborted();
-        if (error.name === "AbortError") throw error;
-        return null;
-      }
-    }
-    async enrich(records, { signal, refresh = false } = {}) {
-      signal?.throwIfAborted();
-      const eligible = records.filter((record) => SCHEDULE_MEMBERS.some((member) => member.room === Number(record.room)));
-      const months = [...new Set(eligible.flatMap((record) => scheduleMonths(record.start)))];
-      const calendars = /* @__PURE__ */ new Map();
-      let failed = false;
-      await Promise.all(months.map(async (month) => {
-        try {
-          calendars.set(month, await this.calendar(month, { signal, refresh }));
-        } catch (error) {
-          signal?.throwIfAborted();
-          if (error.name === "AbortError") throw error;
-          failed = true;
-        }
-      }));
-      signal?.throwIfAborted();
-      const matches = new Map(eligible.map((record) => {
-        const needed = scheduleMonths(record.start);
-        return [record, needed.every((month) => calendars.has(month)) ? matchSchedule(record, needed.flatMap((month) => calendars.get(month))) : null];
-      }));
-      const participants = [...new Map([...matches.values()].filter(Boolean).flatMap((event) => event.participants).map((member) => [member.id, member])).values()];
-      const avatars = new Map(await Promise.all(participants.map(async (member) => [member.id, await this.avatar(member, signal)])));
-      signal?.throwIfAborted();
-      return { failed, records: records.map((record) => {
-        const match = matches.get(record);
-        return { ...record, schedule: match ? { type: match.type, participants: match.participants.map((member) => ({
-          id: member.id,
-          name: member.name,
-          color: member.color,
-          avatar: avatars.get(member.id)
-        })) } : null };
-      }) };
-    }
-  };
-
-  // src/controls.js
-  function createControls(root, timeline) {
-    const $ = (id) => root.getElementById(id);
-    const marks = [$("markStart"), $("markEnd")];
-    const editor = [$("togglePlayback"), $("wholeRecording"), $("download")];
-    const managed = /* @__PURE__ */ new Set([...marks, ...editor, $("cancel"), $("startHandle"), $("endHandle")]);
-    const navigation = [...root.querySelectorAll("#body button,#body input")].filter((el) => !managed.has(el));
-    const cards = $("cards"), download = $("download"), label = download.querySelector("span");
-    const exportMode = $("exportMode"), cancel = $("cancel"), progress = $("progress"), launcher = $("launcher");
-    let locked;
-    const assign = (element, key, value) => {
-      if (element[key] !== value) element[key] = value;
-    };
-    return ({ busy, ready, page, whole }) => {
-      for (const element of [...navigation, ...cards.children]) assign(element, "disabled", busy);
-      for (const element of editor) assign(element, "disabled", busy || !ready);
-      for (const element of marks) assign(element, "disabled", busy || !ready || whole);
-      const nextLocked = busy || !ready || whole;
-      if (locked !== nextLocked) {
-        locked = nextLocked;
-        timeline.lock(locked);
-      }
-      assign(exportMode, "hidden", whole);
-      assign(label, "textContent", whole ? "导出整场" : "导出");
-      assign(download, "hidden", page !== "edit");
-      assign(cancel, "hidden", !busy);
-      assign(progress, "hidden", !busy);
-      assign(launcher.dataset, "busy", String(busy));
-    };
-  }
-
-  // src/hls.js
-  function attributes(text) {
-    return Object.fromEntries([...text.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
-  }
-  function byteRange(value, previousEnd) {
-    const match = String(value).match(/^(\d+)(?:@(\d+))?$/);
-    if (!match || Number(match[1]) <= 0) throw new Error("视频分片字节范围无效。");
-    const offset = match[2] === void 0 ? previousEnd : Number(match[2]);
-    if (!Number.isSafeInteger(offset)) throw new Error("视频分片缺少字节起始位置。");
-    return { offset, length: Number(match[1]) };
-  }
-  function parsePlaylist(text, baseUrl) {
-    const lines = text.trim().split(/\r?\n/).map((line) => line.trim());
-    if (lines[0] !== "#EXTM3U") throw new Error("B 站未返回有效的视频分片清单，请重新载入。");
-    const groups = [];
-    let segments = [], duration = null, map = null, rangeText = null, previous = null, total = 0;
-    const flush = () => {
-      if (segments.length) {
-        groups.push({ segments, map, offset: total - segments.reduce((n, s) => n + s.duration, 0) });
-        segments = [];
-      }
-    };
-    for (const line of lines.slice(1)) {
-      if (line.startsWith("#EXT-X-STREAM-INF:")) throw new Error("该场次返回了多清晰度清单，当前剪辑接口格式不受支持。");
-      if (line.startsWith("#EXT-X-KEY:")) {
-        if (attributes(line).METHOD !== "NONE") throw new Error("该录像包含加密分片，无法导出。");
-      } else if (line.startsWith("#EXT-X-MAP:")) {
-        flush();
-        const attrs = attributes(line);
-        map = {
-          url: new URL(attrs.URI, baseUrl).href,
-          range: attrs.BYTERANGE ? byteRange(attrs.BYTERANGE, void 0) : null
-        };
-      } else if (line === "#EXT-X-DISCONTINUITY") {
-        flush();
-        previous = null;
-      } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
-        rangeText = line.slice(line.indexOf(":") + 1);
-      } else if (line.startsWith("#EXTINF:")) {
-        duration = Number(line.slice(8).split(",")[0]);
-        if (!(duration > 0)) throw new Error("视频分片时长无效。");
-      } else if (line && !line.startsWith("#")) {
-        if (duration === null) throw new Error("视频清单缺少分片时长。");
-        const url2 = new URL(line, baseUrl).href;
-        const prevEnd = previous?.url === url2 && previous.range ? previous.range.offset + previous.range.length : void 0;
-        const range = rangeText ? byteRange(rangeText, prevEnd) : null;
-        const segment = { url: url2, duration, range };
-        segments.push(segment);
-        previous = segment;
-        total += duration;
-        duration = null;
-        rangeText = null;
-      }
-    }
-    flush();
-    if (!groups.length) throw new Error("这个时间段尚无可下载的视频分片，请调整时间或稍后重试。");
-    return { groups, duration: total };
-  }
-  async function mapConcurrent(items, concurrency, task, signal) {
-    const result = new Array(items.length);
-    let cursor = 0, failed = false;
-    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (!failed && cursor < items.length) {
-        signal?.throwIfAborted();
-        const index = cursor++;
-        try {
-          result[index] = await task(items[index], index);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    });
-    await Promise.all(workers);
-    return result;
-  }
-  function selectPlaylistRange(parsed, start, end) {
-    const plans = [];
-    for (const group of parsed.groups) {
-      let cursor = group.offset;
-      const selected = [];
-      let first;
-      for (const segment of group.segments) {
-        const next = cursor + segment.duration;
-        if (next > start && cursor < end) {
-          first ??= cursor;
-          selected.push(segment);
-        }
-        cursor = next;
-      }
-      if (selected.length) plans.push({ segments: selected, map: group.map, start: Math.max(0, start - first), end: Math.min(end, cursor) - first, offset: first });
-    }
-    return plans;
-  }
-
-  // src/recording-plan.js
-  var RecordingPlan = class {
-    constructor(api, streams, signal) {
-      this.api = api;
-      this.streams = streams;
-      this.signal = signal;
-      this.pending = null;
-    }
-    async read() {
-      const groups = [];
-      for (const stream of this.streams) {
-        const response = await this.api.request(stream.stream, { signal: this.signal });
-        this.signal?.throwIfAborted();
-        const parsed = parsePlaylist(response.data, response.url);
-        for (const group of parsed.groups) groups.push({ ...group, start: stream.start_time + group.offset, streamEnd: stream.end_time });
-      }
-      return groups;
-    }
-    async load(signal) {
-      this.signal?.throwIfAborted();
-      signal?.throwIfAborted();
-      this.pending ??= this.read().catch((error) => {
-        this.pending = null;
-        throw error;
-      });
-      if (!signal) return this.pending;
-      let abort;
-      try {
-        return await Promise.race([this.pending, new Promise((_, reject) => {
-          abort = () => reject(signal.reason);
-          signal.addEventListener("abort", abort, { once: true });
-        })]);
-      } finally {
-        signal.removeEventListener("abort", abort);
-      }
-    }
-  };
-
-  // src/icons.js
-  var paths = {
-    person: '<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    play: '<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>',
-    pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
-    close: '<path d="m6 6 12 12M18 6 6 18"/>',
-    refresh: '<path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1.2L20 9M4 15l2.4 3.2A7 7 0 0 0 17.9 17"/>',
-    back: '<path d="m10 5-7 7 7 7M3 12h18"/>',
-    download: '<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>',
-    scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.2 8.2 12.3 12.3M8.2 15.8 12 12m3-3 5.5-5.5"/>'
-  };
-  function icon(name) {
-    return `<svg class="glyph glyph-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
-  }
-
-  // src/record-card.js
-  function createRecordCard(record, onSelect) {
-    const card = document.createElement("button");
-    card.className = "record-card";
-    const people = record.schedule?.participants || [];
-    const color = MEMBERS.find((member) => member.room === Number(record.room))?.color || "#737373";
-    card.style.setProperty("--card-color", color);
-    card.style.setProperty("--card-tint", color + "0d");
-    card.style.setProperty("--card-line", color + "40");
-    card.setAttribute("aria-label", [formatDate(record.start), record.title, record.schedule?.type, ...people.map((p) => p.name), `时长 ${formatTime(record.end - record.start)}`].filter(Boolean).join(" · "));
-    const heading = document.createElement("div");
-    heading.className = "card-heading";
-    const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(record.start * 1e3));
-    const part = (type) => parts.find((value) => value.type === type).value;
-    const date = document.createElement("time");
-    date.className = "card-date";
-    date.dateTime = new Date(record.start * 1e3).toISOString();
-    date.setAttribute("aria-label", formatDate(record.start));
-    const day = document.createElement("b");
-    day.textContent = part("day");
-    const dateInfo = document.createElement("span");
-    const month = document.createElement("span");
-    month.textContent = `${part("month")}月 · ${part("weekday")}`;
-    const time = document.createElement("span");
-    time.textContent = `${part("hour")}:${part("minute")}`;
-    dateInfo.append(month, time);
-    date.append(day, dateInfo);
-    heading.append(date);
-    if (record.schedule?.type) {
-      const tag = document.createElement("span");
-      tag.className = "record-type";
-      tag.textContent = record.schedule.type;
-      heading.append(tag);
-    }
-    const portraits = document.createElement("span");
-    portraits.className = "participants";
-    for (const person of people) {
-      const portrait = document.createElement("span");
-      portrait.className = "participant";
-      portrait.title = person.name;
-      portrait.setAttribute("role", "img");
-      portrait.setAttribute("aria-label", person.name);
-      portrait.style.setProperty("--member-color", person.color);
-      portrait.innerHTML = icon("person");
-      if (person.avatar) {
-        const img = document.createElement("img");
-        img.src = person.avatar;
-        img.alt = "";
-        img.loading = "lazy";
-        img.referrerPolicy = "no-referrer";
-        img.onerror = () => img.remove();
-        portrait.append(img);
-      }
-      portraits.append(portrait);
-    }
-    const title = document.createElement("strong");
-    title.textContent = record.title;
-    title.title = record.title;
-    title.className = "card-title";
-    title.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(record.title));
-    const details = document.createElement("div");
-    details.className = "card-details";
-    const duration = document.createElement("span");
-    duration.className = "record-duration";
-    duration.innerHTML = icon("clock");
-    duration.append(document.createTextNode(formatTime(record.end - record.start)));
-    duration.title = "实际场次时长";
-    details.append(portraits, duration);
-    card.append(heading, title, details);
-    card.onclick = onSelect;
-    return card;
-  }
-
-  // src/ui.css
-  var ui_default2 = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}
+  // src/ui/styles.css
+  var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#171717;--accent:#147d70;--accent-hover:#10675c;--muted:#737373;--line:#e5e5e5;--paper:#ffffff;--surface:#fafafa;--hover:#f3f3f3;--border-strong:#c7c7c7}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 button,input,select{font:inherit;color:inherit}
@@ -774,6 +195,738 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .whole-recording:has(input:disabled){opacity:.5;cursor:default}
 @media(prefers-reduced-motion:reduce){.export-mode::before,.whole-recording input,.whole-recording input::before{transition:none}}
 `;
+
+  // src/ui/controls.js
+  function createControls(root, timeline) {
+    const $ = (id) => root.getElementById(id);
+    const marks = [$("markStart"), $("markEnd")];
+    const editor = [$("togglePlayback"), $("wholeRecording"), $("download")];
+    const managed = /* @__PURE__ */ new Set([...marks, ...editor, $("cancel"), $("startHandle"), $("endHandle")]);
+    const navigation = [...root.querySelectorAll("#body button,#body input")].filter((el) => !managed.has(el));
+    const cards = $("cards"), download = $("download"), label = download.querySelector("span");
+    const exportMode = $("exportMode"), cancel = $("cancel"), progress = $("progress"), launcher = $("launcher");
+    let locked;
+    const assign = (element, key, value) => {
+      if (element[key] !== value) element[key] = value;
+    };
+    return ({ busy, ready, page, whole }) => {
+      for (const element of [...navigation, ...cards.children]) assign(element, "disabled", busy);
+      for (const element of editor) assign(element, "disabled", busy || !ready);
+      for (const element of marks) assign(element, "disabled", busy || !ready || whole);
+      const nextLocked = busy || !ready || whole;
+      if (locked !== nextLocked) {
+        locked = nextLocked;
+        timeline.lock(locked);
+      }
+      assign(exportMode, "hidden", whole);
+      assign(label, "textContent", whole ? "导出整场" : "导出");
+      assign(download, "hidden", page !== "edit");
+      assign(cancel, "hidden", !busy);
+      assign(progress, "hidden", !busy);
+      assign(launcher.dataset, "busy", String(busy));
+    };
+  }
+
+  // src/domain/records.js
+  var MEMBERS = Object.freeze([
+    { id: "bella", name: "贝拉", uid: 672353429, room: 22632424, color: "#b97259" },
+    { id: "diana", name: "嘉然", uid: 672328094, room: 22637261, color: "#c7829c" },
+    { id: "eileen", name: "乃琳", uid: 672342685, room: 22625027, color: "#7b85ad" },
+    { id: "xinyi", name: "心宜", uid: "3537115310721181", room: 30849777, color: "#c93773" },
+    { id: "sinuo", name: "思诺", uid: "3537115310721781", room: 30858592, color: "#7252c0" }
+  ]);
+  function recordFromReplay(item, member) {
+    if (typeof item.live_key !== "string") throw new Error("场次编号格式异常，请刷新场次列表。");
+    return {
+      key: item.live_key,
+      title: item.live_info.title,
+      start: item.start_time,
+      end: item.end_time,
+      live: false,
+      uid: member.uid,
+      member: member.name,
+      room: item.room_id
+    };
+  }
+  function roomFromHtml(html) {
+    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text));
+    if (!script) throw new Error("未找到直播场次信息，请刷新直播间后重试。");
+    const raw = script.replace(/^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=\s*/, "").trim().replace(/;\s*$/, "");
+    const info = JSON.parse(raw).roomInfoRes;
+    if (info?.code !== 0 || !info.data?.room_info) throw new Error("直播间暂未返回场次信息。");
+    return info.data.room_info;
+  }
+  function recordFromRoom(info, member, now2 = Date.now() / 1e3) {
+    if (info.live_status !== 1) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
+    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str)) {
+      throw new Error("直播场次编号不可用，请刷新直播间。");
+    }
+    return {
+      key: info.live_id_str,
+      title: info.title,
+      start: info.live_start_time,
+      end: Math.floor(now2),
+      live: true,
+      uid: info.uid,
+      member: member.name,
+      room: info.room_id
+    };
+  }
+  function roomIdFromUrl(value) {
+    const url2 = new URL(value);
+    if (url2.hostname !== "live.bilibili.com") return null;
+    const match = url2.pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/);
+    return match ? Number(match[1]) : null;
+  }
+
+  // src/shared/format.js
+  function formatTime(seconds, fractional = false) {
+    const ms = Math.round(Math.max(0, seconds) * 1e3);
+    const h = Math.floor(ms / 36e5);
+    const m = Math.floor(ms / 6e4) % 60;
+    const s = Math.floor(ms / 1e3) % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? "." + String(ms % 1e3).padStart(3, "0") : ""}`;
+  }
+  function formatTimeRange(start, end, separator = " — ") {
+    const values = [start, end].map((value) => Math.floor(Math.max(0, value)));
+    const hours = values.map((value) => Math.floor(value / 3600));
+    const showHours = hours.some((value) => value > 0);
+    const hourWidth = Math.max(2, ...hours.map((value) => String(value).length));
+    return values.map((value, i) => {
+      const minutes = String(Math.floor(value / 60) % 60).padStart(2, "0");
+      const seconds = String(value % 60).padStart(2, "0");
+      return `${showHours ? String(hours[i]).padStart(hourWidth, "0") + ":" : ""}${minutes}:${seconds}`;
+    }).join(separator);
+  }
+  function formatDuration(seconds) {
+    const tenths = Math.round(Math.max(0, seconds) * 10);
+    const h = Math.floor(tenths / 36e3), m = Math.floor(tenths / 600) % 60, s = tenths % 600 / 10;
+    return `${h ? h + "时" : ""}${h || m ? m + "分" : ""}${s.toFixed(1)}秒`;
+  }
+  function formatDate(unix, withSeconds = false) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      ...withSeconds ? { second: "2-digit" } : {},
+      hourCycle: "h23"
+    }).format(new Date(unix * 1e3));
+  }
+  function formatBytes(bytes2) {
+    if (bytes2 >= 1e9) return `${(bytes2 / 1e9).toFixed(2)} GB`;
+    if (bytes2 >= 1e6) return `${(bytes2 / 1e6).toFixed(1)} MB`;
+    return `${(bytes2 / 1e3).toFixed(0)} KB`;
+  }
+
+  // src/ui/icons.js
+  var paths = {
+    person: '<circle cx="12" cy="8" r="3"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    play: '<path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none"/>',
+    pause: '<path d="M8 5v14M16 5v14" stroke-width="3"/>',
+    close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    refresh: '<path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1.2L20 9M4 15l2.4 3.2A7 7 0 0 0 17.9 17"/>',
+    back: '<path d="m10 5-7 7 7 7M3 12h18"/>',
+    download: '<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>',
+    scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.2 8.2 12.3 12.3M8.2 15.8 12 12m3-3 5.5-5.5"/>'
+  };
+  function icon(name) {
+    return `<svg class="glyph glyph-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
+  }
+
+  // src/ui/record-card.js
+  function createRecordCard(record, onSelect) {
+    const card = document.createElement("button");
+    card.className = "record-card";
+    const people = record.schedule?.participants || [];
+    const color = MEMBERS.find((member) => member.room === Number(record.room))?.color || "#737373";
+    card.style.setProperty("--card-color", color);
+    card.style.setProperty("--card-tint", color + "0d");
+    card.style.setProperty("--card-line", color + "40");
+    card.setAttribute("aria-label", [formatDate(record.start), record.title, record.schedule?.type, ...people.map((p) => p.name), `时长 ${formatTime(record.end - record.start)}`].filter(Boolean).join(" · "));
+    const heading = document.createElement("div");
+    heading.className = "card-heading";
+    const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(record.start * 1e3));
+    const part = (type) => parts.find((value) => value.type === type).value;
+    const date = document.createElement("time");
+    date.className = "card-date";
+    date.dateTime = new Date(record.start * 1e3).toISOString();
+    date.setAttribute("aria-label", formatDate(record.start));
+    const day = document.createElement("b");
+    day.textContent = part("day");
+    const dateInfo = document.createElement("span");
+    const month = document.createElement("span");
+    month.textContent = `${part("month")}月 · ${part("weekday")}`;
+    const time = document.createElement("span");
+    time.textContent = `${part("hour")}:${part("minute")}`;
+    dateInfo.append(month, time);
+    date.append(day, dateInfo);
+    heading.append(date);
+    if (record.schedule?.type) {
+      const tag = document.createElement("span");
+      tag.className = "record-type";
+      tag.textContent = record.schedule.type;
+      heading.append(tag);
+    }
+    const portraits = document.createElement("span");
+    portraits.className = "participants";
+    for (const person of people) {
+      const portrait = document.createElement("span");
+      portrait.className = "participant";
+      portrait.title = person.name;
+      portrait.setAttribute("role", "img");
+      portrait.setAttribute("aria-label", person.name);
+      portrait.style.setProperty("--member-color", person.color);
+      portrait.innerHTML = icon("person");
+      if (person.avatar) {
+        const img = document.createElement("img");
+        img.src = person.avatar;
+        img.alt = "";
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => img.remove();
+        portrait.append(img);
+      }
+      portraits.append(portrait);
+    }
+    const title = document.createElement("strong");
+    title.textContent = record.title;
+    title.title = record.title;
+    title.className = "card-title";
+    title.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(record.title));
+    const details = document.createElement("div");
+    details.className = "card-details";
+    const duration = document.createElement("span");
+    duration.className = "record-duration";
+    duration.innerHTML = icon("clock");
+    duration.append(document.createTextNode(formatTime(record.end - record.start)));
+    duration.title = "实际场次时长";
+    details.append(portraits, duration);
+    card.append(heading, title, details);
+    card.onclick = onSelect;
+    return card;
+  }
+
+  // src/shared/math.js
+  var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  // src/ui/timeline-model.js
+  function validateRange(start, end, duration) {
+    if (![start, end, duration].every(Number.isFinite) || start < 0 || end <= start) {
+      throw new Error("结束时间必须晚于开始时间。");
+    }
+    if (end > duration + 1e-3) throw new Error(`结束时间超出范围，最晚为 ${formatTime(duration, true)}。`);
+    return { start, end };
+  }
+  function zoomWindow(view3, total, factor, anchor = 0.5) {
+    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total), total);
+    const pivot = view3.start + span * clamp(anchor, 0, 1);
+    const start = clamp(pivot - width * anchor, 0, total - width);
+    return { start, end: start + width };
+  }
+  function panWindow(view3, total, delta) {
+    const width = view3.end - view3.start, start = clamp(view3.start + delta, 0, total - width);
+    return { start, end: start + width };
+  }
+
+  // src/ui/timeline.js
+  function fitSelection(start, end, total) {
+    const width = Math.min(total, (end - start) * 1.12);
+    const left = clamp(start - (width - (end - start)) / 2, 0, total - width);
+    return { start: left, end: left + width };
+  }
+  function dragSelection(session, x, width, selection, total) {
+    const delta = (x - session.x) / width * (session.view.end - session.view.start);
+    const gap = Math.min(1e-3, total / 2);
+    const target = clamp(session.anchor + delta, 0, total);
+    const next = { ...selection };
+    if (session.type === "start") next.start = Math.min(target, selection.end - gap);
+    else next.end = Math.max(target, selection.start + gap);
+    return next;
+  }
+  function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
+  }, onView = () => {
+  } }) {
+    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending;
+    const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
+    const timeLabel = (t) => {
+      const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
+      return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+    };
+    const tickElements = Array.from({ length: 5 }, () => document.createElement("span"));
+    ticks.replaceChildren(...tickElements);
+    function renderPlayhead() {
+      playhead.style.left = `${pct(current)}%`;
+      playhead.hidden = current < view3.start || current > view3.end;
+    }
+    function renderLock() {
+      for (const el of [startHandle, endHandle]) el.disabled = locked || !total;
+    }
+    function render() {
+      startHandle.style.left = `${pct(selection.start)}%`;
+      endHandle.style.left = `${pct(selection.end)}%`;
+      selectionElement.style.left = `${pct(selection.start)}%`;
+      selectionElement.style.right = `${100 - pct(selection.end)}%`;
+      for (const [el, value] of [[startHandle, selection.start], [endHandle, selection.end]]) {
+        el.setAttribute("aria-valuenow", value.toFixed(3));
+        el.setAttribute("aria-valuemin", 0);
+        el.setAttribute("aria-valuemax", total);
+      }
+      tickElements.forEach((span, i) => {
+        span.textContent = timeLabel(view3.start + (view3.end - view3.start) * i / 4);
+      });
+      labels.textContent = formatTimeRange(selection.start, selection.end);
+      renderPlayhead();
+      renderLock();
+      onView({ ...view3 });
+    }
+    function setSelection(next, refit2 = false) {
+      validateRange(next.start, next.end, total);
+      selection = next;
+      if (refit2) view3 = fitSelection(next.start, next.end, total);
+      render();
+      onSelection({ ...selection });
+    }
+    function refit() {
+      track.classList.add("refitting");
+      view3 = fitSelection(selection.start, selection.end, total);
+      render();
+      setTimeout(() => track.classList.remove("refitting"), 180);
+    }
+    function apply(x) {
+      if (!drag) return;
+      const rect = track.getBoundingClientRect();
+      let target;
+      if (drag.type === "playhead") target = clamp(drag.view.start + (x - rect.left) / rect.width * (drag.view.end - drag.view.start), 0, total);
+      else {
+        selection = dragSelection(drag, x, rect.width, selection, total);
+        target = selection[drag.type];
+        view3 = { start: Math.min(view3.start, selection.start), end: Math.max(view3.end, selection.end) };
+      }
+      current = target;
+      if (drag.type === "playhead") renderPlayhead();
+      else {
+        render();
+        onSelection({ ...selection });
+      }
+      onPreview(target);
+    }
+    function flush() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (pending !== void 0) {
+        apply(pending);
+        pending = void 0;
+      }
+    }
+    track.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || locked || !total) return;
+      e.preventDefault();
+      track.classList.remove("refitting");
+      const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
+      drag = { type, x: e.clientX, view: { ...view3 }, anchor: selection[type] };
+      onScrubStart?.();
+      track.setPointerCapture(e.pointerId);
+      apply(e.clientX);
+    });
+    track.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      pending = e.clientX;
+      if (!frame) frame = requestAnimationFrame(flush);
+    });
+    function finish(e) {
+      if (!drag) return;
+      flush();
+      const type = drag.type;
+      drag = null;
+      if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
+      if (type !== "playhead") refit();
+      onScrubEnd?.(current);
+    }
+    track.addEventListener("pointerup", finish);
+    track.addEventListener("pointercancel", finish);
+    track.addEventListener("wheel", (e) => {
+      if (locked || !total || drag) return;
+      e.preventDefault();
+      const r = track.getBoundingClientRect();
+      view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
+      render();
+    }, { passive: false });
+    for (const [el, type] of [[startHandle, "start"], [endHandle, "end"]]) el.onkeydown = (e) => {
+      if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+      e.preventDefault();
+      const step = (e.shiftKey ? 10 : 1) * (view3.end - view3.start) / 1e3;
+      const next = dragSelection({ type, x: 0, view: view3, anchor: selection[type] }, e.key === "ArrowRight" ? step : -step, view3.end - view3.start, selection, total);
+      onScrubStart?.();
+      setSelection(next, true);
+      onPreview(next[type]);
+      onScrubEnd?.(next[type]);
+    };
+    return { reset(duration, next = { start: 0, end: duration }) {
+      total = duration;
+      view3 = { start: 0, end: total };
+      setSelection(next);
+    }, setSelection, getSelection: () => ({ ...selection }), getView: () => ({ ...view3 }), setCurrent(t) {
+      if (!drag) {
+        current = t;
+        renderPlayhead();
+      }
+    }, lock(value) {
+      locked = value;
+      renderLock();
+    } };
+  }
+
+  // src/ui/shortcuts.js
+  var DEFAULT_SHORTCUT = Object.freeze({
+    code: "KeyC",
+    ctrlKey: false,
+    altKey: true,
+    shiftKey: true,
+    metaKey: false
+  });
+  function normalizeShortcut(value) {
+    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
+    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
+    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
+  }
+  function formatShortcut(shortcut) {
+    return [
+      shortcut.ctrlKey && "Ctrl",
+      shortcut.altKey && "Alt",
+      shortcut.shiftKey && "Shift",
+      shortcut.metaKey && "⌘",
+      shortcut.code.replace(/^Key|^Digit/, "")
+    ].filter(Boolean).join("+");
+  }
+  function matchesShortcut(event, shortcut) {
+    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
+  }
+  function isEditing(event) {
+    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
+  }
+
+  // src/ui/panel-geometry.js
+  function constrainRect(rect, viewport) {
+    const margin = 10;
+    const maxW = Math.max(1, viewport.width - margin * 2);
+    const maxH = Math.max(1, viewport.height - margin * 2);
+    const width = clamp(rect.width, Math.min(360, maxW), maxW);
+    const height = clamp(rect.height, Math.min(480, maxH), maxH);
+    return {
+      width,
+      height,
+      left: clamp(rect.left, margin, viewport.width - margin - width),
+      top: clamp(rect.top, margin, viewport.height - margin - height)
+    };
+  }
+  function resizeRect(rect, edge, dx, dy, viewport) {
+    let { left, top, width, height } = rect;
+    const minW = Math.min(360, viewport.width - 20), minH = Math.min(480, viewport.height - 20);
+    if (edge.includes("e")) width = clamp(width + dx, minW, viewport.width - 10 - left);
+    if (edge.includes("s")) height = clamp(height + dy, minH, viewport.height - 10 - top);
+    if (edge.includes("w")) {
+      const shift = clamp(dx, 10 - left, width - minW);
+      left += shift;
+      width -= shift;
+    }
+    if (edge.includes("n")) {
+      const shift = clamp(dy, 10 - top, height - minH);
+      top += shift;
+      height -= shift;
+    }
+    return { left, top, width, height };
+  }
+
+  // src/services/schedule.js
+  var CALENDAR = "https://calendar.bk0717.us.ci";
+  var SCHEDULE_MEMBERS = MEMBERS.filter((member) => ["bella", "diana", "eileen"].includes(member.id));
+  var WINDOW = 30 * 60;
+  var CACHE_TIME = 60 * 60 * 1e3;
+  function decodeText(value) {
+    return value.replace(/\\([nN,;\\])/g, (_, escaped) => /[nN]/.test(escaped) ? "\n" : escaped);
+  }
+  function eventStart(property, value) {
+    const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+    if (!match) return null;
+    const utc = Boolean(match[7]);
+    if (!utc && !/(?:^|;)TZID="?Asia\/Shanghai"?(?:;|$)/i.test(property)) return null;
+    const [, year, month, day, hour, minute, second] = match;
+    const time = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+    if (new Date(time).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
+    return time / 1e3 - (utc ? 0 : 8 * 3600);
+  }
+  function parseEvent(fields) {
+    if (fields.STATUS?.value === "CANCELLED") return null;
+    const start = fields.DTSTART && eventStart(fields.DTSTART.property, fields.DTSTART.value);
+    if (start == null) return null;
+    const description = decodeText(fields.DESCRIPTION?.value || "");
+    const [type, names] = description.split("\n")[0].split("|").map((part) => part.trim());
+    if (!type || !names) return null;
+    const participantNames = names.split(/[、,，;；]/).map((name) => name.trim().split(/\s+/)[0]);
+    const participants = SCHEDULE_MEMBERS.filter((member) => participantNames.includes(member.name));
+    let room = null;
+    const roomUrl = fields.URL?.value || description.match(/直播间[：:]\s*(https?:\/\/\S+)/)?.[1];
+    try {
+      if (roomUrl) room = roomIdFromUrl(roomUrl);
+    } catch {
+      return null;
+    }
+    if (!SCHEDULE_MEMBERS.some((member) => member.room === room)) return null;
+    return { uid: fields.UID?.value || null, start, room, type, participants };
+  }
+  function parseCalendar(text) {
+    const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+    if (!lines.includes("BEGIN:VCALENDAR") || !lines.includes("END:VCALENDAR")) {
+      throw new Error("日程没有返回有效的日历数据。");
+    }
+    const events = [];
+    let fields = null;
+    for (const line of lines) {
+      if (line === "BEGIN:VEVENT") {
+        fields = {};
+        continue;
+      }
+      if (line === "END:VEVENT") {
+        if (fields) {
+          const event = parseEvent(fields);
+          if (event) events.push(event);
+        }
+        fields = null;
+        continue;
+      }
+      const colon = line.indexOf(":");
+      if (!fields || colon < 0) continue;
+      const property = line.slice(0, colon);
+      fields[property.split(";")[0].toUpperCase()] = { property, value: line.slice(colon + 1) };
+    }
+    return events;
+  }
+  function scheduleMonths(start) {
+    return [...new Set([-WINDOW, WINDOW].map((offset) => new Date((start + offset + 8 * 3600) * 1e3).toISOString().slice(0, 7)))];
+  }
+  function matchSchedule(record, events) {
+    let nearest = null, distance = Infinity, ambiguous = false;
+    const seen = /* @__PURE__ */ new Set();
+    for (const event of events) {
+      if (event.uid && seen.has(event.uid)) continue;
+      if (event.uid) seen.add(event.uid);
+      const delta = Math.abs(record.start - event.start);
+      if (Number(record.room) !== event.room || delta > WINDOW) continue;
+      if (delta < distance) {
+        nearest = event;
+        distance = delta;
+        ambiguous = false;
+      } else if (delta === distance) ambiguous = true;
+    }
+    return ambiguous ? null : nearest;
+  }
+  var ScheduleService = class {
+    constructor(request) {
+      this.request = request;
+      this.calendars = /* @__PURE__ */ new Map();
+      this.avatars = /* @__PURE__ */ new Map();
+    }
+    async calendar(month, { signal, refresh }) {
+      signal?.throwIfAborted();
+      const cached = this.calendars.get(month);
+      if (!refresh && cached && Date.now() - cached.time < CACHE_TIME) return cached.events;
+      const { data } = await this.request(`${CALENDAR}/calendar-${month}.ics`, { auth: false, signal });
+      signal?.throwIfAborted();
+      const events = parseCalendar(data);
+      this.calendars.set(month, { events, time: Date.now() });
+      return events;
+    }
+    async avatar(member, signal) {
+      signal?.throwIfAborted();
+      if (this.avatars.has(member.id)) return this.avatars.get(member.id);
+      try {
+        const { data } = await this.request(
+          `https://api.live.bilibili.com/live_user/v1/Master/info?uid=${member.uid}`,
+          { auth: false, signal }
+        );
+        signal?.throwIfAborted();
+        const response = JSON.parse(data);
+        const face = response.code === 0 ? response.data?.info?.face : null;
+        if (typeof face !== "string" || !/^https?:\/\//.test(face)) return null;
+        this.avatars.set(member.id, face);
+        return face;
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error.name === "AbortError") throw error;
+        return null;
+      }
+    }
+    async enrich(records, { signal, refresh = false } = {}) {
+      signal?.throwIfAborted();
+      const eligible = records.filter((record) => SCHEDULE_MEMBERS.some((member) => member.room === Number(record.room)));
+      const months = [...new Set(eligible.flatMap((record) => scheduleMonths(record.start)))];
+      const calendars = /* @__PURE__ */ new Map();
+      let failed = false;
+      await Promise.all(months.map(async (month) => {
+        try {
+          calendars.set(month, await this.calendar(month, { signal, refresh }));
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (error.name === "AbortError") throw error;
+          failed = true;
+        }
+      }));
+      signal?.throwIfAborted();
+      const matches = new Map(eligible.map((record) => {
+        const needed = scheduleMonths(record.start);
+        return [record, needed.every((month) => calendars.has(month)) ? matchSchedule(record, needed.flatMap((month) => calendars.get(month))) : null];
+      }));
+      const participants = [...new Map([...matches.values()].filter(Boolean).flatMap((event) => event.participants).map((member) => [member.id, member])).values()];
+      const avatars = new Map(await Promise.all(participants.map(async (member) => [member.id, await this.avatar(member, signal)])));
+      signal?.throwIfAborted();
+      return { failed, records: records.map((record) => {
+        const match = matches.get(record);
+        return { ...record, schedule: match ? { type: match.type, participants: match.participants.map((member) => ({
+          id: member.id,
+          name: member.name,
+          color: member.color,
+          avatar: avatars.get(member.id)
+        })) } : null };
+      }) };
+    }
+  };
+
+  // src/media/playlist.js
+  function attributes(text) {
+    return Object.fromEntries([...text.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
+  }
+  function byteRange(value, previousEnd) {
+    const match = String(value).match(/^(\d+)(?:@(\d+))?$/);
+    if (!match || Number(match[1]) <= 0) throw new Error("视频分片字节范围无效。");
+    const offset = match[2] === void 0 ? previousEnd : Number(match[2]);
+    if (!Number.isSafeInteger(offset)) throw new Error("视频分片缺少字节起始位置。");
+    return { offset, length: Number(match[1]) };
+  }
+  function parsePlaylist(text, baseUrl) {
+    const lines = text.trim().split(/\r?\n/).map((line) => line.trim());
+    if (lines[0] !== "#EXTM3U") throw new Error("B 站未返回有效的视频分片清单，请重新载入。");
+    const groups = [];
+    let segments = [], duration = null, map = null, rangeText = null, previous = null, total = 0;
+    const flush = () => {
+      if (segments.length) {
+        groups.push({ segments, map, offset: total - segments.reduce((n, s) => n + s.duration, 0) });
+        segments = [];
+      }
+    };
+    for (const line of lines.slice(1)) {
+      if (line.startsWith("#EXT-X-STREAM-INF:")) throw new Error("该场次返回了多清晰度清单，当前剪辑接口格式不受支持。");
+      if (line.startsWith("#EXT-X-KEY:")) {
+        if (attributes(line).METHOD !== "NONE") throw new Error("该录像包含加密分片，无法导出。");
+      } else if (line.startsWith("#EXT-X-MAP:")) {
+        flush();
+        const attrs = attributes(line);
+        map = {
+          url: new URL(attrs.URI, baseUrl).href,
+          range: attrs.BYTERANGE ? byteRange(attrs.BYTERANGE, void 0) : null
+        };
+      } else if (line === "#EXT-X-DISCONTINUITY") {
+        flush();
+        previous = null;
+      } else if (line.startsWith("#EXT-X-BYTERANGE:")) {
+        rangeText = line.slice(line.indexOf(":") + 1);
+      } else if (line.startsWith("#EXTINF:")) {
+        duration = Number(line.slice(8).split(",")[0]);
+        if (!(duration > 0)) throw new Error("视频分片时长无效。");
+      } else if (line && !line.startsWith("#")) {
+        if (duration === null) throw new Error("视频清单缺少分片时长。");
+        const url2 = new URL(line, baseUrl).href;
+        const prevEnd = previous?.url === url2 && previous.range ? previous.range.offset + previous.range.length : void 0;
+        const range = rangeText ? byteRange(rangeText, prevEnd) : null;
+        const segment = { url: url2, duration, range };
+        segments.push(segment);
+        previous = segment;
+        total += duration;
+        duration = null;
+        rangeText = null;
+      }
+    }
+    flush();
+    if (!groups.length) throw new Error("这个时间段尚无可下载的视频分片，请调整时间或稍后重试。");
+    return { groups, duration: total };
+  }
+  async function mapConcurrent(items, concurrency, task, signal) {
+    const result = new Array(items.length);
+    let cursor = 0, failed = false;
+    const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (!failed && cursor < items.length) {
+        signal?.throwIfAborted();
+        const index = cursor++;
+        try {
+          result[index] = await task(items[index], index);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
+    });
+    await Promise.all(workers);
+    return result;
+  }
+  function selectPlaylistRange(parsed, start, end) {
+    const plans = [];
+    for (const group of parsed.groups) {
+      let cursor = group.offset;
+      const selected = [];
+      let first;
+      for (const segment of group.segments) {
+        const next = cursor + segment.duration;
+        if (next > start && cursor < end) {
+          first ??= cursor;
+          selected.push(segment);
+        }
+        cursor = next;
+      }
+      if (selected.length) plans.push({ segments: selected, map: group.map, start: Math.max(0, start - first), end: Math.min(end, cursor) - first, offset: first });
+    }
+    return plans;
+  }
+
+  // src/media/recording-plan.js
+  var RecordingPlan = class {
+    constructor(api, streams, signal) {
+      this.api = api;
+      this.streams = streams;
+      this.signal = signal;
+      this.pending = null;
+    }
+    async read() {
+      const groups = [];
+      for (const stream of this.streams) {
+        const response = await this.api.request(stream.stream, { signal: this.signal });
+        this.signal?.throwIfAborted();
+        const parsed = parsePlaylist(response.data, response.url);
+        for (const group of parsed.groups) groups.push({ ...group, start: stream.start_time + group.offset, streamEnd: stream.end_time });
+      }
+      return groups;
+    }
+    async load(signal) {
+      this.signal?.throwIfAborted();
+      signal?.throwIfAborted();
+      this.pending ??= this.read().catch((error) => {
+        this.pending = null;
+        throw error;
+      });
+      if (!signal) return this.pending;
+      let abort;
+      try {
+        return await Promise.race([this.pending, new Promise((_, reject) => {
+          abort = () => reject(signal.reason);
+          signal.addEventListener("abort", abort, { once: true });
+        })]);
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+    }
+  };
 
   // node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
@@ -33797,7 +33950,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   };
   Hls.defaultConfig = void 0;
 
-  // src/full-preview.js
+  // src/media/preview-player.js
   function makeHlsLoader(request) {
     return class {
       constructor() {
@@ -33912,7 +34065,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }, seek, clear, pause: () => video.pause(), position: () => offset() + video.currentTime };
   }
 
-  // src/playback.js
+  // src/media/playback.js
   function createPlayback(video, onError) {
     let scrubbing = false, resume = false;
     const play = () => video.play().catch((error) => {
@@ -33956,155 +34109,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     sync();
   }
 
-  // src/timeline.js
-  function fitSelection(start, end, total) {
-    const width = Math.min(total, (end - start) * 1.12);
-    const left = clamp(start - (width - (end - start)) / 2, 0, total - width);
-    return { start: left, end: left + width };
-  }
-  function dragSelection(session, x, width, selection, total) {
-    const delta = (x - session.x) / width * (session.view.end - session.view.start);
-    const gap = Math.min(1e-3, total / 2);
-    const target = clamp(session.anchor + delta, 0, total);
-    const next = { ...selection };
-    if (session.type === "start") next.start = Math.min(target, selection.end - gap);
-    else next.end = Math.max(target, selection.start + gap);
-    return next;
-  }
-  function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
-  }, onView = () => {
-  } }) {
-    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending;
-    const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
-    const timeLabel = (t) => {
-      const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
-      return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
-    };
-    const tickElements = Array.from({ length: 5 }, () => document.createElement("span"));
-    ticks.replaceChildren(...tickElements);
-    function renderPlayhead() {
-      playhead.style.left = `${pct(current)}%`;
-      playhead.hidden = current < view3.start || current > view3.end;
-    }
-    function renderLock() {
-      for (const el of [startHandle, endHandle]) el.disabled = locked || !total;
-    }
-    function render() {
-      startHandle.style.left = `${pct(selection.start)}%`;
-      endHandle.style.left = `${pct(selection.end)}%`;
-      selectionElement.style.left = `${pct(selection.start)}%`;
-      selectionElement.style.right = `${100 - pct(selection.end)}%`;
-      for (const [el, value] of [[startHandle, selection.start], [endHandle, selection.end]]) {
-        el.setAttribute("aria-valuenow", value.toFixed(3));
-        el.setAttribute("aria-valuemin", 0);
-        el.setAttribute("aria-valuemax", total);
-      }
-      tickElements.forEach((span, i) => {
-        span.textContent = timeLabel(view3.start + (view3.end - view3.start) * i / 4);
-      });
-      labels.textContent = formatTimeRange(selection.start, selection.end);
-      renderPlayhead();
-      renderLock();
-      onView({ ...view3 });
-    }
-    function setSelection(next, refit2 = false) {
-      validateRange(next.start, next.end, total);
-      selection = next;
-      if (refit2) view3 = fitSelection(next.start, next.end, total);
-      render();
-      onSelection({ ...selection });
-    }
-    function refit() {
-      track.classList.add("refitting");
-      view3 = fitSelection(selection.start, selection.end, total);
-      render();
-      setTimeout(() => track.classList.remove("refitting"), 180);
-    }
-    function apply(x) {
-      if (!drag) return;
-      const rect = track.getBoundingClientRect();
-      let target;
-      if (drag.type === "playhead") target = clamp(drag.view.start + (x - rect.left) / rect.width * (drag.view.end - drag.view.start), 0, total);
-      else {
-        selection = dragSelection(drag, x, rect.width, selection, total);
-        target = selection[drag.type];
-        view3 = { start: Math.min(view3.start, selection.start), end: Math.max(view3.end, selection.end) };
-      }
-      current = target;
-      if (drag.type === "playhead") renderPlayhead();
-      else {
-        render();
-        onSelection({ ...selection });
-      }
-      onPreview(target);
-    }
-    function flush() {
-      cancelAnimationFrame(frame);
-      frame = 0;
-      if (pending !== void 0) {
-        apply(pending);
-        pending = void 0;
-      }
-    }
-    track.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || locked || !total) return;
-      e.preventDefault();
-      track.classList.remove("refitting");
-      const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
-      drag = { type, x: e.clientX, view: { ...view3 }, anchor: selection[type] };
-      onScrubStart?.();
-      track.setPointerCapture(e.pointerId);
-      apply(e.clientX);
-    });
-    track.addEventListener("pointermove", (e) => {
-      if (!drag) return;
-      pending = e.clientX;
-      if (!frame) frame = requestAnimationFrame(flush);
-    });
-    function finish(e) {
-      if (!drag) return;
-      flush();
-      const type = drag.type;
-      drag = null;
-      if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
-      if (type !== "playhead") refit();
-      onScrubEnd?.(current);
-    }
-    track.addEventListener("pointerup", finish);
-    track.addEventListener("pointercancel", finish);
-    track.addEventListener("wheel", (e) => {
-      if (locked || !total || drag) return;
-      e.preventDefault();
-      const r = track.getBoundingClientRect();
-      view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
-      render();
-    }, { passive: false });
-    for (const [el, type] of [[startHandle, "start"], [endHandle, "end"]]) el.onkeydown = (e) => {
-      if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
-      e.preventDefault();
-      const step = (e.shiftKey ? 10 : 1) * (view3.end - view3.start) / 1e3;
-      const next = dragSelection({ type, x: 0, view: view3, anchor: selection[type] }, e.key === "ArrowRight" ? step : -step, view3.end - view3.start, selection, total);
-      onScrubStart?.();
-      setSelection(next, true);
-      onPreview(next[type]);
-      onScrubEnd?.(next[type]);
-    };
-    return { reset(duration, next = { start: 0, end: duration }) {
-      total = duration;
-      view3 = { start: 0, end: total };
-      setSelection(next);
-    }, setSelection, getSelection: () => ({ ...selection }), getView: () => ({ ...view3 }), setCurrent(t) {
-      if (!drag) {
-        current = t;
-        renderPlayhead();
-      }
-    }, lock(value) {
-      locked = value;
-      renderLock();
-    } };
-  }
-
-  // src/thumbnails.js
+  // src/media/thumbnails.js
   function thumbnailSamples(record, streams, view3, count = 6) {
     return Array.from({ length: count }, (_, i) => {
       const time = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
@@ -60431,7 +60436,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   globalThis[MEDIABUNNY_LOADED_SYMBOL] = true;
 
-  // src/media.js
+  // src/media/export.js
   async function convertMp4(blob, { start, end, precise = false, signal, onProgress = () => {
   } } = {}) {
     signal?.throwIfAborted();
@@ -60497,7 +60502,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     return outputs;
   }
 
-  // src/recording.js
+  // src/media/recording.js
   async function estimateRecordingRate(api, groups, signal) {
     const rates = [];
     for (const group of groups) {
@@ -60648,13 +60653,20 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
   }
 
-  // src/app.js
+  // src/media/file-name.js
+  function fileName(record, start, end, part = "") {
+    const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date(record.start * 1e3));
+    const label = `${record.member}_${date}_${record.title}_${formatTime(start).replaceAll(":", "-")}-${formatTime(end).replaceAll(":", "-")}${part}`;
+    return label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
+  }
+
+  // src/app/application.js
   function createApp({ api, get = (_, fallback) => fallback, set = () => {
   }, pageUrl = location.href }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
     const root = host.attachShadow({ mode: "open" });
-    root.innerHTML = `<style>${ui_default2}</style>${ui_default}`;
+    root.innerHTML = `<style>${styles_default}</style>${template_default}`;
     document.documentElement.append(host);
     const $ = (id) => root.getElementById(id), video = $("fullVideo");
     const room = roomIdFromUrl(pageUrl);
@@ -61101,7 +61113,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     return { open, resetWindow, root };
   }
 
-  // src/network.js
+  // src/services/bilibili.js
   var API = "https://api.live.bilibili.com";
   function createRequest(gmRequest) {
     return (url2, { auth = false, type = "text", range = null, signal } = {}) => new Promise((resolve, reject) => {

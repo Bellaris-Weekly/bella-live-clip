@@ -2,14 +2,13 @@
 .env.*
 __pycache__/
 node_modules/
-output/
-tests/artifacts/
+.local/
+.agents/
+.codex/
+.trellis/
+AGENTS.md
 *.mp4
 *.m4s
 *.ts
 
 .DS_Store
-
-# Local media evidence
-evidence/*.jpg
-evidence/*.png

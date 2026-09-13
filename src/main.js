@@ -1,5 +1,5 @@
-import { createApp } from './app.js';
-import { BiliApi, createRequest } from './network.js';
+import { createApp } from './app/application.js';
+import { BiliApi, createRequest } from './services/bilibili.js';
 if (!document.getElementById('bella-live-clip-host')) {
   const app = createApp({ api: new BiliApi(createRequest(GM_xmlhttpRequest)),
     get: (key,fallback) => GM_getValue(`biliClip.${key}`,fallback),

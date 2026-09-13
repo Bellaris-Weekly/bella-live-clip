@@ -2,17 +2,15 @@
 
 当前版本为 `2.2.4`。B 站直播片段剪辑与下载油猴脚本。
 
-可安装的油猴脚本，支持贝拉、乃琳、嘉然、心宜、思诺的本场直播回看与近 14 天历史回放。面板以白色、浅灰和黑色为主，下载主按钮、选区边界和细进度线使用青绿色；场次卡片通过成员色日期、淡色边框和浅底增强区分。场次列表优先两列铺满可用空间，720px 及以上面板显示三列，只有不足 350px 的极窄面板才退为单列。
+可安装的油猴脚本，支持贝拉、乃琳、嘉然、心宜、思诺的本场直播回看与近 14 天历史回放。
 
 ## 安装
 
 1. 安装 Tampermonkey。
-2. 打开 [GitHub 安装文件](https://raw.githubusercontent.com/Bellaris-Weekly/bella-live-clip/main/bella-live-clip.user.js)，或将根目录 `bella-live-clip.user.js` 导入 Tampermonkey。CF 配置完成后也可使用 [R2 安装地址](https://share.bellaris.fans/bella-live-clip.user.js)。
-3. 在同一个浏览器登录 B 站，刷新 B 站页面，点击右下角「片段」。
+2. 打开 [GitHub 安装文件](https://raw.githubusercontent.com/Bellaris-Weekly/bella-live-clip/main/bella-live-clip.user.js)，或点击 [立即安装](https://share.bellaris.fans/bella-live-clip.user.js)。
+3. 在同一个浏览器登录 B 站，刷新 B 站页面，点击右下角剪辑图标。
 
-默认快捷键为 **Alt＋Shift＋C**。点击入口或使用快捷键均可收起面板。顶部紧凑工具栏保留标题、可修改的快捷键与关闭按钮，拖动工具栏空白处可移动窗口；入口可拖动，窗口八个方向可缩放并记住位置。重置位置位于油猴菜单的“重置窗口位置”。
-
-运行不需要 Node、Python、FFmpeg 或本地服务。依赖已打包进单个脚本，不需要复制 Cookie。
+默认快捷键为 **Alt＋Shift＋C**。点击入口或使用快捷键均可收起面板。
 
 ## 使用
 
@@ -40,38 +38,3 @@
 - 登录态请求仅发往 B 站直播接口；视频服务器、日程及头像资料请求为匿名请求。
 - 不发布内容、不创建投稿草稿；脚本不保存 Cookie、签名媒体链接或视频到扩展存储。
 - 接口并非承诺稳定的公开 API，平台改版后可能需要更新。
-
-## 开发与验证
-
-```sh
-npm ci
-npm run verify
-npm run serve
-```
-
-本地验证页为 `http://127.0.0.1:8765`，使用实际直播素材和模拟场次接口；默认读取本地 `evidence/mediabunny-test.mp4`。也可以设置 `BILI_CLIP_FIXTURE` 指定一个有声 MP4，测试页会为预览生成 fMP4；`BILI_CLIP_HLS_FIXTURE` 可指定实际原始分片素材。测试媒体不随 Git 提交。
-
-自动化测试覆盖场次与时间处理、认证隔离、HLS 分片、时间轴交互、码率预估、整场写盘、取消与失败处理、日程匹配和缓存。浏览器验证页可检查场次卡片、布局、播放和实际视频导出；这些检查需要手动运行，不包含在 `npm run verify` 中。测试结果与导出文件写入 `tests/artifacts/`，可清理后重新生成。
-
-在验证页地址后加 `?slow-media`，点击“验证场次清理与刷新”，可检查预估过程中返回、换场、刷新及收起再打开。大小预估、选区导出和整场下载共享本次录像的清单；刷新或换场时重新读取，取消一次下载不影响其他清单使用者。
-
-## 依赖许可
-
-应用代码采用 MIT。MP4 处理使用 Mediabunny 1.56.1（MPL-2.0，原始源码可从同版本 npm 包获取），整场播放使用 hls.js 1.6.16（Apache-2.0）。完整许可见 `licenses/`。界面行为参考本地贝报 GIF 项目，未引入 GIF 编码模块。
-
-## 仓库与自动发布
-
-源码位于 `src/`，元数据位于 `src/header.txt`，根目录 `bella-live-clip.user.js` 为提交到 Git 的构建产物。版本更新时同步修改 `src/header.txt`、`package.json`、`package-lock.json` 和本说明的当前版本，再运行 `npm run verify`。
-
-与 bella-gif-helper 使用相同的 R2 发布流程：push 和外部 PR 执行验证，并检查已提交产物与源码一致；main 验证通过后上传脚本到 R2。工作流也支持 Actions 页面手动运行。凭据尚未配置时上传步骤跳过，验证仍正常执行。
-
-在仓库 Settings → Secrets and variables → Actions 中配置以下四个 Secrets：
-
-| 名称 | 内容 |
-| --- | --- |
-| `R2_ACCOUNT_ID` | Cloudflare 账户 ID |
-| `R2_ACCESS_KEY_ID` | R2 API 访问密钥 ID |
-| `R2_SECRET_ACCESS_KEY` | R2 API 私密访问密钥 |
-| `R2_BUCKET` | 绑定 share.bellaris.fans 的存储桶名称 |
-
-补齐凭据后，在 Actions 中运行 **Sync userscript to Cloudflare R2**（main 分支）。文件发布到桶根目录 `bella-live-clip.user.js`，使用与 GIF 仓库相同的禁缓存设置。自动更新与下载地址均为 `https://share.bellaris.fans/bella-live-clip.user.js`。凭据只保存在 GitHub Secrets，不写入源码或 .env。
