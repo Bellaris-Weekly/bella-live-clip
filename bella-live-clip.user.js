@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.3
+// @version      2.11.4
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.3\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.4\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -132,7 +132,7 @@
   }
 
   // src/ui/template.html
-  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<button id="currentVideo" class="text-button" hidden>剪辑当前视频</button>\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label id="wholeRecordingLabel" class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2 id="offlineTitle">暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<button id="currentVideo" class="text-button" hidden>剪辑当前视频</button>\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><canvas id="pageMirror" hidden tabindex="0" role="button" aria-label="B 站同步画面，点击播放或暂停"></canvas><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><button id="playSelection" class="text-button" hidden>播放选段</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label id="wholeRecordingLabel" class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2 id="offlineTitle">暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
   var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
@@ -218,7 +218,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #recordTitle{line-height:28px;overflow-wrap:anywhere;font-size:19px}
 #recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}
 #playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:14px;overflow:hidden;box-shadow:0 6px 18px #15291c18}
-#fullVideo{display:block;width:100%;height:100%}
+#fullVideo,#pageMirror{display:block;width:100%;height:100%;object-fit:contain}
+#fullVideo[hidden],#pageMirror[hidden]{display:none}
 #videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}
 .preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}
 .mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}
@@ -343,7 +344,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function createControls(root, timeline) {
     const $ = (id) => root.getElementById(id);
     const marks = [$("markStart"), $("markEnd")];
-    const editor = [$("togglePlayback"), $("wholeRecording"), $("download")];
+    const editor = [$("togglePlayback"), $("playSelection"), $("wholeRecording"), $("download")];
     const managed = /* @__PURE__ */ new Set([...marks, ...editor, $("cancel"), $("startHandle"), $("endHandle")]);
     const navigation = [...root.querySelectorAll("#body button,#body input")].filter((el) => !managed.has(el));
     const cards = $("cards"), download = $("download"), label = download.querySelector("span");
@@ -1307,6 +1308,229 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       const play = await get("/x/player/wbi/playurl", params, options);
       return normalizeSubmission(metadata, route, play);
     } };
+  }
+
+  // src/media/submission-player.js
+  function createSubmissionPlayer({ canvas, loading, getVideo, isCurrent, onTime, onState, status: status2, getRange }) {
+    const context = canvas.getContext("2d");
+    let source = null, submission = null, visible = false, frameId = null, stopTimer = null, range = null;
+    let scrubbing = false, resumeAfterScrub = false;
+    const listeners = [];
+    const stopTimerNow = () => {
+      clearTimeout(stopTimer);
+      stopTimer = null;
+    };
+    const stopFrame = () => {
+      if (frameId !== null) source?.cancelVideoFrameCallback(frameId);
+      frameId = null;
+    };
+    const play = () => {
+      if (source) void source.play().catch((error) => {
+        if (error.name !== "AbortError") status2(error.message, true);
+      });
+    };
+    function draw() {
+      if (!source || !visible) return;
+      onTime(source.currentTime);
+      onState();
+      if (source.readyState < 2 || source.seeking || !source.videoWidth) {
+        loading.hidden = false;
+        return;
+      }
+      const width = Math.min(640, source.videoWidth), height = Math.round(width * source.videoHeight / source.videoWidth);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      context.drawImage(source, 0, 0, width, height);
+      loading.hidden = true;
+    }
+    function scheduleFrame() {
+      if (frameId !== null || !source || source.paused || !visible) return;
+      const own = source;
+      frameId = own.requestVideoFrameCallback(() => {
+        frameId = null;
+        if (source !== own || !visible) return;
+        draw();
+        check();
+        scheduleFrame();
+      });
+    }
+    function check() {
+      stopTimerNow();
+      if (!source || !range || source.paused || source.seeking || scrubbing) return;
+      if (source.currentTime >= range.end) {
+        const end = range.end;
+        range = null;
+        source.pause();
+        source.currentTime = end;
+        draw();
+        return;
+      }
+      if (source.playbackRate > 0) stopTimer = setTimeout(check, (range.end - source.currentTime) / source.playbackRate * 1e3);
+    }
+    function update() {
+      draw();
+      check();
+      scheduleFrame();
+    }
+    function cancel() {
+      stopTimerNow();
+      range = null;
+      const resume = scrubbing && resumeAfterScrub;
+      scrubbing = false;
+      resumeAfterScrub = false;
+      if (resume) play();
+    }
+    function detach() {
+      stopFrame();
+      stopTimerNow();
+      for (const [name, listener] of listeners) source.removeEventListener(name, listener);
+      listeners.length = 0;
+      source = null;
+      range = null;
+      scrubbing = false;
+      resumeAfterScrub = false;
+    }
+    function refresh() {
+      if (!visible || !submission) return;
+      const next = isCurrent() ? getVideo() : null;
+      if (next !== source) {
+        detach();
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        source = next;
+        if (source) {
+          const listen = (name, listener) => {
+            source.addEventListener(name, listener);
+            listeners.push([name, listener]);
+          };
+          for (const name of ["loadeddata", "seeked", "timeupdate", "playing", "ratechange", "resize"]) listen(name, update);
+          listen("play", update);
+          for (const name of ["pause", "ended"]) listen(name, () => {
+            stopFrame();
+            stopTimerNow();
+            draw();
+          });
+          listen("seeking", () => {
+            if (range && (source.currentTime < range.start || source.currentTime > range.end)) range = null;
+            stopTimerNow();
+            update();
+          });
+          listen("emptied", () => {
+            range = null;
+            stopFrame();
+            stopTimerNow();
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            loading.hidden = false;
+          });
+          listen("waiting", () => {
+            loading.hidden = false;
+            loading.textContent = "等待 B 站播放器缓冲…";
+            stopTimerNow();
+          });
+        }
+      }
+      if (!source) {
+        loading.hidden = false;
+        loading.textContent = isCurrent() ? "等待 B 站播放器…" : "已切换视频，请载入当前视频";
+        onState();
+        return;
+      }
+      loading.textContent = "等待 B 站播放器画面…";
+      update();
+    }
+    const seek = (time2) => {
+      refresh();
+      if (source) source.currentTime = clamp(time2, 0, Math.max(0, submission.duration - 1e-3));
+    };
+    const toggle = () => {
+      refresh();
+      range = null;
+      stopTimerNow();
+      if (source) {
+        if (source.paused || source.ended) play();
+        else source.pause();
+      }
+    };
+    const click = (event) => {
+      if (event.detail === 1) toggle();
+    };
+    const key = (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggle();
+      }
+    };
+    const fullscreen = () => {
+      void canvas.requestFullscreen().catch((error) => status2(error.message, true));
+    };
+    canvas.addEventListener("click", click);
+    canvas.addEventListener("keydown", key);
+    canvas.addEventListener("dblclick", fullscreen);
+    function clear() {
+      detach();
+      submission = null;
+      visible = false;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    return {
+      async load(next, signal) {
+        signal.throwIfAborted();
+        clear();
+        submission = next;
+        visible = true;
+        refresh();
+        return { total: next.duration };
+      },
+      refresh,
+      seek,
+      position: () => source?.currentTime ?? 0,
+      isPaused: () => !source || source.paused || source.ended,
+      pause() {
+        source?.pause();
+      },
+      toggle,
+      check,
+      cancel,
+      begin() {
+        refresh();
+        range = null;
+        stopTimerNow();
+        scrubbing = true;
+        resumeAfterScrub = !!source && !source.paused && !source.ended;
+        source?.pause();
+      },
+      end() {
+        const resume = scrubbing && resumeAfterScrub;
+        scrubbing = false;
+        resumeAfterScrub = false;
+        if (resume) play();
+      },
+      playSelection() {
+        refresh();
+        if (!source) return;
+        range = { ...getRange() };
+        source.currentTime = range.start;
+        play();
+      },
+      suspend() {
+        cancel();
+        visible = false;
+        detach();
+      },
+      resume() {
+        visible = true;
+        refresh();
+      },
+      clear,
+      destroy() {
+        clear();
+        canvas.removeEventListener("click", click);
+        canvas.removeEventListener("keydown", key);
+        canvas.removeEventListener("dblclick", fullscreen);
+      }
+    };
   }
 
   // node_modules/mediabunny/dist/modules/src/misc.js
@@ -24594,7 +24818,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
   });
-  var MediaSource2 = class {
+  var MediaSource = class {
     constructor() {
       this._connectedTrack = null;
       this._closingPromise = null;
@@ -24658,7 +24882,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       })();
     }
   };
-  var VideoSource = class extends MediaSource2 {
+  var VideoSource = class extends MediaSource {
     /** Internal constructor. */
     constructor(codec) {
       super();
@@ -25436,7 +25660,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       return this._encoder.flushAndClose(forceClose);
     }
   };
-  var AudioSource = class extends MediaSource2 {
+  var AudioSource = class extends MediaSource {
     /** Internal constructor. */
     constructor(codec) {
       super();
@@ -25949,7 +26173,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       return this._encoder.flushAndClose(forceClose);
     }
   };
-  var SubtitleSource = class extends MediaSource2 {
+  var SubtitleSource = class extends MediaSource {
     /** Internal constructor. */
     constructor(codec) {
       super();
@@ -28183,287 +28407,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         if (audioInput && audioInput !== videoInput) audioInput.dispose();
       }
     };
-  }
-
-  // src/media/submission-player.js
-  var WINDOW_SECONDS = 8;
-  var BACK_SECONDS = 15;
-  var MAX_WINDOW_BYTES = 32 * 1024 * 1024;
-  async function readSubmissionPreviewWindow(tracks, time2, { signal, span = WINDOW_SECONDS } = {}) {
-    signal?.throwIfAborted();
-    const video = tracks.find((track) => track.isVideoTrack()), sink = new EncodedPacketSink(video);
-    const first = await sink.getKeyPacket(time2, { verifyKeyPackets: true }) ?? await sink.getFirstKeyPacket({ verifyKeyPackets: true });
-    if (!first) throw new Error("视频没有可解码的关键帧");
-    let last2 = await sink.getKeyPacket(time2 + span, { verifyKeyPackets: true });
-    if (!last2 || last2.timestamp <= first.timestamp) last2 = await sink.getNextKeyPacket(first, { verifyKeyPackets: true });
-    else last2 = await sink.getNextKeyPacket(last2, { verifyKeyPackets: true });
-    const start = Math.min(time2, first.timestamp), end = last2?.timestamp ?? Infinity;
-    let bytes2 = 0, actualEnd = start;
-    const chunks = [];
-    for (const track of tracks) {
-      signal?.throwIfAborted();
-      const isVideo = track.isVideoTrack(), packets = new EncodedPacketSink(track);
-      const begin = isVideo ? first : await packets.getPacket(start) ?? await packets.getFirstPacket();
-      if (!begin) throw new Error(isVideo ? "视频轨道为空" : "音频轨道为空");
-      const source = isVideo ? new EncodedVideoPacketSource("avc") : new EncodedAudioPacketSource("aac");
-      const output = new Output({ format: new Mp4OutputFormat({ fastStart: "fragmented", minimumFragmentDuration: Infinity }), target: new BufferTarget() });
-      if (isVideo) output.addVideoTrack(source, { rotation: await track.getRotation() });
-      else output.addAudioTrack(source);
-      const decoderConfig = await track.getDecoderConfig();
-      try {
-        await output.start();
-        for await (const packet of packets.packets(begin, isVideo ? last2 ?? void 0 : void 0)) {
-          signal?.throwIfAborted();
-          if (!isVideo && packet.timestamp >= end) break;
-          bytes2 += packet.data.byteLength;
-          if (bytes2 > MAX_WINDOW_BYTES) throw new Error("预览关键帧间隔过大，无法在预览缓存限制内加载");
-          await source.add(packet, { decoderConfig });
-          if (isVideo) actualEnd = Math.max(actualEnd, packet.timestamp + packet.duration);
-        }
-        source.close();
-        await output.finalize();
-        signal?.throwIfAborted();
-        chunks.push({ track, data: new Uint8Array(output.target.buffer) });
-      } catch (error) {
-        await output.cancel();
-        throw error;
-      }
-    }
-    return { chunks, start, end: Number.isFinite(end) ? end : actualEnd, finished: last2 === null };
-  }
-  function eventPromise(target, event, signal, action) {
-    signal?.throwIfAborted();
-    return new Promise((resolve, reject) => {
-      const clean = () => {
-        target.removeEventListener(event, done);
-        target.removeEventListener("error", fail);
-        signal?.removeEventListener("abort", abort);
-      };
-      const done = () => {
-        clean();
-        resolve();
-      };
-      const fail = () => {
-        clean();
-        reject(new Error("视频预览解码失败"));
-      };
-      const abort = () => {
-        clean();
-        reject(signal.reason);
-      };
-      target.addEventListener(event, done, { once: true });
-      target.addEventListener("error", fail, { once: true });
-      signal?.addEventListener("abort", abort, { once: true });
-      try {
-        action?.();
-      } catch (error) {
-        clean();
-        reject(error);
-      }
-    });
-  }
-  function bufferedEnd(buffer, time2) {
-    for (let i = 0; i < buffer.buffered.length; i++) if (buffer.buffered.start(i) <= time2 + 0.05 && buffer.buffered.end(i) > time2) return buffer.buffered.end(i);
-    return time2;
-  }
-  function createSubmissionPlayer({ video, loading, request, status: status2, onTime }) {
-    let session = null, target = null;
-    const listeners = [];
-    const listen = (name, callback) => {
-      video.addEventListener(name, callback);
-      listeners.push([name, callback]);
-    };
-    function ready() {
-      if (session && video.readyState >= 2 && !video.seeking && (target === null || Math.abs(video.currentTime - target) < 0.15)) {
-        target = null;
-        loading.hidden = true;
-      }
-    }
-    function report(error, own) {
-      if (session !== own || own.controller.signal.aborted || error.name === "AbortError") return;
-      own.failed = true;
-      video.pause();
-      loading.hidden = false;
-      loading.textContent = "预览暂不可用，请刷新重试";
-      status2(error.message, true);
-    }
-    async function fill(own, time2) {
-      const controller = new AbortController(), abort = () => controller.abort(own.controller.signal.reason);
-      own.controller.signal.addEventListener("abort", abort, { once: true });
-      if (own.controller.signal.aborted) abort();
-      own.fillController = controller;
-      own.fillTime = time2;
-      const signal = controller.signal;
-      const media = openSubmissionMedia(request, own.submission, { signal, preview: true });
-      own.media = media;
-      try {
-        const tracks = await media.getTracks();
-        signal.throwIfAborted();
-        const window2 = await readSubmissionPreviewWindow(tracks, time2, { signal });
-        signal.throwIfAborted();
-        for (let i = 0; i < window2.chunks.length; i++) {
-          const buffer = own.buffers[i];
-          if (buffer.updating) await eventPromise(buffer, "updateend", signal);
-          const cutoff = Math.max(0, video.currentTime - BACK_SECONDS);
-          if (cutoff > 0 && buffer.buffered.length && buffer.buffered.start(0) < cutoff) await eventPromise(buffer, "updateend", signal, () => buffer.remove(0, cutoff));
-          const upper = Math.max(video.currentTime, time2) + WINDOW_SECONDS * 3;
-          if (buffer.buffered.length && buffer.buffered.end(buffer.buffered.length - 1) > upper) await eventPromise(buffer, "updateend", signal, () => buffer.remove(upper, Infinity));
-          await eventPromise(buffer, "updateend", signal, () => buffer.appendBuffer(window2.chunks[i].data));
-        }
-        signal.throwIfAborted();
-        own.next = window2.end;
-        own.finished = window2.finished;
-        return window2;
-      } finally {
-        own.controller.signal.removeEventListener("abort", abort);
-        media.dispose();
-        if (own.media === media) own.media = null;
-        if (own.fillController === controller) own.fillController = null;
-      }
-    }
-    async function pump() {
-      const own = session;
-      if (!own || !own.ready || own.running || own.failed) return;
-      const time2 = video.currentTime, end = Math.min(...own.buffers.map((buffer) => bufferedEnd(buffer, time2)));
-      if (end - time2 >= 4 || own.finished && end >= own.submission.duration - 0.1) return;
-      own.running = true;
-      try {
-        await fill(own, end > time2 + 0.1 ? own.next : time2);
-      } catch (error) {
-        report(error, own);
-      } finally {
-        own.running = false;
-        if (own.pending) {
-          own.pending = false;
-          void pump();
-        }
-      }
-    }
-    function seekedTo() {
-      const own = session;
-      if (!own) return;
-      target = video.currentTime;
-      loading.hidden = false;
-      loading.textContent = "正在定位画面…";
-      if (own.running && Math.abs(own.fillTime - video.currentTime) > 0.05 && own.buffers.some((buffer) => bufferedEnd(buffer, video.currentTime) === video.currentTime)) {
-        own.pending = true;
-        own.fillController?.abort();
-      }
-      void pump();
-    }
-    function clear() {
-      const old = session;
-      session = null;
-      target = null;
-      old?.controller.abort();
-      old?.media?.dispose();
-      old?.unlink();
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      if (old?.url) URL.revokeObjectURL(old.url);
-    }
-    listen("timeupdate", () => {
-      if (!session) return;
-      ready();
-      onTime(video.currentTime);
-      void pump();
-    });
-    listen("seeking", seekedTo);
-    for (const event of ["seeked", "loadeddata", "canplay"]) listen(event, () => {
-      ready();
-      void pump();
-    });
-    listen("waiting", () => {
-      if (session) {
-        loading.hidden = false;
-        loading.textContent = "正在加载画面…";
-        void pump();
-      }
-    });
-    listen("playing", () => {
-      if (session) loading.hidden = true;
-    });
-    listen("error", () => {
-      if (session) report(new Error("视频预览解码失败"), session);
-    });
-    return {
-      async load(submission, signal) {
-        clear();
-        signal.throwIfAborted();
-        if (typeof MediaSource === "undefined") throw new Error("当前浏览器不支持视频预览");
-        const controller = new AbortController(), abort = () => controller.abort(signal.reason);
-        signal.addEventListener("abort", abort, { once: true });
-        const own = { submission, controller, unlink: () => signal.removeEventListener("abort", abort), buffers: [], ready: false, running: false, failed: false };
-        session = own;
-        loading.hidden = false;
-        loading.textContent = "正在加载画面…";
-        try {
-          const media = openSubmissionMedia(request, submission, { signal: controller.signal, preview: true });
-          own.media = media;
-          let codecs;
-          try {
-            const tracks = await media.getTracks();
-            codecs = await Promise.all(tracks.map(async (track) => `${track.isVideoTrack() ? "video" : "audio"}/mp4; codecs="${await track.getCodecParameterString()}"`));
-          } finally {
-            media.dispose();
-            own.media = null;
-          }
-          controller.signal.throwIfAborted();
-          for (const codec of codecs) if (!MediaSource.isTypeSupported(codec)) throw new Error("当前浏览器不支持此视频的音视频格式");
-          own.source = new MediaSource();
-          own.url = URL.createObjectURL(own.source);
-          await eventPromise(own.source, "sourceopen", controller.signal, () => {
-            video.src = own.url;
-          });
-          own.source.duration = submission.duration;
-          own.buffers = codecs.map((codec) => own.source.addSourceBuffer(codec));
-          const window2 = await fill(own, 0);
-          controller.signal.throwIfAborted();
-          video.currentTime = Math.max(0, window2.start);
-          if (video.readyState < 2) await eventPromise(video, "loadeddata", controller.signal);
-          own.ready = true;
-          loading.hidden = true;
-          return { total: submission.duration };
-        } catch (error) {
-          if (session === own) clear();
-          throw error;
-        }
-      },
-      seek(time2) {
-        if (!session) return;
-        target = clamp(time2, 0, Math.max(0, session.submission.duration - 1e-3));
-        video.currentTime = target;
-        seekedTo();
-      },
-      clear,
-      pause: () => video.pause(),
-      position: () => target ?? video.currentTime,
-      destroy() {
-        clear();
-        for (const [name, callback] of listeners) video.removeEventListener(name, callback);
-      }
-    };
-  }
-  async function readSubmissionThumbnail(request, submission, time2, signal) {
-    signal.throwIfAborted();
-    const media = openSubmissionMedia(request, submission, { signal, preview: true });
-    let sample;
-    try {
-      const track = await media.videoInput.getPrimaryVideoTrack();
-      if (!track) throw new Error("视频轨道为空");
-      sample = await new VideoSampleSink(track).getSample(time2);
-      signal.throwIfAborted();
-      if (!sample) throw new Error("该位置没有可解码的画面");
-      const canvas = document.createElement("canvas");
-      canvas.width = 160;
-      canvas.height = 90;
-      sample.draw(canvas.getContext("2d"), 0, 0, 160, 90);
-      return canvas;
-    } finally {
-      sample?.close();
-      media.dispose();
-    }
   }
 
   // src/media/encoding.js
@@ -31439,8 +31382,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   function isCodecMediaSourceSupported(codec, type, preferManagedMediaSource = true) {
     var _MediaSource$isTypeSu;
-    const MediaSource3 = getMediaSource(preferManagedMediaSource);
-    return (_MediaSource$isTypeSu = MediaSource3 == null ? void 0 : MediaSource3.isTypeSupported(mimeTypeForCodec(codec, type))) != null ? _MediaSource$isTypeSu : false;
+    const MediaSource2 = getMediaSource(preferManagedMediaSource);
+    return (_MediaSource$isTypeSu = MediaSource2 == null ? void 0 : MediaSource2.isTypeSupported(mimeTypeForCodec(codec, type))) != null ? _MediaSource$isTypeSu : false;
   }
   function mimeTypeForCodec(codec, type) {
     return `${type}/mp4;codecs=${codec}`;
@@ -31554,13 +31497,13 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     return videoCodec;
   }
   function getM2TSSupportedAudioTypes(preferManagedMediaSource) {
-    const MediaSource3 = getMediaSource(preferManagedMediaSource) || {
+    const MediaSource2 = getMediaSource(preferManagedMediaSource) || {
       isTypeSupported: () => false
     };
     return {
-      mpeg: MediaSource3.isTypeSupported("audio/mpeg"),
-      mp3: MediaSource3.isTypeSupported('audio/mp4; codecs="mp3"'),
-      ac3: MediaSource3.isTypeSupported('audio/mp4; codecs="ac-3"')
+      mpeg: MediaSource2.isTypeSupported("audio/mpeg"),
+      mp3: MediaSource2.isTypeSupported('audio/mp4; codecs="mp3"'),
+      ac3: MediaSource2.isTypeSupported('audio/mp4; codecs="ac-3"')
     };
   }
   function getCodecsForMimeType(mimeType) {
@@ -46407,14 +46350,14 @@ ${this.list("audiovideo")}}`;
     onMediaAttaching(event, data) {
       const media = this.media = data.media;
       this.transferData = this.overrides = void 0;
-      const MediaSource3 = getMediaSource(this.appendSource);
-      if (MediaSource3) {
+      const MediaSource2 = getMediaSource(this.appendSource);
+      if (MediaSource2) {
         const transferringMedia = !!data.mediaSource;
         if (transferringMedia || data.overrides) {
           this.transferData = data;
           this.overrides = data.overrides;
         }
-        const ms = this.mediaSource = data.mediaSource || new MediaSource3();
+        const ms = this.mediaSource = data.mediaSource || new MediaSource2();
         this.assignMediaSource(ms);
         if (transferringMedia) {
           this._objectUrl = media.src;
@@ -51062,9 +51005,9 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
           media.addEventListener("timeupdate", this.checkPlayout);
           if (this.appendInPlace) {
             hls.on(Events.BUFFER_APPENDED, () => {
-              const bufferedEnd2 = this.bufferedEnd;
-              if (this.reachedPlayout(bufferedEnd2)) {
-                this._bufferedEosTime = bufferedEnd2;
+              const bufferedEnd = this.bufferedEnd;
+              if (this.reachedPlayout(bufferedEnd)) {
+                this._bufferedEosTime = bufferedEnd;
                 hls.trigger(Events.BUFFERED_TO_END, void 0);
               }
             });
@@ -51105,8 +51048,8 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       const duration = Math.min(this._bufferedEosTime || Infinity, this.duration);
       const start = this.timelineOffset;
       const bufferInfo = BufferHelper.bufferInfo(media, start, 0);
-      const bufferedEnd2 = this.getAssetTime(bufferInfo.end);
-      return bufferedEnd2 >= duration - 0.02;
+      const bufferedEnd = this.getAssetTime(bufferInfo.end);
+      return bufferedEnd >= duration - 0.02;
     }
     reachedPlayout(time2) {
       const interstitial = this.interstitial;
@@ -62595,6 +62538,28 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     sync();
   }
 
+  // src/media/submission-thumbnail.js
+  async function readSubmissionThumbnail(request, submission, time2, signal) {
+    signal.throwIfAborted();
+    const media = openSubmissionMedia(request, submission, { signal, preview: true });
+    let sample;
+    try {
+      const track = await media.videoInput.getPrimaryVideoTrack();
+      if (!track) throw new Error("视频轨道为空");
+      sample = await new VideoSampleSink(track).getSample(time2);
+      signal.throwIfAborted();
+      if (!sample) throw new Error("该位置没有可解码的画面");
+      const canvas = document.createElement("canvas");
+      canvas.width = 160;
+      canvas.height = 90;
+      sample.draw(canvas.getContext("2d"), 0, 0, 160, 90);
+      return canvas;
+    } finally {
+      sample?.close();
+      media.dispose();
+    }
+  }
+
   // src/media/thumbnails.js
   function thumbnailSamples(record, streams, view3, count = 6) {
     return Array.from({ length: count }, (_, i) => {
@@ -63336,7 +63301,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     const $ = (id) => root.getElementById(id), video = $("fullVideo");
     const readPageUrl = typeof pageUrl === "function" ? pageUrl : () => pageUrl;
     const room = roomIdFromUrl(readPageUrl()), submissions = createSubmissionService(submissionRequest);
-    let player = null, playerKind = null, loadedRoute = null, observedRoute = parseSubmissionUrl(readPageUrl())?.key, jobKind = null, pendingRoute = false;
+    let player = null, playerKind = null, loadedRoute = null, observedRoute = parseSubmissionUrl(readPageUrl())?.key, jobKind = null, pendingRoute = false, submissionThumbnails = false;
     const isSubmission = () => record?.kind === "submission";
     const metadata = readScriptMetadata(header_default);
     const versionControl = createVersionControl({ root, metadata, check: createUpdateChecker({ request: api.request, metadata }) });
@@ -63382,17 +63347,24 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       timeline.setCurrent(t);
       updateClock(t);
     } });
+    const activePlayback = () => playerKind === "submission" ? player : playback;
     bindVideoControls(video, playback, status2);
     const thumbnails = createThumbnails({ container: $("thumbnails"), request: api.request });
     const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => {
       player?.seek(t);
       updateClock(t);
-    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: (selection) => {
+    }, onScrubStart: () => {
+      activePlayback()?.begin();
+      if (isSubmission()) {
+        submissionThumbnails = true;
+        thumbnails.update(timeline.getView());
+      }
+    }, onScrubEnd: () => activePlayback()?.end(), onSelection: (selection) => {
       updateExportSummary(selection);
-      playback.check();
+      activePlayback()?.check();
     }, onView: (view3, motion) => {
       $("timelineZoom").textContent = $("timeline").dataset.zoom;
-      thumbnails.update(view3, motion);
+      if (!isSubmission() || submissionThumbnails) thumbnails.update(view3, motion);
     } });
     const updateClock = (t) => {
       $("clock").textContent = formatTimeRange(t, playbackTotal, " / ");
@@ -63405,10 +63377,22 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         timeline.setCurrent(t);
         updateClock(t);
       } };
-      player = kind === "submission" ? createSubmissionPlayer(options) : createPlayer(options);
+      video.hidden = kind === "submission";
+      $("pageMirror").hidden = kind !== "submission";
+      player = kind === "submission" ? createSubmissionPlayer({
+        ...options,
+        canvas: $("pageMirror"),
+        getVideo: () => document.querySelector(".bpx-player-container video, .bilibili-player-video video") ?? document.querySelector("video"),
+        isCurrent: () => parseSubmissionUrl(readPageUrl())?.key === loadedRoute,
+        getRange: () => timeline.getSelection(),
+        onState: () => syncPlayback()
+      }) : createPlayer(options);
     }
+    let lastPlaybackPaused;
     const syncPlayback = () => {
-      const paused = video.paused || video.ended;
+      const paused = playerKind === "submission" ? player.isPaused() : video.paused || video.ended;
+      if (paused === lastPlaybackPaused) return;
+      lastPlaybackPaused = paused;
       $("togglePlayback").innerHTML = icon(paused ? "play" : "pause");
       $("togglePlayback").setAttribute("aria-label", paused ? "播放" : "暂停");
       $("togglePlayback").title = paused ? "播放" : "暂停";
@@ -63444,6 +63428,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const route = parseSubmissionUrl(readPageUrl());
       $("currentVideo").hidden = !route || page === "edit" && loadedRoute === route.key;
       $("wholeRecordingLabel").hidden = isSubmission();
+      $("playSelection").hidden = !isSubmission();
       $("refreshEditor").textContent = isSubmission() ? "重新加载视频" : "刷新录像";
       updateControls({ busy: Boolean(controller), ready, page, whole: $("wholeRecording").checked, submission: isSubmission(), stopping: fullFinishing || Boolean(fullStopController?.signal.aborted) });
       updateFeedback();
@@ -63473,7 +63458,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         controls();
         if (pendingRoute) {
           pendingRoute = false;
-          if (!$("panel").hidden) void currentVideo(false);
+          if (!$("panel").hidden) void currentVideo();
         }
       }
     }
@@ -63489,6 +63474,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       recordingController?.abort();
       recordingController = null;
       recordingPlan = null;
+      activePlayback()?.cancel();
+      submissionThumbnails = false;
       estimate = null;
       estimateState = "loading";
       record = null;
@@ -63497,7 +63484,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       clipSelection = null;
       $("wholeRecording").checked = false;
       timeline.stop();
-      playback.cancel();
       player?.clear();
       thumbnails.clear();
       clearDownloads();
@@ -63541,7 +63527,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       });
     }
     function renderRecordMeta() {
-      $("recordMeta").textContent = (isSubmission() ? [record.uploader, record.partTitle ? `P${record.part} · ${record.partTitle}` : "", `预览 ${record.previewQualityLabel}`, `导出 ${record.qualityLabel}`] : [record.member, formatDate(record.start), record.schedule?.type]).filter(Boolean).join(" · ");
+      $("recordMeta").textContent = (isSubmission() ? [record.uploader, record.partTitle ? `P${record.part} · ${record.partTitle}` : "", "画面与 B 站同步", `导出 ${record.qualityLabel}`] : [record.member, formatDate(record.start), record.schedule?.type]).filter(Boolean).join(" · ");
     }
     function enrichRecordType() {
       if (!record || isSubmission() || record.schedule !== void 0 || $("panel").hidden) return;
@@ -63602,12 +63588,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       });
     }
-    async function currentVideo(capturePosition = true) {
+    async function currentVideo() {
       const url2 = readPageUrl(), route = parseSubmissionUrl(url2);
       if (!route || controller) return;
-      const pageVideo = document.querySelector("video");
-      const position = capturePosition && pageVideo ? Number(pageVideo.currentTime) || 0 : 0;
-      pageVideo?.pause();
       await job(async (signal) => {
         leavePage();
         loadedRoute = null;
@@ -63622,19 +63605,21 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           showPage("edit");
           setTitle($("recordTitle"), record.title);
           renderRecordMeta();
+          loadedRoute = route.key;
           const { total } = await player.load(record, signal);
           signal.throwIfAborted();
-          loadedRoute = route.key;
           playbackTotal = total;
           thumbnails.load(record, []);
           timeline.reset(total);
           ready = true;
-          updateClock(0);
-          if (position > 0) player.seek(Math.min(position, Math.max(0, total - 1e-3)));
+          timeline.setCurrent(player.position());
+          updateClock(player.position());
+          if ($("panel").hidden) player.suspend();
           $("editPage").focus({ preventScroll: true });
           status2("设置开始和结束位置后，即可导出当前视频片段。");
         } catch (error) {
           if (signal.aborted) throw error;
+          loadedRoute = null;
           ready = false;
           player?.clear();
           showPage("offline");
@@ -63645,7 +63630,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     function checkCurrentVideo() {
       const route = parseSubmissionUrl(readPageUrl()), key = route?.key;
-      if (key === observedRoute) return;
+      if (key === observedRoute) {
+        if (playerKind === "submission" && !$("panel").hidden) player.refresh();
+        return;
+      }
       observedRoute = key;
       controls();
       if (!route || $("panel").hidden) return;
@@ -63656,12 +63644,13 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
         return;
       }
-      void currentVideo(false);
+      void currentVideo();
     }
     async function download() {
       await job(async (signal) => {
         const selection = timeline.getSelection();
-        player.pause();
+        if (isSubmission()) player.cancel();
+        else player.pause();
         clearDownloads();
         status2("正在读取选中的片段…");
         const onProgress = (p) => {
@@ -63717,6 +63706,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     async function open() {
       $("panel").hidden = false;
+      if (playerKind === "submission") player.resume();
       void versionControl.refresh();
       const route = parseSubmissionUrl(readPageUrl());
       observedRoute = route?.key;
@@ -63743,7 +63733,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       timeline.stop();
       $("panel").hidden = true;
       scheduleController?.abort();
-      playback.cancel();
+      if (playerKind === "submission") {
+        player.suspend();
+        thumbnails.clear();
+        if (record) thumbnails.load(record, []);
+        submissionThumbnails = false;
+      } else playback.cancel();
     };
     $("close").onclick = close;
     $("launcher").onclick = () => {
@@ -63754,7 +63749,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     $("browseHistory").onclick = () => void library();
     $("retryCurrent").onclick = () => parseSubmissionUrl(readPageUrl()) ? currentVideo() : currentRoom();
     $("refreshLibrary").onclick = () => void library(true);
-    $("refreshEditor").onclick = () => isSubmission() ? currentVideo(false) : record.live ? currentRoom() : enterRecord(record);
+    $("refreshEditor").onclick = () => isSubmission() ? currentVideo() : record.live ? currentRoom() : enterRecord(record);
     root.querySelectorAll("[data-member]").forEach((el) => el.onclick = () => {
       member = MEMBERS.find((m) => m.id === el.dataset.member);
       set("member", member.id);
@@ -63805,7 +63800,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     $("editPage").addEventListener("keydown", (e) => {
       if (ready && !controller && !$("panel").hidden) timeline.handleKeyDown(e);
     }, { capture: true });
-    $("togglePlayback").onclick = () => playback.toggle();
+    $("togglePlayback").onclick = () => activePlayback()?.toggle();
+    $("playSelection").onclick = () => player.playSelection();
     $("shortcut").value = formatShortcut(shortcut);
     $("shortcut").onfocus = () => {
       $("shortcut").classList.add("recording");

@@ -5,7 +5,7 @@ import {createControls} from '../../../src/ui/controls.js';
 function fixture(){
   const writes=[];
   const element=(id,initial={})=>new Proxy({id,disabled:false,hidden:false,...initial},{set(target,key,value){writes.push([id,key,value]);target[key]=value;return true;}});
-  const ids=['markStart','markEnd','togglePlayback','wholeRecording','download','cancel','startHandle','endHandle','back','refreshEditor','refreshLibrary','copy','precise','member','cards','exportMode','progress','launcher'];
+  const ids=['markStart','markEnd','togglePlayback','wholeRecording','download','cancel','startHandle','endHandle','back','refreshEditor','refreshLibrary','copy','precise','member','cards','exportMode','progress','launcher','playSelection'];
   const elements=Object.fromEntries(ids.map(id=>[id,element(id)]));
   const label=element('label',{textContent:'导出'});elements.download.querySelector=()=>label;
   elements.cards.children=[];elements.launcher.dataset=element('dataset');

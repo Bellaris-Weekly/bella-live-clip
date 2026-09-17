@@ -53,12 +53,27 @@ document.getElementById('test').onclick=async()=>{
   checks.length=0;
   await until(()=>pageVideo.readyState>=2,'页面视频可播放');pageVideo.currentTime=7;await pageVideo.play();
   await navigate(0);await app.open();await until(()=>editable()&&title(0),'打开第一投稿');
-  await until(()=>Math.abs($('fullVideo').currentTime-7)<1,'沿用页面播放位置');
-  assert(pageVideo.paused,'进入剪辑没有暂停页面视频');
+  await until(()=>$('pageMirror').width>0&&$('videoLoading').hidden,'镜像首帧');
+  assert(!pageVideo.paused,'打开插件中断了页面播放');
+  assert(!reads.some(item=>item.url),'打开面板不应请求任何预览媒体或缩略图');
+  assert(!$('pageMirror').hidden&&$('fullVideo').hidden,'投稿仍使用独立播放器');
   assert($('recordMeta').textContent.includes('P1 · 测试分段 1'),'第一投稿分 P 错误');
   assert($('wholeRecordingLabel').hidden,'投稿仍显示直播整场入口');
   assert($('exportMode').hidden,'投稿不应提供导出模式选项');
-  pass('第一投稿载入，保留播放位置并暂停页面视频');
+  pass('打开面板不中断页面播放，镜像无需额外媒体请求');
+  $('togglePlayback').click();assert(pageVideo.paused,'插件暂停没有控制页面');
+  $('togglePlayback').click();await until(()=>!pageVideo.paused,'插件继续播放');
+  $('close').click();assert(!pageVideo.paused,'关闭面板中断了页面播放');
+  await app.open();assert(!pageVideo.paused,'重新打开中断了页面播放');
+  pass('插件播放控制与开关面板保持页面播放意图');
+  const beforeMark=pageVideo.currentTime;$('markStart').click();
+  assert(!pageVideo.paused&&Math.abs(pageVideo.currentTime-beforeMark)<.2,'标记起点打断了正常观看');
+  const beforeStep=pageVideo.currentTime;
+  $('timeline').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+  await until(()=>!pageVideo.seeking&&!pageVideo.paused,'时间轴定位后恢复播放');
+  assert(Math.abs(pageVideo.currentTime-beforeStep-5)<.5,'插件时间轴没有同步定位页面视频');
+  await until(()=>reads.some(item=>item.url),'操作后按需加载缩略图');
+  pass('标记不中断观看，时间轴定位页面并恢复播放，缩略图按需读取');
   await navigate(1,2);await until(()=>editable()&&title(1)&&$('recordMeta').textContent.includes('P2 · 测试分段 2'),'第二投稿第二分 P');
   pass('切换不同投稿和非首分 P');
 
@@ -69,18 +84,33 @@ document.getElementById('test').onclick=async()=>{
   await until(()=>editable()&&title(1)&&$('recordMeta').textContent.includes('P1 · 测试分段 1'),'迟到结果后新视频');
   pass('旧请求迟到不能覆盖新视频');
 
-  mediaGate=gate();const canceledGate=mediaGate;
-  $('refreshEditor').click();await until(()=>canceledGate.reads.length>0,'预览加载暂停点');
-  $('cancel').click();$('close').click();canceledGate.release();mediaGate=null;
+  delayedView={...gate(),bvid:ids[1]};const canceledGate=delayedView;
+  $('refreshEditor').click();await until(()=>canceledGate.reads.length>0,'元数据加载暂停点');
+  $('cancel').click();$('close').click();canceledGate.release();delayedView=null;
   await until(()=>$('launcher').dataset.busy==='false','停止加载完成');
   await app.open();await until(()=>editable()&&title(1),'取消后关闭重开恢复');
-  pass('预览取消后关闭重开能恢复');
+  pass('元数据取消后关闭重开能恢复');
+
+  delayedView={...gate(),bvid:ids[1]};const hiddenLoad=delayedView;
+  $('refreshEditor').click();await until(()=>hiddenLoad.reads.length>0,'关闭前的加载请求');
+  $('close').click();hiddenLoad.release();delayedView=null;
+  await until(()=>$('launcher').dataset.busy==='false','隐藏面板完成加载');
+  const hiddenClock=$('clock').textContent;
+  pageVideo.currentTime=19;await until(()=>!pageVideo.seeking,'隐藏面板时页面跳转');
+  assert($('clock').textContent===hiddenClock,'隐藏面板仍在刷新镜像');
+  await app.open();await until(()=>$('clock').textContent.startsWith('00:19'),'重新打开追上页面进度');
+  pass('加载中关闭面板后保持休眠，重开同步最新进度');
 
   assert($('exportMode').hidden,'切换视频后重新显示了模式选择');
-  $('fullVideo').currentTime=7.13;await until(()=>!$('fullVideo').seeking,'选区起点');$('markStart').click();
-  $('fullVideo').currentTime=10.47;await until(()=>!$('fullVideo').seeking,'选区终点');$('markEnd').click();
+  pageVideo.pause();pageVideo.currentTime=7.13;await until(()=>!pageVideo.seeking,'选区起点');$('markStart').click();
+  pageVideo.currentTime=10.47;await until(()=>!pageVideo.seeking,'选区终点');$('markEnd').click();
+  const pixels=$('pageMirror').getContext('2d').getImageData(0,0,$('pageMirror').width,$('pageMirror').height).data;
+  assert(pixels.some((value,index)=>index%4!==3&&value>0),'镜像画面为空');
+  $('playSelection').click();await until(()=>pageVideo.paused&&Math.abs(pageVideo.currentTime-10.47)<.05,'选段自动停止');
+  await pageVideo.play();
   mediaGate=gate();const exportGate=mediaGate;
   $('download').click();await until(()=>exportGate.reads.length>0,'导出媒体读取');
+  assert(!pageVideo.paused,'导出中断了页面播放');
   await navigate(0,2);
   assert(title(1),'导航改变了正在导出的标题');
   assert(!$('currentVideo').hidden,'导出期间未提供新当前视频入口');
@@ -102,6 +132,11 @@ document.getElementById('test').onclick=async()=>{
 
   $('close').click();await navigate(1,2);await app.open();await until(()=>editable()&&title(1)&&$('recordMeta').textContent.includes('P2'),'关闭期间导航后重开');
   pass('关闭期间换视频，重开重新核对身份');
+  const replacement=document.createElement('video');replacement.src='/fixture.mp4';replacement.muted=true;replacement.controls=true;pageVideo.replaceWith(replacement);
+  await until(()=>replacement.readyState>=2,'替换播放器就绪');replacement.currentTime=18;
+  await until(()=>$('clock').textContent.startsWith('00:18'),'跟随替换后的播放器');
+  $('togglePlayback').click();await until(()=>!replacement.paused,'控制替换后的播放器');
+  pass('页面更换播放器节点后自动重新绑定');
   result.textContent=`通过：${checks.join('；')}`;
   await fetch('/artifact/submission-lifecycle-results.json',{method:'POST',body:JSON.stringify({passed:true,checks,export:info},null,2)});
  }catch(error){

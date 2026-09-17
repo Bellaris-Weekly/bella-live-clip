@@ -81,7 +81,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #recordTitle{line-height:28px;overflow-wrap:anywhere;font-size:19px}
 #recordMeta{font-size:11px;color:var(--muted);margin:5px 0 0}
 #playerWrap{position:relative;background:#171717;aspect-ratio:16/9;border-radius:14px;overflow:hidden;box-shadow:0 6px 18px #15291c18}
-#fullVideo{display:block;width:100%;height:100%}
+#fullVideo,#pageMirror{display:block;width:100%;height:100%;object-fit:contain}
+#fullVideo[hidden],#pageMirror[hidden]{display:none}
 #videoLoading{position:absolute;inset:0;background:#171717;display:grid;place-items:center;color:#e5e5e5;pointer-events:none}
 .preview-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;margin:6px 0 0}
 .mark-buttons{display:flex;align-items:center;gap:2px;margin-left:-8px;white-space:nowrap}

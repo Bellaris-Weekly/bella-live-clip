@@ -2,7 +2,7 @@
 export function createControls(root,timeline){
   const $=id=>root.getElementById(id);
   const marks=[$('markStart'),$('markEnd')];
-  const editor=[$('togglePlayback'),$('wholeRecording'),$('download')];
+  const editor=[$('togglePlayback'),$('playSelection'),$('wholeRecording'),$('download')];
   const managed=new Set([...marks,...editor,$('cancel'),$('startHandle'),$('endHandle')]);
   const navigation=[...root.querySelectorAll('#body button,#body input')].filter(el=>!managed.has(el));
   const cards=$('cards'),download=$('download'),label=download.querySelector('span');

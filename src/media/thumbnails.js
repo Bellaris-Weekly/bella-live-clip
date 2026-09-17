@@ -1,6 +1,6 @@
 import Hls from 'hls.js';
 import {makeHlsLoader} from './preview-player.js';
-import {readSubmissionThumbnail} from './submission-player.js';
+import {readSubmissionThumbnail} from './submission-thumbnail.js';
 
 export function thumbnailSamples(record,streams,view,count=6) {
  return Array.from({length:count},(_,i)=>{

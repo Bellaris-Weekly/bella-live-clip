@@ -1,173 +1,85 @@
-import {
- BufferTarget, EncodedAudioPacketSource, EncodedPacketSink, EncodedVideoPacketSource,
- Mp4OutputFormat, Output, VideoSampleSink,
-} from 'mediabunny';
-import {openSubmissionMedia} from './remote-mp4.js';
 import {clamp} from '../shared/math.js';
 
-const WINDOW_SECONDS=8, BACK_SECONDS=15, MAX_WINDOW_BYTES=32*1024*1024;
-
-// A complete random-access interval is required: stopping at a presentation
-// timestamp can discard later-decoded B frames that belong before that point.
-export async function readSubmissionPreviewWindow(tracks,time,{signal,span=WINDOW_SECONDS}={}) {
- signal?.throwIfAborted();
- const video=tracks.find(track=>track.isVideoTrack()), sink=new EncodedPacketSink(video);
- const first=await sink.getKeyPacket(time,{verifyKeyPackets:true})??await sink.getFirstKeyPacket({verifyKeyPackets:true});
- if(!first)throw new Error('视频没有可解码的关键帧');
- let last=await sink.getKeyPacket(time+span,{verifyKeyPackets:true});
- if(!last||last.timestamp<=first.timestamp)last=await sink.getNextKeyPacket(first,{verifyKeyPackets:true});
- else last=await sink.getNextKeyPacket(last,{verifyKeyPackets:true});
- // The first video frame can follow the requested start; retain the earlier
- // audio prefix without shifting either track's original presentation times.
- const start=Math.min(time,first.timestamp),end=last?.timestamp??Infinity;
- let bytes=0,actualEnd=start;
- const chunks=[];
- for(const track of tracks){
-  signal?.throwIfAborted();
-  const isVideo=track.isVideoTrack(),packets=new EncodedPacketSink(track);
-  const begin=isVideo?first:await packets.getPacket(start)??await packets.getFirstPacket();
-  if(!begin)throw new Error(isVideo?'视频轨道为空':'音频轨道为空');
-  const source=isVideo?new EncodedVideoPacketSource('avc'):new EncodedAudioPacketSource('aac');
-  const output=new Output({format:new Mp4OutputFormat({fastStart:'fragmented',minimumFragmentDuration:Infinity}),target:new BufferTarget()});
-  if(isVideo)output.addVideoTrack(source,{rotation:await track.getRotation()});else output.addAudioTrack(source);
-  const decoderConfig=await track.getDecoderConfig();
-  try{
-   await output.start();
-   for await(const packet of packets.packets(begin,isVideo?last??undefined:undefined)){
-    signal?.throwIfAborted();
-    if(!isVideo&&packet.timestamp>=end)break;
-    bytes+=packet.data.byteLength;
-    if(bytes>MAX_WINDOW_BYTES)throw new Error('预览关键帧间隔过大，无法在预览缓存限制内加载');
-    await source.add(packet,{decoderConfig});
-    if(isVideo)actualEnd=Math.max(actualEnd,packet.timestamp+packet.duration);
-   }
-   source.close();await output.finalize();signal?.throwIfAborted();
-   chunks.push({track,data:new Uint8Array(output.target.buffer)});
-  }catch(error){await output.cancel();throw error;}
- }
- return {chunks,start,end:Number.isFinite(end)?end:actualEnd,finished:last===null};
-}
-
-function eventPromise(target,event,signal,action){
- signal?.throwIfAborted();
- return new Promise((resolve,reject)=>{
-  const clean=()=>{target.removeEventListener(event,done);target.removeEventListener('error',fail);signal?.removeEventListener('abort',abort);};
-  const done=()=>{clean();resolve();};
-  const fail=()=>{clean();reject(new Error('视频预览解码失败'));};
-  const abort=()=>{clean();reject(signal.reason);};
-  target.addEventListener(event,done,{once:true});target.addEventListener('error',fail,{once:true});signal?.addEventListener('abort',abort,{once:true});
-  try{action?.();}catch(error){clean();reject(error);}
- });
-}
-
-function bufferedEnd(buffer,time){
- for(let i=0;i<buffer.buffered.length;i++)if(buffer.buffered.start(i)<=time+.05&&buffer.buffered.end(i)>time)return buffer.buffered.end(i);
- return time;
-}
-
-export function createSubmissionPlayer({video,loading,request,status,onTime}) {
- let session=null,target=null;
+// One playback clock and one audio source: the page video owns playback. The
+// canvas only displays decoded frames; it never opens a second media stream.
+export function createSubmissionPlayer({canvas,loading,getVideo,isCurrent,onTime,onState,status,getRange}) {
+ const context=canvas.getContext('2d');
+ let source=null,submission=null,visible=false,frameId=null,stopTimer=null,range=null;
+ let scrubbing=false,resumeAfterScrub=false;
  const listeners=[];
- const listen=(name,callback)=>{video.addEventListener(name,callback);listeners.push([name,callback]);};
- function ready(){
-  if(session&&video.readyState>=2&&!video.seeking&&(target===null||Math.abs(video.currentTime-target)<.15)){target=null;loading.hidden=true;}
+ const stopTimerNow=()=>{clearTimeout(stopTimer);stopTimer=null;};
+ const stopFrame=()=>{if(frameId!==null)source?.cancelVideoFrameCallback(frameId);frameId=null;};
+ const play=()=>{if(source)void source.play().catch(error=>{if(error.name!=='AbortError')status(error.message,true);});};
+ function draw(){
+  if(!source||!visible)return;
+  onTime(source.currentTime);onState();
+  if(source.readyState<2||source.seeking||!source.videoWidth){loading.hidden=false;return;}
+  const width=Math.min(640,source.videoWidth),height=Math.round(width*source.videoHeight/source.videoWidth);
+  if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+  context.drawImage(source,0,0,width,height);loading.hidden=true;
  }
- function report(error,own){
-  if(session!==own||own.controller.signal.aborted||error.name==='AbortError')return;
-  own.failed=true;video.pause();loading.hidden=false;loading.textContent='预览暂不可用，请刷新重试';status(error.message,true);
+ function scheduleFrame(){
+  if(frameId!==null||!source||source.paused||!visible)return;
+  const own=source;
+  frameId=own.requestVideoFrameCallback(()=>{
+   frameId=null;if(source!==own||!visible)return;
+   draw();check();scheduleFrame();
+  });
  }
- async function fill(own,time){
-  const controller=new AbortController(),abort=()=>controller.abort(own.controller.signal.reason);
-  own.controller.signal.addEventListener('abort',abort,{once:true});
-  if(own.controller.signal.aborted)abort();
-  own.fillController=controller;
-  own.fillTime=time;
-  const signal=controller.signal;
-  const media=openSubmissionMedia(request,own.submission,{signal,preview:true});
-  own.media=media;
-  try{
-   const tracks=await media.getTracks();signal.throwIfAborted();
-   const window=await readSubmissionPreviewWindow(tracks,time,{signal});signal.throwIfAborted();
-   for(let i=0;i<window.chunks.length;i++){
-    const buffer=own.buffers[i];
-    if(buffer.updating)await eventPromise(buffer,'updateend',signal);
-    const cutoff=Math.max(0,video.currentTime-BACK_SECONDS);
-    if(cutoff>0&&buffer.buffered.length&&buffer.buffered.start(0)<cutoff)await eventPromise(buffer,'updateend',signal,()=>buffer.remove(0,cutoff));
-    // A seek may leave a distant former window. Keep only a small neighborhood.
-    const upper=Math.max(video.currentTime,time)+WINDOW_SECONDS*3;
-    if(buffer.buffered.length&&buffer.buffered.end(buffer.buffered.length-1)>upper)await eventPromise(buffer,'updateend',signal,()=>buffer.remove(upper,Infinity));
-    await eventPromise(buffer,'updateend',signal,()=>buffer.appendBuffer(window.chunks[i].data));
-   }
-   signal.throwIfAborted();own.next=window.end;own.finished=window.finished;
-   return window;
-  }finally{own.controller.signal.removeEventListener('abort',abort);media.dispose();if(own.media===media)own.media=null;if(own.fillController===controller)own.fillController=null;}
- }
- async function pump(){
-  const own=session;if(!own||!own.ready||own.running||own.failed)return;
-  const time=video.currentTime,end=Math.min(...own.buffers.map(buffer=>bufferedEnd(buffer,time)));
-  if(end-time>=4||(own.finished&&end>=own.submission.duration-.1))return;
-  own.running=true;
-  try{await fill(own,end>time+.1?own.next:time);}catch(error){report(error,own);}finally{own.running=false;if(own.pending){own.pending=false;void pump();}}
- }
- function seekedTo(){
-  const own=session;if(!own)return;
-  target=video.currentTime;loading.hidden=false;loading.textContent='正在定位画面…';
-  if(own.running&&Math.abs(own.fillTime-video.currentTime)>.05&&own.buffers.some(buffer=>bufferedEnd(buffer,video.currentTime)===video.currentTime)){
-   own.pending=true;own.fillController?.abort();
+ function check(){
+  stopTimerNow();
+  if(!source||!range||source.paused||source.seeking||scrubbing)return;
+  if(source.currentTime>=range.end){
+   const end=range.end;range=null;source.pause();source.currentTime=end;draw();return;
   }
-  void pump();
+  if(source.playbackRate>0)stopTimer=setTimeout(check,(range.end-source.currentTime)/source.playbackRate*1000);
  }
- function clear(){
-  const old=session;session=null;target=null;
-  old?.controller.abort();old?.media?.dispose();old?.unlink();
-  video.pause();video.removeAttribute('src');video.load();
-  if(old?.url)URL.revokeObjectURL(old.url);
+ function update(){draw();check();scheduleFrame();}
+ function cancel(){
+  stopTimerNow();range=null;
+  const resume=scrubbing&&resumeAfterScrub;scrubbing=false;resumeAfterScrub=false;
+  if(resume)play();
  }
- listen('timeupdate',()=>{if(!session)return;ready();onTime(video.currentTime);void pump();});
- listen('seeking',seekedTo);
- for(const event of ['seeked','loadeddata','canplay'])listen(event,()=>{ready();void pump();});
- listen('waiting',()=>{if(session){loading.hidden=false;loading.textContent='正在加载画面…';void pump();}});
- listen('playing',()=>{if(session)loading.hidden=true;});
- listen('error',()=>{if(session)report(new Error('视频预览解码失败'),session);});
+ function detach(){
+  stopFrame();stopTimerNow();
+  for(const [name,listener]of listeners)source.removeEventListener(name,listener);
+  listeners.length=0;source=null;range=null;scrubbing=false;resumeAfterScrub=false;
+ }
+ function refresh(){
+  if(!visible||!submission)return;
+  const next=isCurrent()?getVideo():null;
+  if(next!==source){
+   detach();context.clearRect(0,0,canvas.width,canvas.height);
+   source=next;
+   if(source){
+    const listen=(name,listener)=>{source.addEventListener(name,listener);listeners.push([name,listener]);};
+    for(const name of ['loadeddata','seeked','timeupdate','playing','ratechange','resize'])listen(name,update);
+    listen('play',update);
+    for(const name of ['pause','ended'])listen(name,()=>{stopFrame();stopTimerNow();draw();});
+    listen('seeking',()=>{if(range&&(source.currentTime<range.start||source.currentTime>range.end))range=null;stopTimerNow();update();});
+    listen('emptied',()=>{range=null;stopFrame();stopTimerNow();context.clearRect(0,0,canvas.width,canvas.height);loading.hidden=false;});
+    listen('waiting',()=>{loading.hidden=false;loading.textContent='等待 B 站播放器缓冲…';stopTimerNow();});
+   }
+  }
+  if(!source){loading.hidden=false;loading.textContent=isCurrent()?'等待 B 站播放器…':'已切换视频，请载入当前视频';onState();return;}
+  loading.textContent='等待 B 站播放器画面…';update();
+ }
+ const seek=time=>{refresh();if(source)source.currentTime=clamp(time,0,Math.max(0,submission.duration-.001));};
+ const toggle=()=>{refresh();range=null;stopTimerNow();if(source){if(source.paused||source.ended)play();else source.pause();}};
+ const click=event=>{if(event.detail===1)toggle();};
+ const key=event=>{if(event.key===' '||event.key==='Enter'){event.preventDefault();event.stopPropagation();toggle();}};
+ const fullscreen=()=>{void canvas.requestFullscreen().catch(error=>status(error.message,true));};
+ canvas.addEventListener('click',click);canvas.addEventListener('keydown',key);canvas.addEventListener('dblclick',fullscreen);
+ function clear(){detach();submission=null;visible=false;context.clearRect(0,0,canvas.width,canvas.height);}
  return {
-  async load(submission,signal){
-   clear();signal.throwIfAborted();
-   if(typeof MediaSource==='undefined')throw new Error('当前浏览器不支持视频预览');
-   const controller=new AbortController(),abort=()=>controller.abort(signal.reason);
-   signal.addEventListener('abort',abort,{once:true});
-   const own={submission,controller,unlink:()=>signal.removeEventListener('abort',abort),buffers:[],ready:false,running:false,failed:false};session=own;
-   loading.hidden=false;loading.textContent='正在加载画面…';
-   try{
-    const media=openSubmissionMedia(request,submission,{signal:controller.signal,preview:true});own.media=media;
-    let codecs;
-    try{const tracks=await media.getTracks();codecs=await Promise.all(tracks.map(async track=>`${track.isVideoTrack()?'video':'audio'}/mp4; codecs="${await track.getCodecParameterString()}"`));}finally{media.dispose();own.media=null;}
-    controller.signal.throwIfAborted();
-    for(const codec of codecs)if(!MediaSource.isTypeSupported(codec))throw new Error('当前浏览器不支持此视频的音视频格式');
-    own.source=new MediaSource();own.url=URL.createObjectURL(own.source);
-    await eventPromise(own.source,'sourceopen',controller.signal,()=>{video.src=own.url;});
-    own.source.duration=submission.duration;own.buffers=codecs.map(codec=>own.source.addSourceBuffer(codec));
-    const window=await fill(own,0);
-    controller.signal.throwIfAborted();
-    video.currentTime=Math.max(0,window.start);
-    if(video.readyState<2)await eventPromise(video,'loadeddata',controller.signal);
-    own.ready=true;loading.hidden=true;return {total:submission.duration};
-   }catch(error){if(session===own)clear();throw error;}
-  },
-  seek(time){if(!session)return;target=clamp(time,0,Math.max(0,session.submission.duration-.001));video.currentTime=target;seekedTo();},
-  clear,pause:()=>video.pause(),position:()=>target??video.currentTime,
-  destroy(){clear();for(const [name,callback] of listeners)video.removeEventListener(name,callback);},
+  async load(next,signal){signal.throwIfAborted();clear();submission=next;visible=true;refresh();return {total:next.duration};},
+  refresh,seek,position:()=>source?.currentTime??0,isPaused:()=>!source||source.paused||source.ended,
+  pause(){source?.pause();},toggle,check,cancel,
+  begin(){refresh();range=null;stopTimerNow();scrubbing=true;resumeAfterScrub=!!source&&!source.paused&&!source.ended;source?.pause();},
+  end(){const resume=scrubbing&&resumeAfterScrub;scrubbing=false;resumeAfterScrub=false;if(resume)play();},
+  playSelection(){refresh();if(!source)return;range={...getRange()};source.currentTime=range.start;play();},
+  suspend(){cancel();visible=false;detach();},
+  resume(){visible=true;refresh();},
+  clear,destroy(){clear();canvas.removeEventListener('click',click);canvas.removeEventListener('keydown',key);canvas.removeEventListener('dblclick',fullscreen);},
  };
-}
-
-export async function readSubmissionThumbnail(request,submission,time,signal){
- signal.throwIfAborted();
- const media=openSubmissionMedia(request,submission,{signal,preview:true});let sample;
- try{
-  const track=await media.videoInput.getPrimaryVideoTrack();
-  if(!track)throw new Error('视频轨道为空');
-  sample=await new VideoSampleSink(track).getSample(time);signal.throwIfAborted();
-  if(!sample)throw new Error('该位置没有可解码的画面');
-  const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
-  sample.draw(canvas.getContext('2d'),0,0,160,90);return canvas;
- }finally{sample?.close();media.dispose();}
 }
