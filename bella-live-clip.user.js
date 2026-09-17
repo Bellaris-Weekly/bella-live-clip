@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.8.3
+// @version      2.8.4
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -21,6 +21,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @run-at       document-idle
 // @noframes
 // @license      MIT (own code) + MPL-2.0 + Apache-2.0
@@ -30,7 +31,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.8.3\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.8.4\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -62416,7 +62417,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
 
   // src/app/application.js
   function createApp({ api, get = (_, fallback) => fallback, set = () => {
-  }, pageUrl = location.href }) {
+  }, pageUrl = location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
     const root = host.attachShadow({ mode: "open" });
@@ -62685,12 +62686,12 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     async function downloadFull() {
       if (controller || !ready) return;
-      if (typeof window.showSaveFilePicker !== "function") {
+      if (!saveFilePicker) {
         status2("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。", true);
         return;
       }
       await job(async (signal) => {
-        const handle = await window.showSaveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
+        const handle = await saveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
         signal.throwIfAborted();
         player.pause();
         clearDownloads();
@@ -62997,6 +62998,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   if (!document.getElementById("bella-live-clip-host")) {
     const app = createApp({
       api: new BiliApi(createRequest(GM_xmlhttpRequest)),
+      // Native Window methods need the page window, not the userscript sandbox receiver.
+      saveFilePicker: typeof unsafeWindow.showSaveFilePicker === "function" ? unsafeWindow.showSaveFilePicker.bind(unsafeWindow) : null,
       get: (key, fallback) => GM_getValue(`biliClip.${key}`, fallback),
       set: (key, value) => GM_setValue(`biliClip.${key}`, value)
     });

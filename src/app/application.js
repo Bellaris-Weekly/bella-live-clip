@@ -22,7 +22,7 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href}){
+export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');const room=roomIdFromUrl(pageUrl);
  const metadata=readScriptMetadata(metadataText);
@@ -119,9 +119,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
   if(controller||!ready)return;
-  if(typeof window.showSaveFilePicker!=='function'){status('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。',true);return;}
+  if(!saveFilePicker){status('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。',true);return;}
   await job(async signal=>{
-   const handle=await window.showSaveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
+   const handle=await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
    const result=await saveRecording(api,await recordingPlan.load(signal),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`整场下载 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
    status('整场下载完成。');
