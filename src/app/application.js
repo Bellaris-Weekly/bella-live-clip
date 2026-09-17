@@ -106,7 +106,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
   recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
-  thumbnails.load(record,streams);timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);
+  thumbnails.load(record,streams);timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);$('editPage').focus({preventScroll:true});
   if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
   status('按住时间轴预览；松开选区边界后自动适配视野。');
  }
@@ -146,8 +146,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   controls();
  };
  root.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{exportMode=button.dataset.mode;root.querySelectorAll('[data-mode]').forEach(el=>el.setAttribute('aria-pressed',el.dataset.mode===exportMode));updateExportSummary();});
- $('markStart').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:t,end:Math.max(s.end,t+.001)},true);}catch(e){status(e.message,true);}};
- $('markEnd').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:Math.min(s.start,t-.001),end:t},true);}catch(e){status(e.message,true);}};
+ $('markStart').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:t,end:Math.max(s.end,t+.001)},true);$('startHandle').focus({preventScroll:true});}catch(e){status(e.message,true);}};
+ $('markEnd').onclick=()=>{const s=timeline.getSelection(),t=player.position();try{timeline.setSelection({start:Math.min(s.start,t-.001),end:t},true);$('endHandle').focus({preventScroll:true});}catch(e){status(e.message,true);}};
+ $('editPage').addEventListener('keydown',e=>{if(ready&&!controller&&!$('panel').hidden)timeline.handleKeyDown(e);},{capture:true});
  $('togglePlayback').onclick=()=>playback.toggle();
   $('shortcut').value=formatShortcut(shortcut);
   $('shortcut').onfocus=()=>{$('shortcut').classList.add('recording');$('shortcut').value='按下快捷键';};

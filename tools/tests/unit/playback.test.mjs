@@ -10,6 +10,7 @@ class Element {
  getBoundingClientRect(){return {left:0,width:100};}
  setPointerCapture(){this.captured=true;} hasPointerCapture(){return this.captured;}
  releasePointerCapture(){this.captured=false;}
+ focus(){this.focused=true;}
  closest(){return this.dataset.handle?this:null;}
 }
 const makeVideo=paused=>({paused,ended:false,playCount:0,pause(){this.paused=true;},play(){this.playCount++;this.paused=false;return Promise.resolve();}});
@@ -130,4 +131,21 @@ test('普通画面隐藏控件并响应点击，全屏和退出时切换原生�
   assert.equal(video.controls,false,'退出视频全屏或其他元素全屏时隐藏');
  }
  click(1);assert.equal(video.paused,false);
+});
+
+test('键盘调整播放位置和两个边界后保留播放或暂停状态',t=>{
+ const oldDocument=globalThis.document,oldRequest=globalThis.requestAnimationFrame,oldCancel=globalThis.cancelAnimationFrame;
+ globalThis.document={createElement:()=>new Element()};globalThis.requestAnimationFrame=()=>1;globalThis.cancelAnimationFrame=()=>{};
+ t.after(()=>{globalThis.document=oldDocument;globalThis.requestAnimationFrame=oldRequest;globalThis.cancelAnimationFrame=oldCancel;});
+ for(const paused of [true,false])for(const type of ['playhead','start','end']){
+  const video=makeVideo(paused),playback=createPlayback(video,()=>assert.fail('播放错误'));
+  const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(k=>[k,new Element()]));
+  elements.startHandle.dataset.handle='start';elements.endHandle.dataset.handle='end';
+  let position;
+  const timeline=createTimeline({...elements,onPreview:value=>{video.pause();position=value;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
+  timeline.reset(100,{start:10,end:80});timeline.setCurrent(30);
+  timeline.handleKeyDown({key:'ArrowRight',target:type==='playhead'?elements.track:elements[type+'Handle'],preventDefault(){},stopPropagation(){}});
+  assert.equal(video.paused,paused);assert.equal(video.playCount,paused?0:1);
+  assert.equal(position,type==='playhead'?35:type==='start'?15:85);
+ }
 });

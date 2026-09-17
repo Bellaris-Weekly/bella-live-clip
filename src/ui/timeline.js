@@ -1,6 +1,9 @@
 import {clamp} from '../shared/math.js';
 import {formatTimeRange} from '../shared/format.js';
 import {zoomWindow, panWindow, validateRange} from './timeline-model.js';
+import {isEditing} from './shortcuts.js';
+
+const KEYBOARD_STEP=5;
 
 export function fitSelection(start,end,total) {
  const width=Math.min(total,(end-start)*1.12);
@@ -9,10 +12,13 @@ export function fitSelection(start,end,total) {
 }
 export function dragSelection(session,x,width,selection,total) {
  const delta=(x-session.x)/width*(session.view.end-session.view.start);
+ return moveBoundary(selection,session.type,session.anchor+delta,total);
+}
+function moveBoundary(selection,type,time,total) {
  const gap=Math.min(.001,total/2);
- const target=clamp(session.anchor+delta,0,total);
+ const target=clamp(time,0,total);
  const next={...selection};
- if(session.type==='start')next.start=Math.min(target,selection.end-gap);
+ if(type==='start')next.start=Math.min(target,selection.end-gap);
  else next.end=Math.max(target,selection.start+gap);
  return next;
 }
@@ -87,12 +93,27 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
  track.addEventListener('pointerdown',e=>{
   if(e.button!==0||locked||!total)return;e.preventDefault();if(zooming){stopZoom();render();}
   const type=e.target.closest('[data-handle]')?.dataset.handle||'playhead';
+  (type==='playhead'?track:type==='start'?startHandle:endHandle).focus({preventScroll:true});
   drag={type,x:e.clientX,view:{...view},anchor:selection[type]};onScrubStart?.();track.setPointerCapture(e.pointerId);apply(e.clientX);
  });
  track.addEventListener('pointermove',e=>{if(!drag)return;pending=e.clientX;if(!frame)frame=requestAnimationFrame(flush);});
  function finish(e){if(!drag)return;flush();const type=drag.type;drag=null;if(track.hasPointerCapture(e.pointerId))track.releasePointerCapture(e.pointerId);if(type!=='playhead')fitView();onScrubEnd?.(current);}
  track.addEventListener('pointerup',finish);track.addEventListener('pointercancel',finish);
  track.addEventListener('wheel',e=>{if(locked||!total||drag)return;e.preventDefault();stopZoom();const r=track.getBoundingClientRect();view=e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)?panWindow(view,total,(e.deltaX||e.deltaY)/r.width*(view.end-view.start)):zoomWindow(view,total,Math.exp(e.deltaY*.005),(e.clientX-r.left)/r.width);render();},{passive:false});
- for(const [el,type]of[[startHandle,'start'],[endHandle,'end']])el.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const step=(e.shiftKey?10:1)*(view.end-view.start)/1000;const next=dragSelection({type,x:0,view,anchor:selection[type]},e.key==='ArrowRight'?step:-step,view.end-view.start,selection,total);onScrubStart?.();setSelection(next,true);onPreview(next[type]);onScrubEnd?.(next[type]);};
- return {reset(duration,next={start:0,end:duration}){stopZoom();total=duration;view={start:0,end:total};setSelection(next);},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
+ function handleKeyDown(e){
+  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||isEditing(e)||!['ArrowLeft','ArrowRight'].includes(e.key)||locked||!total||drag)return;
+  e.preventDefault();e.stopPropagation();
+  const type=e.target.closest('[data-handle]')?.dataset.handle||'playhead';
+  const delta=e.key==='ArrowRight'?KEYBOARD_STEP:-KEYBOARD_STEP;
+  onScrubStart?.();
+  if(type==='playhead'){
+   current=clamp(current+delta,0,total);
+   if(zooming){stopZoom();render();}else renderPlayhead();
+  }else{
+   const next=moveBoundary(selection,type,selection[type]+delta,total);
+   current=next[type];setSelection(next,true);
+  }
+  onPreview(current);onScrubEnd?.(current);
+ }
+ return {handleKeyDown,reset(duration,next={start:0,end:duration}){stopZoom();total=duration;current=0;view={start:0,end:total};setSelection(next);},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
 }

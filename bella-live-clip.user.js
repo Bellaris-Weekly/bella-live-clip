@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.6.2
+// @version      2.7.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -30,7 +30,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.6.2\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.7.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -134,7 +134,7 @@
   }
 
   // src/ui/template.html
-  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="片段选区"><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><div id="timelineLabels"></div><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="selectionDuration"></span><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
   var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
@@ -242,7 +242,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #timeline::before{content:'';position:absolute;top:-13px;left:var(--view-start,0%);width:var(--view-width,100%);height:3px;border-radius:3px;background:var(--accent);opacity:.55;pointer-events:none}
 #timeline::after{content:attr(data-zoom);position:absolute;right:0;top:-39px;color:var(--accent);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;pointer-events:none}
 #timeline.refitting::after{content:'聚焦选区 · ' attr(data-zoom)}
-#timeline [data-handle]:hover,#timeline [data-handle]:focus-visible{background:var(--accent-hover);box-shadow:0 0 0 3px #147d7025}
+#timeline [data-handle]:hover,#timeline [data-handle]:focus{background:var(--accent-hover);box-shadow:0 0 0 3px #147d7025}
 #timeline [data-handle]:active{transform:translateX(-50%)}
 #timelineLabels{text-align:center;font-size:10px;color:var(--muted);margin-top:0;font-variant-numeric:tabular-nums}
 .export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
@@ -574,7 +574,37 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return { start, end: start + width };
   }
 
+  // src/ui/shortcuts.js
+  var DEFAULT_SHORTCUT = Object.freeze({
+    code: "KeyC",
+    ctrlKey: false,
+    altKey: true,
+    shiftKey: true,
+    metaKey: false
+  });
+  function normalizeShortcut(value) {
+    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
+    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
+    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
+  }
+  function formatShortcut(shortcut) {
+    return [
+      shortcut.ctrlKey && "Ctrl",
+      shortcut.altKey && "Alt",
+      shortcut.shiftKey && "Shift",
+      shortcut.metaKey && "⌘",
+      shortcut.code.replace(/^Key|^Digit/, "")
+    ].filter(Boolean).join("+");
+  }
+  function matchesShortcut(event, shortcut) {
+    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
+  }
+  function isEditing(event) {
+    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
+  }
+
   // src/ui/timeline.js
+  var KEYBOARD_STEP = 5;
   function fitSelection(start, end, total) {
     const width = Math.min(total, (end - start) * 1.12);
     const left = clamp(start - (width - (end - start)) / 2, 0, total - width);
@@ -582,10 +612,13 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   }
   function dragSelection(session, x, width, selection, total) {
     const delta = (x - session.x) / width * (session.view.end - session.view.start);
+    return moveBoundary(selection, session.type, session.anchor + delta, total);
+  }
+  function moveBoundary(selection, type, time, total) {
     const gap = Math.min(1e-3, total / 2);
-    const target = clamp(session.anchor + delta, 0, total);
+    const target = clamp(time, 0, total);
     const next = { ...selection };
-    if (session.type === "start") next.start = Math.min(target, selection.end - gap);
+    if (type === "start") next.start = Math.min(target, selection.end - gap);
     else next.end = Math.max(target, selection.start + gap);
     return next;
   }
@@ -715,6 +748,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         render();
       }
       const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
+      (type === "playhead" ? track : type === "start" ? startHandle : endHandle).focus({ preventScroll: true });
       drag = { type, x: e.clientX, view: { ...view3 }, anchor: selection[type] };
       onScrubStart?.();
       track.setPointerCapture(e.pointerId);
@@ -744,19 +778,31 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
       render();
     }, { passive: false });
-    for (const [el, type] of [[startHandle, "start"], [endHandle, "end"]]) el.onkeydown = (e) => {
-      if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    function handleKeyDown(e) {
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || isEditing(e) || !["ArrowLeft", "ArrowRight"].includes(e.key) || locked || !total || drag) return;
       e.preventDefault();
-      const step = (e.shiftKey ? 10 : 1) * (view3.end - view3.start) / 1e3;
-      const next = dragSelection({ type, x: 0, view: view3, anchor: selection[type] }, e.key === "ArrowRight" ? step : -step, view3.end - view3.start, selection, total);
+      e.stopPropagation();
+      const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
+      const delta = e.key === "ArrowRight" ? KEYBOARD_STEP : -KEYBOARD_STEP;
       onScrubStart?.();
-      setSelection(next, true);
-      onPreview(next[type]);
-      onScrubEnd?.(next[type]);
-    };
-    return { reset(duration, next = { start: 0, end: duration }) {
+      if (type === "playhead") {
+        current = clamp(current + delta, 0, total);
+        if (zooming) {
+          stopZoom();
+          render();
+        } else renderPlayhead();
+      } else {
+        const next = moveBoundary(selection, type, selection[type] + delta, total);
+        current = next[type];
+        setSelection(next, true);
+      }
+      onPreview(current);
+      onScrubEnd?.(current);
+    }
+    return { handleKeyDown, reset(duration, next = { start: 0, end: duration }) {
       stopZoom();
       total = duration;
+      current = 0;
       view3 = { start: 0, end: total };
       setSelection(next);
     }, setSelection, getSelection: () => ({ ...selection }), getView: () => ({ ...view3 }), setCurrent(t) {
@@ -777,35 +823,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         render();
       }
     } };
-  }
-
-  // src/ui/shortcuts.js
-  var DEFAULT_SHORTCUT = Object.freeze({
-    code: "KeyC",
-    ctrlKey: false,
-    altKey: true,
-    shiftKey: true,
-    metaKey: false
-  });
-  function normalizeShortcut(value) {
-    if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
-    if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
-    return Object.fromEntries(["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].map((key) => [key, key === "code" ? value.code : Boolean(value[key])]));
-  }
-  function formatShortcut(shortcut) {
-    return [
-      shortcut.ctrlKey && "Ctrl",
-      shortcut.altKey && "Alt",
-      shortcut.shiftKey && "Shift",
-      shortcut.metaKey && "⌘",
-      shortcut.code.replace(/^Key|^Digit/, "")
-    ].filter(Boolean).join("+");
-  }
-  function matchesShortcut(event, shortcut) {
-    return !event.repeat && !event.isComposing && !event.defaultPrevented && ["code", "ctrlKey", "altKey", "shiftKey", "metaKey"].every((key) => event[key] === shortcut[key]);
-  }
-  function isEditing(event) {
-    return [event.target, ...event.composedPath?.() || []].some((target) => ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName) || target?.isContentEditable);
   }
 
   // src/ui/panel-geometry.js
@@ -62560,6 +62577,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       timeline.reset(total);
       ready = true;
       startEstimate(recordingPlan, recordingController.signal);
+      $("editPage").focus({ preventScroll: true });
       if (record.live) player.seek(Math.max(streams[0].start_time - record.start, streams.at(-1).end_time - record.start - 15));
       status2("按住时间轴预览；松开选区边界后自动适配视野。");
     }
@@ -62689,6 +62707,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       const s = timeline.getSelection(), t = player.position();
       try {
         timeline.setSelection({ start: t, end: Math.max(s.end, t + 1e-3) }, true);
+        $("startHandle").focus({ preventScroll: true });
       } catch (e) {
         status2(e.message, true);
       }
@@ -62697,10 +62716,14 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       const s = timeline.getSelection(), t = player.position();
       try {
         timeline.setSelection({ start: Math.min(s.start, t - 1e-3), end: t }, true);
+        $("endHandle").focus({ preventScroll: true });
       } catch (e) {
         status2(e.message, true);
       }
     };
+    $("editPage").addEventListener("keydown", (e) => {
+      if (ready && !controller && !$("panel").hidden) timeline.handleKeyDown(e);
+    }, { capture: true });
     $("togglePlayback").onclick = () => playback.toggle();
     $("shortcut").value = formatShortcut(shortcut);
     $("shortcut").onfocus = () => {

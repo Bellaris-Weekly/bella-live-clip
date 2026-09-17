@@ -13,7 +13,8 @@ class Element {
   append(...children){this.writes++;this.children.push(...children);}
   addEventListener(name,handler){this.handlers[name]=handler;}
   getBoundingClientRect(){return {left:0,width:100};}
-  closest(){return this.dataset.handle?this:null;}
+  focus(){this.focused=true;}
+ closest(){return this.dataset.handle?this:null;}
   setPointerCapture(){this.captured=true;}
   hasPointerCapture(){return this.captured;}
   releasePointerCapture(){this.captured=false;}
@@ -121,7 +122,7 @@ test('动画被新交互、换场或锁定打断后没有旧帧回跳',t=>{
   const middle=f.timeline.getView();
   if(action==='pointer')f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
   if(action==='wheel')f.track.handlers.wheel({deltaY:-20,deltaX:0,clientX:50,preventDefault(){}});
-  if(action==='keyboard')f.startHandle.onkeydown({key:'ArrowRight',preventDefault(){}});
+  if(action==='keyboard')f.timeline.handleKeyDown({key:'ArrowRight',target:f.startHandle,preventDefault(){},stopPropagation(){}});
   if(action==='reset')f.timeline.reset(24);
   if(action==='lock')f.timeline.lock(true);
   if(action==='stop')f.timeline.stop();
@@ -152,4 +153,64 @@ test('靠近首尾的细小选区在整个放大过程都留在视野内',t=>{
    assert.ok(view.start<=selection.start&&view.end>=selection.end);
   }
  }
+});
+
+function arrow(f,target,key='ArrowRight',extra={}){
+ const event={target,key,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...extra};
+ f.timeline.handleKeyDown(event);return event;
+}
+
+test('左右键按五秒调整播放位置，连续按键累积且不改选区',t=>{
+ const f=fixture(t);
+ for(const duration of [24,7200]){
+  f.timeline.reset(duration);f.timeline.setCurrent(7);
+  const writes=f.staticWrites();
+  for(const [key,expected,extra]of [['ArrowRight',12,{}],['ArrowRight',17,{repeat:true}],['ArrowLeft',12,{shiftKey:true}]]){
+   const event=arrow(f,f.track,key,extra);
+   assert.equal(f.previews.at(-1),expected);assert.equal(event.defaultPrevented,true);assert.equal(event.stopped,true);
+  }
+  assert.deepEqual(f.timeline.getSelection(),{start:0,end:duration});assert.deepEqual(f.staticWrites(),writes);
+  f.timeline.setCurrent(duration-2);arrow(f,f.track);assert.equal(f.previews.at(-1),duration);
+  f.timeline.setCurrent(2);arrow(f,f.track,'ArrowLeft');assert.equal(f.previews.at(-1),0);
+ }
+});
+
+test('点击任一边界会聚焦，缩放后与重复按键仍按五秒调整同一边界',t=>{
+ const f=fixture(t);
+ for(const duration of [24,7200])for(const type of ['start','end']){
+  f.timeline.reset(duration,{start:6,end:duration-6});
+  const handle=f[type+'Handle'];
+  f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:handle,preventDefault(){}});
+  f.track.handlers.pointerup({pointerId:1});assert.equal(handle.focused,true);
+  f.advance(0);f.advance(420);
+  const original=f.timeline.getSelection(),key=type==='start'?'ArrowLeft':'ArrowRight',expected=type==='start'?1:duration-1;
+  arrow(f,handle,key,{shiftKey:true});assert.equal(f.timeline.getSelection()[type],expected);assert.equal(f.previews.at(-1),expected);
+  const other=type==='start'?'end':'start';assert.equal(f.timeline.getSelection()[other],original[other]);
+  arrow(f,handle,key,{repeat:true});assert.equal(f.timeline.getSelection()[type],type==='start'?0:duration);
+  const before=f.timeline.getSelection();
+  f.track.handlers.pointerdown({button:0,clientX:50,pointerId:2,target:f.track,preventDefault(){}});f.track.handlers.pointerup({pointerId:2});
+  assert.equal(f.track.focused,true);const position=f.previews.at(-1);
+  arrow(f,f.track,'ArrowLeft');assert.equal(f.previews.at(-1),Math.max(0,position-5));assert.deepEqual(f.timeline.getSelection(),before);
+ }
+});
+
+test('方向键调整不能让起止点交叉，短于五秒的录像也保持有效选区',t=>{
+ const f=fixture(t);
+ for(const duration of [.0008,3,100]){
+  f.timeline.reset(duration,{start:0,end:Math.min(duration,3)});
+  arrow(f,f.startHandle);let selected=f.timeline.getSelection();assert.ok(selected.start>=0&&selected.start<selected.end);
+  arrow(f,f.endHandle,'ArrowLeft');selected=f.timeline.getSelection();assert.ok(selected.end<=duration&&selected.end>selected.start);
+ }
+});
+
+test('未加载、锁定、拖动、编辑输入和系统组合键不会被方向键逻辑接管',t=>{
+ const f=fixture(t);
+ assert.equal(arrow(f,f.track).defaultPrevented,undefined);
+ f.timeline.reset(100);f.timeline.lock(true);assert.equal(arrow(f,f.startHandle).defaultPrevented,undefined);f.timeline.lock(false);
+ for(const extra of [{altKey:true},{ctrlKey:true},{metaKey:true},{isComposing:true},{defaultPrevented:true},{key:'ArrowUp'},{target:{tagName:'INPUT'}},{target:{isContentEditable:true}}]){
+  const count=f.previews.length;arrow(f,f.track,'ArrowRight',extra);assert.equal(f.previews.length,count);
+ }
+ f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
+ assert.equal(arrow(f,f.track).defaultPrevented,undefined);f.track.handlers.pointerup({pointerId:1});
+ f.timeline.setCurrent(90);f.timeline.reset(100);arrow(f,f.track);assert.equal(f.previews.at(-1),5,'换场清除上一场播放位置');
 });
