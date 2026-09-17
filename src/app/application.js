@@ -112,7 +112,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  }
  async function enterRecord(next){await job(signal=>{leavePage();return loadRecord(next,signal);});}
  async function currentRoom(){await job(async signal=>{leavePage();showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal);await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}});}
- async function download(){await job(async signal=>{const selection=timeline.getSelection();player.pause();clearDownloads();status('正在下载选中的录像…');const outputs=await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress:p=>{$('progress').value=p.progress*100;status(`${p.message?p.message+' · ':''}已下载 ${p.downloaded}/${p.count} 片 · 处理 ${Math.round(p.processing*100)}% · ${formatBytes(p.bytes)}`);}});
+ async function download(){await job(async signal=>{const selection=timeline.getSelection();player.pause();clearDownloads();status('正在下载选中的录像…');const outputs=await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress:p=>{$('progress').value=p.progress*100;status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次） · `:''}${p.message?p.message+' · ':''}已下载 ${p.downloaded}/${p.count} 片 · 处理 ${Math.round(p.processing*100)}% · ${formatBytes(p.bytes)}`);}});
   for(const [i,output]of outputs.entries()){const a=document.createElement('a');a.href=URL.createObjectURL(output.blob);urls.push(a.href);a.download=fileName(record,output.start,output.end,outputs.length>1?`_第${i+1}段`:'');a.textContent=`保存${outputs.length>1?'第 '+(i+1)+' 段':''} MP4 · ${formatBytes(output.blob.size)}`;$('downloads').append(a);}
   if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?'MP4 已生成，可点击下方链接再次保存。':`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
  });}
@@ -123,7 +123,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   await job(async signal=>{
    const handle=await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   const result=await saveRecording(api,await recordingPlan.load(signal),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`整场下载 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
+   const result=await saveRecording(api,await recordingPlan.load(signal),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
    status('整场下载完成。');
    const message=document.createElement('p');message.textContent=`整场已保存到所选位置 · ${formatBytes(result.bytes)}`;$('downloads').append(message);
   });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.8.4
+// @version      2.9.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -31,7 +31,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.8.4\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.9.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -58,15 +58,15 @@
     let pending;
     return function check({ force = false } = {}) {
       if (pending) return pending;
-      const cached = get("updateCheck", null), time = now2();
-      if (!force && cached?.installed === metadata.version && time >= cached.checkedAt && time - cached.checkedAt < CHECK_INTERVAL) {
+      const cached = get("updateCheck", null), time2 = now2();
+      if (!force && cached?.installed === metadata.version && time2 >= cached.checkedAt && time2 - cached.checkedAt < CHECK_INTERVAL) {
         return Promise.resolve(cached.result);
       }
       pending = (async () => {
         let result;
         try {
           const url2 = new URL(metadata.updateURL);
-          url2.searchParams.set("_check", String(time));
+          url2.searchParams.set("_check", String(time2));
           const { data } = await request(url2.href, { auth: false });
           const latest = readScriptMetadata(data);
           if (latest.namespace !== metadata.namespace) throw new Error("更新源返回了其他脚本");
@@ -74,7 +74,7 @@
         } catch {
           result = { status: "error" };
         }
-        set("updateCheck", { installed: metadata.version, checkedAt: time, result });
+        set("updateCheck", { installed: metadata.version, checkedAt: time2, result });
         return result;
       })().finally(() => {
         pending = null;
@@ -508,9 +508,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const dateInfo = document.createElement("span");
     const month = document.createElement("span");
     month.textContent = `${part("month")}月 · ${part("weekday")}`;
-    const time = document.createElement("span");
-    time.textContent = `${part("hour")}:${part("minute")}`;
-    dateInfo.append(month, time);
+    const time2 = document.createElement("span");
+    time2.textContent = `${part("hour")}:${part("minute")}`;
+    dateInfo.append(month, time2);
     date.append(day, dateInfo);
     heading.append(date);
     if (record.schedule?.type) {
@@ -620,9 +620,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const delta = (x - session.x) / width * (session.view.end - session.view.start);
     return moveBoundary(selection, session.type, session.anchor + delta, total);
   }
-  function moveBoundary(selection, type, time, total) {
+  function moveBoundary(selection, type, time2, total) {
     const gap = Math.min(1e-3, total / 2);
-    const target = clamp(time, 0, total);
+    const target = clamp(time2, 0, total);
     const next = { ...selection };
     if (type === "start") next.start = Math.min(target, selection.end - gap);
     else next.end = Math.max(target, selection.start + gap);
@@ -877,9 +877,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const utc = Boolean(match[7]);
     if (!utc && !/(?:^|;)TZID="?Asia\/Shanghai"?(?:;|$)/i.test(property)) return null;
     const [, year, month, day, hour, minute, second] = match;
-    const time = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
-    if (new Date(time).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
-    return time / 1e3 - (utc ? 0 : 8 * 3600);
+    const time2 = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+    if (new Date(time2).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
+    return time2 / 1e3 - (utc ? 0 : 8 * 3600);
   }
   function parseEvent(fields) {
     if (fields.STATUS?.value === "CANCELLED") return null;
@@ -5487,8 +5487,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
           this.removeFragment(fragmentEntity.body);
           return;
         }
-        esData.time.some((time) => {
-          const isNotBuffered = !this.isTimeBuffered(time.startPTS, time.endPTS, timeRange);
+        esData.time.some((time2) => {
+          const isNotBuffered = !this.isTimeBuffered(time2.startPTS, time2.endPTS, timeRange);
           if (isNotBuffered) {
             this.removeFragment(fragmentEntity.body);
           }
@@ -5602,7 +5602,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     /**
      * Gets the partial fragment for a certain time
      */
-    getPartialFragment(time) {
+    getPartialFragment(time2) {
       let bestFragment = null;
       let timePadding;
       let startTime;
@@ -5620,8 +5620,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         if (isPartial(fragmentEntity)) {
           startTime = fragmentEntity.body.start - bufferPadding;
           endTime = fragmentEntity.body.end + bufferPadding;
-          if (time >= startTime && time <= endTime) {
-            timePadding = Math.min(time - startTime, endTime - time);
+          if (time2 >= startTime && time2 <= endTime) {
+            timePadding = Math.min(time2 - startTime, endTime - time2);
             if (bestOverlap <= timePadding) {
               bestFragment = fragmentEntity.body;
               bestOverlap = timePadding;
@@ -22156,12 +22156,12 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       track.mode = mode;
     }
   }
-  function getFirstCueIndexFromTime(cues, time) {
-    if (time <= cues[0].startTime) {
+  function getFirstCueIndexFromTime(cues, time2) {
+    if (time2 <= cues[0].startTime) {
       return 0;
     }
     const len = cues.length - 1;
-    if (time > cues[len].endTime) {
+    if (time2 > cues[len].endTime) {
       return -1;
     }
     let left = 0;
@@ -22169,15 +22169,15 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     let mid;
     while (left <= right) {
       mid = Math.floor((right + left) / 2);
-      if (time < cues[mid].startTime) {
+      if (time2 < cues[mid].startTime) {
         right = mid - 1;
-      } else if (time > cues[mid].startTime && left < len) {
+      } else if (time2 > cues[mid].startTime && left < len) {
         left = mid + 1;
       } else {
         return mid;
       }
     }
-    return cues[left].startTime - time < time - cues[right].startTime ? left : right;
+    return cues[left].startTime - time2 < time2 - cues[right].startTime ? left : right;
   }
   function getCuesInRange(cues, start, end) {
     const cuesFound = [];
@@ -22842,8 +22842,8 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       return eventToString(this);
     }
   };
-  function getSnapToFragmentTime(time, frag) {
-    return time - frag.start < frag.duration / 2 && !(Math.abs(time - (frag.start + frag.duration)) < ALIGNED_END_THRESHOLD_SECONDS) ? frag.start : frag.start + frag.duration;
+  function getSnapToFragmentTime(time2, frag) {
+    return time2 - frag.start < frag.duration / 2 && !(Math.abs(time2 - (frag.start + frag.duration)) < ALIGNED_END_THRESHOLD_SECONDS) ? frag.start : frag.start + frag.duration;
   }
   function getInterstitialUrl(uri, sessionId, baseUrl) {
     const url2 = new self.URL(uri, baseUrl);
@@ -22946,10 +22946,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       const bufferedEnd = this.getAssetTime(bufferInfo.end);
       return bufferedEnd >= duration - 0.02;
     }
-    reachedPlayout(time) {
+    reachedPlayout(time2) {
       const interstitial = this.interstitial;
       const playoutLimit = interstitial.playoutLimit;
-      return this.startOffset + time >= playoutLimit;
+      return this.startOffset + time2 >= playoutLimit;
     }
     get destroyed() {
       var _this$hls2;
@@ -23023,10 +23023,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
         }
       }
     }
-    getAssetTime(time) {
+    getAssetTime(time2) {
       const timelineOffset = this.timelineOffset;
       const duration = this.duration;
-      return Math.min(Math.max(0, time - timelineOffset), duration);
+      return Math.min(Math.max(0, time2 - timelineOffset), duration);
     }
     removeMediaListeners() {
       const media = this.mediaAttached;
@@ -23156,7 +23156,7 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     hasEvent(identifier) {
       return identifier in this.eventMap;
     }
-    findItemIndex(item, time) {
+    findItemIndex(item, time2) {
       if (item.event) {
         return this.findEventIndex(item.event.identifier);
       }
@@ -23169,10 +23169,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       const items = this.items;
       if (items) {
         if (!items[index]) {
-          if (time === void 0) {
-            time = item.start;
+          if (time2 === void 0) {
+            time2 = item.start;
           }
-          index = this.findItemIndexAtTime(time);
+          index = this.findItemIndexAtTime(time2);
         }
         while (index >= 0 && (_items$index = items[index]) != null && _items$index.event) {
           var _items$index;
@@ -23670,8 +23670,8 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     media == null || (_media$play = media.play()) == null || _media$play.catch(() => {
     });
   }
-  function timelineMessage(label, time) {
-    return `[${label}] Advancing timeline position to ${time}`;
+  function timelineMessage(label, time2) {
+    return `[${label}] Advancing timeline position to ${time2}`;
   }
   var InterstitialsController = class extends Logger {
     constructor(hls, HlsPlayerClass) {
@@ -24041,20 +24041,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const getAssetPlayer = (asset) => asset ? c.getAssetPlayer(asset.identifier) : asset;
       const getMappedTime = (item, timelineType, asset, controllerField, assetPlayerField) => {
         if (item) {
-          let time = item[timelineType].start;
+          let time2 = item[timelineType].start;
           const interstitial = item.event;
           if (interstitial) {
             if (timelineType === "playout" || interstitial.timelineOccupancy !== TimelineOccupancy.Point) {
               const assetPlayer = getAssetPlayer(asset);
               if ((assetPlayer == null ? void 0 : assetPlayer.interstitial) === interstitial) {
-                time += assetPlayer.assetItem.startOffset + assetPlayer[assetPlayerField];
+                time2 += assetPlayer.assetItem.startOffset + assetPlayer[assetPlayerField];
               }
             }
           } else {
             const value = controllerField === "bufferedPos" ? getBufferedEnd() : c[controllerField];
-            time += value - item.start;
+            time2 += value - item.start;
           }
-          return time;
+          return time2;
         }
         return 0;
       };
@@ -24085,15 +24085,15 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
         return ((_c$schedule2 = c.schedule) == null ? void 0 : _c$schedule2.durations[timelineType]) || 0;
       };
-      const seekTo = (time, timelineType) => {
+      const seekTo = (time2, timelineType) => {
         var _item$event, _c$schedule$items2;
         const item = c.effectivePlayingItem;
         if (item != null && (_item$event = item.event) != null && _item$event.restrictions.skip || !c.schedule) {
           return;
         }
-        c.log(`seek to ${time} "${timelineType}"`);
+        c.log(`seek to ${time2} "${timelineType}"`);
         const playingItem = c.effectivePlayingItem;
-        const targetIndex = c.schedule.findItemIndexAtTime(time, timelineType);
+        const targetIndex = c.schedule.findItemIndexAtTime(time2, timelineType);
         const targetItem = (_c$schedule$items2 = c.schedule.items) == null ? void 0 : _c$schedule$items2[targetIndex];
         const bufferingPlayer = c.getBufferingPlayer();
         const bufferingInterstitial = bufferingPlayer == null ? void 0 : bufferingPlayer.interstitial;
@@ -24104,7 +24104,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           const media = (assetPlayer == null ? void 0 : assetPlayer.media) || c.primaryMedia;
           if (media) {
             const currentTime = timelineType === "primary" ? media.currentTime : getMappedTime(playingItem, timelineType, c.playingAsset, "timelinePos", "currentTime");
-            const diff = time - currentTime;
+            const diff = time2 - currentTime;
             const seekToTime = (appendInPlace ? currentTime : media.currentTime) + diff;
             if (seekToTime >= 0 && (!assetPlayer || appendInPlace || seekToTime <= assetPlayer.duration)) {
               media.currentTime = seekToTime;
@@ -24113,10 +24113,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
         }
         if (targetItem) {
-          let seekToTime = time;
+          let seekToTime = time2;
           if (timelineType !== "primary") {
             const primarySegmentStart = targetItem[timelineType].start;
-            const diff = time - primarySegmentStart;
+            const diff = time2 - primarySegmentStart;
             seekToTime = targetItem.start + diff;
           }
           const targetIsPrimary = !c.isInterstitial(targetItem);
@@ -24140,7 +24140,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
               c.checkBuffer();
             } else {
               const assetList = targetItem.event.assetList;
-              const eventTime = time - (targetItem[timelineType] || targetItem).start;
+              const eventTime = time2 - (targetItem[timelineType] || targetItem).start;
               for (let i = assetList.length; i--; ) {
                 const asset = assetList[i];
                 if (asset.duration && eventTime >= asset.startOffset && eventTime < asset.startOffset + asset.duration) {
@@ -24182,11 +24182,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
           return 0;
         },
-        set currentTime(time) {
+        set currentTime(time2) {
           const interstitialItem = getActiveInterstitial();
           const playingItem = c.effectivePlayingItem;
           if (playingItem && playingItem === interstitialItem) {
-            seekTo(time + playingItem.playout.start, "playout");
+            seekTo(time2 + playingItem.playout.start, "playout");
           }
         },
         get duration() {
@@ -24262,8 +24262,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
             const timelinePos = c.timelinePos;
             return timelinePos > 0 ? timelinePos : 0;
           },
-          set currentTime(time) {
-            seekTo(time, "primary");
+          set currentTime(time2) {
+            seekTo(time2, "primary");
           },
           get duration() {
             return getMappedDuration("primary");
@@ -24280,8 +24280,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           get currentTime() {
             return getMappedTime(c.effectivePlayingItem, "integrated", c.effectivePlayingAsset, "timelinePos", "currentTime");
           },
-          set currentTime(time) {
-            seekTo(time, "integrated");
+          set currentTime(time2) {
+            seekTo(time2, "integrated");
           },
           get duration() {
             return getMappedDuration("integrated");
@@ -24297,8 +24297,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           if (event && !event.restrictions.skip) {
             const index = c.findItemIndex(item);
             if (event.appendInPlace) {
-              const time = item.playout.start + item.event.duration;
-              seekTo(time + 1e-3, "playout");
+              const time2 = item.playout.start + item.event.duration;
+              seekTo(time2 + 1e-3, "playout");
             } else {
               c.advanceAfterAssetEnded(event, index, Infinity);
             }
@@ -24530,7 +24530,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       }
     }
-    setScheduleToAssetAtTime(time, playingAsset) {
+    setScheduleToAssetAtTime(time2, playingAsset) {
       const schedule = this.schedule;
       if (!schedule) {
         return;
@@ -24539,7 +24539,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const interstitial = schedule.getEvent(parentIdentifier);
       if (interstitial) {
         const itemIndex = schedule.findEventIndex(parentIdentifier);
-        const assetListIndex = schedule.findAssetIndex(interstitial, time);
+        const assetListIndex = schedule.findAssetIndex(interstitial, time2);
         this.advanceAfterAssetEnded(interstitial, itemIndex, assetListIndex - 1);
       }
     }
@@ -24914,11 +24914,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         this.shouldPlay = false;
       }
     }
-    updateItem(previousItem, time) {
+    updateItem(previousItem, time2) {
       var _this$schedule6;
       const items = (_this$schedule6 = this.schedule) == null ? void 0 : _this$schedule6.items;
       if (previousItem && items) {
-        const index = this.findItemIndex(previousItem, time);
+        const index = this.findItemIndex(previousItem, time2);
         return items[index] || null;
       }
       return null;
@@ -24947,8 +24947,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       var _b$event;
       return !!b && (a === b || a.event.identifier === ((_b$event = b.event) == null ? void 0 : _b$event.identifier));
     }
-    findItemIndex(item, time) {
-      return item && this.schedule ? this.schedule.findItemIndex(item, time) : -1;
+    findItemIndex(item, time2) {
+      return item && this.schedule ? this.schedule.findItemIndex(item, time2) : -1;
     }
     updateSchedule(forceUpdate = false) {
       var _this$schedule7;
@@ -25523,10 +25523,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       }
     }
-    advanceInPlace(time) {
+    advanceInPlace(time2) {
       const media = this.primaryMedia;
-      if (media && media.currentTime < time) {
-        media.currentTime = time;
+      if (media && media.currentTime < time2) {
+        media.currentTime = time2;
       }
     }
     handleAssetItemError(data, interstitial, scheduleIndex, assetListIndex, errorMessage) {
@@ -26593,8 +26593,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         const lastOutputScreen = this.lastOutputScreen;
         if (lastOutputScreen) {
           const prevLineTime = lastOutputScreen.rows[topRowIndex].cueStartTime;
-          const time = this.logger.time;
-          if (prevLineTime !== null && time !== null && prevLineTime < time) {
+          const time2 = this.logger.time;
+          if (prevLineTime !== null && time2 !== null && prevLineTime < time2) {
             for (let i = 0; i < this.nrRollUpRows; i++) {
               this.rows[newRow - this.nrRollUpRows + i + 1].copy(lastOutputScreen.rows[topRowIndex + i]);
             }
@@ -26845,20 +26845,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       this.writeScreen.setPen(styles);
     }
     outputDataUpdate(dispatch = false) {
-      const time = this.logger.time;
-      if (time === null) {
+      const time2 = this.logger.time;
+      if (time2 === null) {
         return;
       }
       if (this.outputFilter) {
         if (this.cueStartTime === null && !this.displayedMemory.isEmpty()) {
-          this.cueStartTime = time;
+          this.cueStartTime = time2;
         } else {
           if (!this.displayedMemory.equals(this.lastOutputScreen)) {
-            this.outputFilter.newCue(this.cueStartTime, time, this.lastOutputScreen);
+            this.outputFilter.newCue(this.cueStartTime, time2, this.lastOutputScreen);
             if (dispatch && this.outputFilter.dispatchCue) {
               this.outputFilter.dispatchCue();
             }
-            this.cueStartTime = this.displayedMemory.isEmpty() ? null : time;
+            this.cueStartTime = this.displayedMemory.isEmpty() ? null : time2;
           }
         }
         this.lastOutputScreen.copy(this.displayedMemory);
@@ -26893,8 +26893,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     /**
      * Add data for time t in forms of list of bytes (unsigned ints). The bytes are treated as pairs.
      */
-    addData(time, byteList) {
-      this.logger.time = time;
+    addData(time2, byteList) {
+      this.logger.time = time2;
       for (let i = 0; i < byteList.length; i += 2) {
         const a = byteList[i] & 127;
         const b = byteList[i + 1] & 127;
@@ -33725,12 +33725,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     recoverMediaError() {
       this.logger.log("recoverMediaError");
       const media = this._media;
-      const time = media == null ? void 0 : media.currentTime;
+      const time2 = media == null ? void 0 : media.currentTime;
       this.detachMedia();
       if (media) {
         this.attachMedia(media);
-        if (time) {
-          this.startLoad(time);
+        if (time2) {
+          this.startLoad(time2);
         }
       }
     }
@@ -34261,16 +34261,16 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   function createPlayer({ video, loading, api, status: status2, onTime }) {
     let hls, record, streams = [], index = 0, generation = 0, target = null;
     const offset = () => streams[index] ? streams[index].start_time - record.start : 0;
-    function attach(part, time = 0) {
+    function attach(part, time2 = 0) {
       const token = ++generation;
       hls?.destroy();
       video.pause();
       video.removeAttribute("src");
       video.load();
       index = part;
-      target = time;
+      target = time2;
       loading.hidden = false;
-      hls = new Hls({ loader: makeHlsLoader(api.request), enableWorker: false, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 15, startPosition: time });
+      hls = new Hls({ loader: makeHlsLoader(api.request), enableWorker: false, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 15, startPosition: time2 });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (token === generation && data.fatal) {
           loading.textContent = "预览暂不可用，请刷新重试";
@@ -34283,16 +34283,16 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       hls.loadSource(streams[index].stream);
       hls.attachMedia(video);
     }
-    function seek(time) {
+    function seek(time2) {
       video.pause();
-      const found = streams.findIndex((p) => time >= p.start_time - record.start && time <= p.end_time - record.start);
+      const found = streams.findIndex((p) => time2 >= p.start_time - record.start && time2 <= p.end_time - record.start);
       if (found < 0) {
         target = NaN;
         loading.hidden = false;
         loading.textContent = "该位置没有录像";
         return;
       }
-      const local = clamp(time - (streams[found].start_time - record.start), 0, Math.max(0, streams[found].end_time - streams[found].start_time - 1e-3));
+      const local = clamp(time2 - (streams[found].start_time - record.start), 0, Math.max(0, streams[found].end_time - streams[found].start_time - 1e-3));
       loading.textContent = "正在定位画面…";
       loading.hidden = false;
       if (found !== index) attach(found, local);
@@ -34355,14 +34355,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     function constrain(restart = false) {
       const range = getRange();
       if (!range) return true;
-      const time = position();
-      if (time >= range.end && !restart) {
+      const time2 = position();
+      if (time2 >= range.end && !restart) {
         clearTimer();
         video.pause();
-        if (time !== range.end) seek(range.end);
+        if (time2 !== range.end) seek(range.end);
         return false;
       }
-      if (time < range.start || time >= range.end) seek(range.start);
+      if (time2 < range.start || time2 >= range.end) seek(range.start);
       return true;
     }
     const play = (restart = false) => {
@@ -34431,9 +34431,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   // src/media/thumbnails.js
   function thumbnailSamples(record, streams, view3, count = 6) {
     return Array.from({ length: count }, (_, i) => {
-      const time = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
-      const stream = streams.find((s) => time >= s.start_time - record.start && time < s.end_time - record.start);
-      return { time, stream, local: stream ? time - (stream.start_time - record.start) : null };
+      const time2 = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
+      const stream = streams.find((s) => time2 >= s.start_time - record.start && time2 < s.end_time - record.start);
+      return { time: time2, stream, local: stream ? time2 - (stream.start_time - record.start) : null };
     });
   }
   async function readThumbnail(request, sample, signal) {
@@ -41217,13 +41217,13 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
             const readSampleNum = functions[lengthSizeOfSampleNum];
             const numberOfEntries = readU32Be(slice);
             for (let i = 0; i < numberOfEntries; i++) {
-              const time = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
+              const time2 = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
               const moofOffset = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
               readTrafNum(slice);
               readTrunNum(slice);
               readSampleNum(slice);
               track.fragmentLookupTable.push({
-                timestamp: time,
+                timestamp: time2,
                 moofOffset
               });
             }
@@ -61836,8 +61836,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   var verified = { verifyKeyPackets: true };
   async function planVideoCut(track, { start, end, normalizer, signal }) {
     const sink = new EncodedPacketSink(track), tick = 1 / await track.getTimeResolution();
-    async function previousIdr(time) {
-      let packet = await sink.getKeyPacket(time, verified);
+    async function previousIdr(time2) {
+      let packet = await sink.getKeyPacket(time2, verified);
       while (packet && !normalizer.isIdr(packet)) {
         signal?.throwIfAborted();
         packet = await sink.getKeyPacket(packet.timestamp - tick, verified);
@@ -62043,6 +62043,181 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
   }
 
+  // src/services/retry-request.js
+  var RequestError = class extends Error {
+    constructor(message, { retryable = false, status: status2 } = {}) {
+      super(message);
+      this.name = "RequestError";
+      this.retryable = retryable;
+      this.status = status2;
+    }
+  };
+  function waitForRetry(delay, signal) {
+    signal?.throwIfAborted();
+    return new Promise((resolve, reject) => {
+      const cleanup = () => signal?.removeEventListener("abort", abort);
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, delay);
+      const abort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(signal.reason);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
+  async function requestWithRetry(api, url2, options = {}, { onRetry = () => {
+  }, wait: wait2 = waitForRetry } = {}) {
+    const { signal } = options;
+    let attempt = 0;
+    try {
+      for (; ; ) {
+        signal?.throwIfAborted();
+        try {
+          return await api.request(url2, options);
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (!(error instanceof RequestError) || !error.retryable) throw error;
+          const delay = Math.min(1e3 * 2 ** Math.min(attempt++, 4), 1e4);
+          onRetry({ attempt, delay });
+          await wait2(delay, signal);
+        }
+      }
+    } finally {
+      if (attempt) onRetry(null);
+    }
+  }
+
+  // src/media/recording-download.js
+  function createRecordingDownload(api, groups, {
+    signal,
+    concurrency = 6,
+    maxBytes = 64 * 1024 * 1024,
+    onRead = () => {
+    },
+    onRetry = () => {
+    }
+  } = {}) {
+    const items = groups.flatMap((group, groupIndex) => group.segments.map((segment) => ({ segment, groupIndex })));
+    const controller = new AbortController(), entries = /* @__PURE__ */ new Map(), tasks = /* @__PURE__ */ new Set();
+    const reconnects = /* @__PURE__ */ new Map();
+    let cursor = 0, next = 0, active = 0, held = 0, reserved = 0, average = 4 * 1024 * 1024, samples = 0;
+    const abort = () => controller.abort(signal.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    function retry(key, state) {
+      if (state) reconnects.set(key, state);
+      else reconnects.delete(key);
+      onRetry({ count: reconnects.size, attempt: Math.max(0, ...[...reconnects.values()].map((value) => value.attempt)) });
+    }
+    async function read(segment) {
+      const response = await requestWithRetry(
+        api,
+        segment.url,
+        { type: "arraybuffer", range: segment.range, signal: controller.signal },
+        { onRetry: (state) => retry(segment, state) }
+      );
+      controller.signal.throwIfAborted();
+      const data = new Uint8Array(response.data);
+      onRead(data.byteLength);
+      return data;
+    }
+    function pump() {
+      while (!controller.signal.aborted && active < concurrency && next < items.length && next < cursor + concurrency) {
+        const reservation = items[next].segment.range?.length ?? average;
+        if (next !== cursor && held + reserved + reservation > maxBytes) break;
+        const index = next++, entry = { size: 0 };
+        active++;
+        reserved += reservation;
+        entries.set(index, entry);
+        const task = read(items[index].segment).then((data) => {
+          entry.size = data.byteLength;
+          held += entry.size;
+          average += (entry.size - average) / ++samples;
+          return data;
+        }).catch((error) => {
+          controller.abort(error);
+          throw error;
+        }).finally(() => {
+          active--;
+          reserved -= reservation;
+          tasks.delete(task);
+          pump();
+        });
+        entry.promise = task;
+        tasks.add(task);
+        void task.catch(() => {
+        });
+      }
+    }
+    return {
+      signal: controller.signal,
+      readMap: read,
+      async *segments() {
+        for (; cursor < items.length; cursor++) {
+          controller.signal.throwIfAborted();
+          pump();
+          const entry = entries.get(cursor), data = await entry.promise;
+          controller.signal.throwIfAborted();
+          yield { ...items[cursor], data, index: cursor, count: items.length };
+          held -= entry.size;
+          entries.delete(cursor);
+        }
+      },
+      async close() {
+        signal?.removeEventListener("abort", abort);
+        controller.abort();
+        await Promise.allSettled([...tasks]);
+        entries.clear();
+      }
+    };
+  }
+
+  // src/media/recording-timeline.js
+  var time = (value) => Math.round(value * 1e6) / 1e6;
+  var RecordingTimeline = class {
+    constructor() {
+      this.offset = null;
+      this.tracks = /* @__PURE__ */ new Map();
+      this.end = 0;
+    }
+    append(tracks, discontinuity = false) {
+      const starts = tracks.map((track) => track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity));
+      const first = Math.min(...starts);
+      if (!Number.isFinite(first)) throw new Error("录像分片没有音视频数据。");
+      if (this.offset === null || discontinuity) this.offset = time(this.end - first);
+      let correction = 0;
+      for (const [index, track] of tracks.entries()) {
+        const previous = this.tracks.get(track.key);
+        if (!previous) continue;
+        let boundary = previous.boundary;
+        for (const packet of track.packets) {
+          if (packet.type === "key") boundary = previous.max;
+          if (time(packet.timestamp + this.offset) < boundary) {
+            correction = Math.max(correction, previous.end - time(starts[index] + this.offset));
+            break;
+          }
+        }
+      }
+      this.offset = time(this.offset + correction);
+      for (const track of tracks) {
+        const state = this.tracks.get(track.key) ?? { max: -Infinity, boundary: -Infinity, end: 0 };
+        for (const packet of track.packets) {
+          const timestamp = time(packet.timestamp + this.offset);
+          if (packet.type === "key") state.boundary = state.max;
+          if (timestamp < state.boundary) throw new Error("录像分片内部的关键帧时间线发生倒退，无法无损拼接。");
+          state.max = Math.max(state.max, timestamp);
+          state.end = Math.max(state.end, time(timestamp + packet.duration));
+        }
+        this.tracks.set(track.key, state);
+        this.end = Math.max(this.end, state.end);
+      }
+      return this.offset;
+    }
+  };
+
   // src/media/recording.js
   async function estimateRecordingRate(api, groups, signal) {
     const rates = [];
@@ -62065,42 +62240,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
     }
     return bytes2;
-  }
-  function createSegmentCache(api, { signal, onRead = () => {
-  }, maxBytes = 32 * 1024 * 1024 } = {}) {
-    const cache = /* @__PURE__ */ new Map(), pending = /* @__PURE__ */ new Map();
-    let held = 0;
-    return async (segment) => {
-      signal?.throwIfAborted();
-      const key = JSON.stringify([segment.url, segment.range]);
-      if (cache.has(key)) {
-        const value = cache.get(key);
-        cache.delete(key);
-        cache.set(key, value);
-        return value;
-      }
-      if (pending.has(key)) return pending.get(key);
-      const promise = (async () => {
-        const response = await api.request(segment.url, { type: "arraybuffer", range: segment.range, signal });
-        signal?.throwIfAborted();
-        const data = new Uint8Array(response.data);
-        while (cache.size && held + data.byteLength > maxBytes) {
-          const [old, value] = cache.entries().next().value;
-          cache.delete(old);
-          held -= value.byteLength;
-        }
-        cache.set(key, data);
-        held += data.byteLength;
-        onRead(data.byteLength);
-        return data;
-      })();
-      pending.set(key, promise);
-      try {
-        return await promise;
-      } finally {
-        pending.delete(key);
-      }
-    };
   }
   function recordingSource(groups, read) {
     const resources = /* @__PURE__ */ new Map();
@@ -62147,45 +62286,104 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   async function saveRecording(api, groups, fileHandle, { signal, onProgress = () => {
   } } = {}) {
-    let file, input, output, conversion, canceling, bytes2 = 0, written = 0;
-    const cancel = () => {
-      if (conversion) canceling = conversion.cancel();
-    };
-    signal?.addEventListener("abort", cancel, { once: true });
-    try {
-      signal?.throwIfAborted();
-      file = await fileHandle.createWritable();
-      const read = createSegmentCache(api, { signal, onRead: (size) => {
+    let file, input, output, bytes2 = 0, written = 0, processed = 0, reconnecting = 0, attempt = 0;
+    const samples = [{ at: performance.now(), bytes: 0 }], started = samples[0].at;
+    function report(complete = false) {
+      const now2 = performance.now();
+      while (samples.length > 1 && samples[1].at < now2 - 5e3) samples.shift();
+      const speed = (bytes2 - samples[0].bytes) / Math.max(1, (now2 - Math.max(started, samples[0].at)) / 1e3);
+      onProgress({ bytes: bytes2, written, progress: complete ? 1 : Math.min(0.99, processed), speed, reconnecting, attempt });
+    }
+    const download = createRecordingDownload(api, groups, {
+      signal,
+      onRead: (size) => {
         bytes2 += size;
-        onProgress({ bytes: bytes2, written });
-      } });
-      input = new Input({ source: recordingSource(groups, read), formats: [HLS, MP42, MPEG_TS] });
+        samples.push({ at: performance.now(), bytes: bytes2 });
+        report();
+      },
+      onRetry: (state) => {
+        reconnecting = state.count;
+        attempt = state.attempt;
+        report();
+      }
+    });
+    const timeline = new RecordingTimeline(), tracks = /* @__PURE__ */ new Map();
+    let groupIndex = -1, map;
+    try {
+      download.signal.throwIfAborted();
+      file = await fileHandle.createWritable();
       const writable = new WritableStream({ async write(chunk) {
-        signal?.throwIfAborted();
+        download.signal.throwIfAborted();
         await file.write(chunk);
         written = Math.max(written, chunk.position + chunk.data.byteLength);
-        onProgress({ bytes: bytes2, written });
+        report();
       } });
-      output = new Output({ format: new Mp4OutputFormat({ fastStart: "fragmented" }), target: new StreamTarget(writable, { chunked: true, chunkSize: 1024 * 1024 }) });
-      conversion = await Conversion.init({ input, output, copy: { mode: "forced" }, showWarnings: false, composable: true });
-      signal?.throwIfAborted();
-      if (!conversion.isValid || conversion.discardedTracks.length) throw new Error("本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。");
-      conversion.onProgress = (progress) => onProgress({ progress, bytes: bytes2, written });
-      await output.start();
-      await conversion.execute();
-      signal?.throwIfAborted();
+      output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new StreamTarget(writable, { chunked: true, chunkSize: 1024 * 1024 }) });
+      for await (const item of download.segments()) {
+        const discontinuity = item.groupIndex !== groupIndex;
+        if (discontinuity) {
+          groupIndex = item.groupIndex;
+          map = groups[groupIndex].map ? await download.readMap(groups[groupIndex].map) : null;
+        }
+        const data = map ? new Uint8Array(map.byteLength + item.data.byteLength) : item.data;
+        if (map) {
+          data.set(map);
+          data.set(item.data, map.byteLength);
+        }
+        input = new Input({ source: new BufferSource(data), formats: [MP42, MPEG_TS] });
+        const segmentTracks = [];
+        for (const track of await input.getTracks()) {
+          const key = `${track.type}:${track.number}`, codec = await track.getCodec();
+          if (!["video", "audio"].includes(track.type) || !output.format.getSupportedCodecs().includes(codec)) throw new Error("本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。");
+          const config = await track.getDecoderConfig();
+          let target = tracks.get(key);
+          if (!target) {
+            if (output.state !== "pending") throw new Error("录像中途新增了音视频轨道，无法保存到同一个 MP4。");
+            const source = track.type === "video" ? new EncodedVideoPacketSource(codec) : new EncodedAudioPacketSource(codec);
+            if (track.type === "video") output.addVideoTrack(source, { rotation: await track.getRotation() });
+            else output.addAudioTrack(source);
+            target = { source, codec };
+            tracks.set(key, target);
+          }
+          if (target.codec !== codec) throw new Error("录像中途更换了编码，无法保存到同一个 MP4。");
+          const packets = [];
+          for await (const packet of new EncodedPacketSink(track).packets(void 0, void 0, { verifyKeyPackets: true })) {
+            download.signal.throwIfAborted();
+            packets.push(packet);
+          }
+          segmentTracks.push({ key, packets, target, config });
+        }
+        const offset = timeline.append(segmentTracks, discontinuity);
+        if (output.state === "pending") await output.start();
+        const cursors = segmentTracks.map(() => 0);
+        while (segmentTracks.some((track, i) => cursors[i] < track.packets.length)) {
+          for (const [i, track] of segmentTracks.entries()) {
+            for (let batch = 0; batch < 32 && cursors[i] < track.packets.length; batch++) {
+              download.signal.throwIfAborted();
+              const packet = track.packets[cursors[i]++];
+              await track.target.source.add(packet.clone({ timestamp: Math.round((packet.timestamp + offset) * 1e6) / 1e6 }), { decoderConfig: track.config });
+            }
+          }
+        }
+        input.dispose();
+        input = null;
+        processed = (item.index + 1) / item.count;
+        report();
+      }
+      download.signal.throwIfAborted();
+      for (const track of tracks.values()) track.source.close();
       await output.finalize();
-      signal?.throwIfAborted();
+      download.signal.throwIfAborted();
       await file.close();
       file = null;
+      report(true);
       return { bytes: written };
     } catch (error) {
-      if (signal?.aborted) throw signal.reason;
+      if (download.signal.aborted) throw download.signal.reason;
       throw error;
     } finally {
-      signal?.removeEventListener("abort", cancel);
+      await download.close();
       try {
-        if (canceling) await canceling;
         if (output && output.state !== "finalized" && output.state !== "canceled") await output.cancel();
       } finally {
         input?.dispose();
@@ -62197,6 +62395,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   // src/media/segment-loader.js
   var segmentKey = (segment) => JSON.stringify([segment.url, segment.range ?? null]);
   function createSegmentLoader(api, segments, { map, signal, onRead = () => {
+  }, onRetry = () => {
   } } = {}) {
     const controller = new AbortController();
     const entries = /* @__PURE__ */ new Map(), demanded = [], queue = [], tasks = /* @__PURE__ */ new Set();
@@ -62219,11 +62418,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         const task = (async () => {
           try {
             controller.signal.throwIfAborted();
-            const response = await api.request(entry.segment.url, {
+            const response = await requestWithRetry(api, entry.segment.url, {
               type: "arraybuffer",
               range: entry.segment.range,
               signal: controller.signal
-            });
+            }, { onRetry: (state) => onRetry(state, entry.segment) });
             controller.signal.throwIfAborted();
             const data = new Uint8Array(response.data);
             onRead(data.byteLength, entry.segment);
@@ -62351,12 +62550,23 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const downloaded = /* @__PURE__ */ new Set(), outputs = [];
     const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
     let bytes2 = 0, completedDuration = 0, processing = 0, progress = 0, message;
+    const reconnects = /* @__PURE__ */ new Map();
     function report(phase = "processing") {
       progress = phase === "complete" ? 1 : Math.max(
         progress,
         Math.min(0.99, 0.35 * downloaded.size / resources.size + 0.65 * processing)
       );
-      onProgress({ progress, downloaded: downloaded.size, count: resources.size, bytes: bytes2, phase, processing, message });
+      onProgress({
+        progress,
+        downloaded: downloaded.size,
+        count: resources.size,
+        bytes: bytes2,
+        phase,
+        processing,
+        message,
+        reconnecting: reconnects.size,
+        attempt: Math.max(0, ...reconnects.values())
+      });
     }
     report("download");
     for (const plan of plans) {
@@ -62367,6 +62577,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         onRead(size, segment) {
           bytes2 += size;
           downloaded.add(segmentKey(segment));
+          report();
+        },
+        onRetry(state, segment) {
+          if (state) reconnects.set(segmentKey(segment), state.attempt);
+          else reconnects.delete(segmentKey(segment));
           report();
         }
       });
@@ -62670,7 +62885,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         status2("正在下载选中的录像…");
         const outputs = await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress: (p) => {
           $("progress").value = p.progress * 100;
-          status2(`${p.message ? p.message + " · " : ""}已下载 ${p.downloaded}/${p.count} 片 · 处理 ${Math.round(p.processing * 100)}% · ${formatBytes(p.bytes)}`);
+          status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次） · ` : ""}${p.message ? p.message + " · " : ""}已下载 ${p.downloaded}/${p.count} 片 · 处理 ${Math.round(p.processing * 100)}% · ${formatBytes(p.bytes)}`);
         } });
         for (const [i, output] of outputs.entries()) {
           const a = document.createElement("a");
@@ -62698,7 +62913,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         status2("正在下载整场并写入文件…");
         const result = await saveRecording(api, await recordingPlan.load(signal), handle, { signal, onProgress: (p) => {
           if (p.progress !== void 0) $("progress").value = p.progress * 100;
-          status2(`整场下载 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+          status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
         } });
         status2("整场下载完成。");
         const message = document.createElement("p");
@@ -62896,7 +63111,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         request?.abort();
       };
       const timer = setTimeout(() => {
-        fail(new Error("请求超时，请重试。"));
+        fail(new RequestError("请求超时，请重试。", { retryable: true }));
         request?.abort();
       }, 45e3);
       signal?.addEventListener("abort", abort, { once: true });
@@ -62912,7 +63127,10 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
           onload(response) {
             cleanup();
             if (response.status < 200 || response.status >= 300) {
-              reject(new Error(`请求失败（HTTP ${response.status}），请刷新场次后重试。`));
+              reject(new RequestError(`请求失败（HTTP ${response.status}），请刷新场次后重试。`, {
+                status: response.status,
+                retryable: response.status === 0 || response.status === 408 || response.status === 429 || response.status >= 500 && response.status <= 599
+              }));
               return;
             }
             if (range && response.status !== 206) {
@@ -62925,9 +63143,9 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
               headers: response.responseHeaders
             });
           },
-          onerror: () => fail(new Error("网络请求失败，请检查网络和油猴的站点访问权限。")),
-          onabort: () => fail(signal?.reason || new DOMException("已取消", "AbortError")),
-          ontimeout: () => fail(new Error("请求超时，请重试。"))
+          onerror: () => fail(new RequestError("网络请求失败，请检查网络和油猴的站点访问权限。", { retryable: true })),
+          onabort: () => fail(signal?.reason || new RequestError("网络连接已中断。", { retryable: true })),
+          ontimeout: () => fail(new RequestError("请求超时，请重试。", { retryable: true }))
         });
       } catch (error) {
         fail(error);

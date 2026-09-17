@@ -55,10 +55,12 @@ export async function exportSelection(api, record, groups, selection, { signal, 
   const downloaded = new Set(), outputs = [];
   const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
   let bytes = 0, completedDuration = 0, processing = 0, progress = 0, message;
+  const reconnects = new Map();
   function report(phase = 'processing') {
     progress = phase === 'complete' ? 1 : Math.max(progress,
       Math.min(.99, .35 * downloaded.size / resources.size + .65 * processing));
-    onProgress({ progress, downloaded: downloaded.size, count: resources.size, bytes, phase, processing, message });
+    onProgress({ progress, downloaded: downloaded.size, count: resources.size, bytes, phase, processing, message,
+      reconnecting: reconnects.size, attempt: Math.max(0,...reconnects.values()) });
   }
   report('download');
 
@@ -66,6 +68,10 @@ export async function exportSelection(api, record, groups, selection, { signal, 
     const durationWeight = plan.end - plan.start;
     const loader = createSegmentLoader(api, plan.segments, { map: plan.map, signal,
       onRead(size, segment) { bytes += size; downloaded.add(segmentKey(segment)); report(); },
+      onRetry(state, segment) {
+        if(state) reconnects.set(segmentKey(segment),state.attempt); else reconnects.delete(segmentKey(segment));
+        report();
+      },
     });
     const input = new Input({ source: recordingSource([plan], loader.read), formats: [HLS, MP4, MPEG_TS] });
     try {

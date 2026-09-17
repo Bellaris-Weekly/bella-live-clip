@@ -1,4 +1,5 @@
 import { recordFromReplay, recordFromRoom, roomFromHtml } from '../domain/records.js';
+import {RequestError} from './retry-request.js';
 
 const API = 'https://api.live.bilibili.com';
 
@@ -11,7 +12,7 @@ export function createRequest(gmRequest) {
     const fail = error => { cleanup(); reject(error); };
     const abort = () => { fail(signal.reason); request?.abort(); };
     // anonymous requests use fetch in Tampermonkey, which ignores its native timeout option.
-    const timer = setTimeout(() => { fail(new Error('请求超时，请重试。')); request?.abort(); }, 45000);
+    const timer = setTimeout(() => { fail(new RequestError('请求超时，请重试。',{retryable:true})); request?.abort(); }, 45000);
     signal?.addEventListener('abort', abort, { once: true });
     const headers = { Referer: 'https://live.bilibili.com/' };
     if (range) headers.Range = `bytes=${range.offset}-${range.offset + range.length - 1}`;
@@ -21,7 +22,8 @@ export function createRequest(gmRequest) {
         onload(response) {
           cleanup();
           if (response.status < 200 || response.status >= 300) {
-            reject(new Error(`请求失败（HTTP ${response.status}），请刷新场次后重试。`)); return;
+            reject(new RequestError(`请求失败（HTTP ${response.status}），请刷新场次后重试。`,{status:response.status,
+              retryable:response.status===0||response.status===408||response.status===429||response.status>=500&&response.status<=599})); return;
           }
           if (range && response.status !== 206) {
             reject(new Error('视频服务器未按分片范围返回内容，已停止处理。')); return;
@@ -29,9 +31,9 @@ export function createRequest(gmRequest) {
           resolve({ data: type === 'text' ? response.responseText : response.response,
             url: response.finalUrl || url, headers: response.responseHeaders });
         },
-        onerror: () => fail(new Error('网络请求失败，请检查网络和油猴的站点访问权限。')),
-        onabort: () => fail(signal?.reason || new DOMException('已取消', 'AbortError')),
-        ontimeout: () => fail(new Error('请求超时，请重试。')),
+        onerror: () => fail(new RequestError('网络请求失败，请检查网络和油猴的站点访问权限。',{retryable:true})),
+        onabort: () => fail(signal?.reason || new RequestError('网络连接已中断。',{retryable:true})),
+        ontimeout: () => fail(new RequestError('请求超时，请重试。',{retryable:true})),
       });
     } catch (error) { fail(error); }
   });

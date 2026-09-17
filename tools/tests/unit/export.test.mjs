@@ -6,6 +6,9 @@ import {
 } from 'mediabunny';
 import { exportSelection, convertInput } from '../../../src/media/export.js';
 import { createSegmentLoader } from '../../../src/media/segment-loader.js';
+import {saveRecording} from '../../../src/media/recording.js';
+import {avccUnits} from '../../../src/media/avc-packets.js';
+import {RequestError} from '../../../src/services/retry-request.js';
 import { config, frame } from '../support/synthetic-frame.mjs';
 
 const deferred = () => {
@@ -85,6 +88,33 @@ async function inspect(blob) {
     }
     return { counts, duration: await input.computeDuration() };
   } finally { input.dispose(); }
+}
+
+for(const [kind,absolute]of [['plain',false],['map',true],['ts',true]]){
+  test(`整场直接复制音视频包，清单偏差不改变实际帧数和时长（${kind}）`,async()=>{
+    const api=await sampleApi(kind,absolute),writes=[];let opened=0,closed=0;
+    const file={async createWritable(){opened++;return {
+      async write(chunk){writes.push({...chunk,data:chunk.data.slice()});},async close(){closed++;},
+      async abort(){assert.fail('export should not abort');},
+    };}};
+    api.groups[0].segments.forEach(segment=>segment.duration=1.8);
+    await saveRecording(api,api.groups,file);
+    const bytes=new Uint8Array(Math.max(...writes.map(chunk=>chunk.position+chunk.data.length)));
+    for(const chunk of writes)bytes.set(chunk.data,chunk.position);
+    const result=await inspect(new Blob([bytes]));
+    assert.deepEqual(result.counts,{video:360,audio:558});assert.ok(Math.abs(result.duration-12)<.05);
+    assert.equal(opened,1);assert.equal(closed,1);
+    assert.equal(api.starts.length,new Set(api.starts).size,'completed segments and shared init map must not be fetched again');
+    const input=new Input({source:new BlobSource(new Blob([bytes])),formats:[MP4]});
+    try{
+      for(const track of await input.getTracks())for await(const packet of new EncodedPacketSink(track).packets()){
+        if(track.type==='video'){
+          const pictures=data=>avccUnits(data,4).filter(unit=>(unit[0]&31)>=1&&(unit[0]&31)<=5);
+          assert.deepEqual(pictures(packet.data),pictures(videoFrame),'encoded picture payload must remain byte-identical');
+        }else assert.deepEqual(packet.data,audioFrame,'encoded audio must remain byte-identical');
+      }
+    }finally{input.dispose();}
+  });
 }
 
 for (const [kind, absolute] of [['plain', false], ['map', true], ['ts', false]]) {
@@ -174,6 +204,16 @@ for (const reason of ['abort', 'network', 'processing']) {
     assert.equal((await inspect(retry[0].blob)).counts.video, 360);
   });
 }
+
+test('选区预读网络失败会等待重连，保持处理进度并完成同一次导出',async()=>{
+  const api=await sampleApi('plain'),events=[];let attempts=0;
+  api.beforeRead=async url=>{if(url==='part1'&&attempts++===0)throw new RequestError('connection lost',{retryable:true});};
+  const outputs=await exportSelection(api,{start:90},api.groups,{start:10,end:22},{onProgress:event=>events.push(event)});
+  assert.ok(events.some(event=>event.reconnecting>0));assert.equal(events.at(-1).reconnecting,0);
+  assert.equal(events.at(-1).progress,1);assert.equal((await inspect(outputs[0].blob)).counts.video,360);
+  assert.equal(api.starts.filter(url=>url==='part1').length,2);
+  assert.equal(api.finishes.length,new Set(api.finishes).size);
+});
 
 test('convertInput 完成后由调用者继续使用和释放输入', async () => {
   const input = new Input({ source: new BlobSource(new Blob([await fixture()])), formats: [MP4] });

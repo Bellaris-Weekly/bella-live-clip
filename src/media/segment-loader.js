@@ -4,7 +4,7 @@ export const segmentKey = segment => JSON.stringify([segment.url, segment.range 
 // Speculative downloads never displace demanded bytes. The final segment has a
 // separate slot because HLS probes it for duration before processing the middle.
 // Retain the first segment as the common audio/video timestamp anchor as well.
-export function createSegmentLoader(api, segments, { map, signal, onRead = () => {} } = {}) {
+export function createSegmentLoader(api, segments, { map, signal, onRead = () => {}, onRetry = () => {} } = {}) {
   const controller = new AbortController();
   const entries = new Map(), demanded = [], queue = [], tasks = new Set();
   const positions = new Map(segments.map((segment, index) => [segmentKey(segment), index]));
@@ -28,9 +28,9 @@ export function createSegmentLoader(api, segments, { map, signal, onRead = () =>
       const task = (async () => {
         try {
           controller.signal.throwIfAborted();
-          const response = await api.request(entry.segment.url, {
+          const response = await requestWithRetry(api, entry.segment.url, {
             type: 'arraybuffer', range: entry.segment.range, signal: controller.signal,
-          });
+          }, {onRetry: state => onRetry(state, entry.segment)});
           controller.signal.throwIfAborted();
           const data = new Uint8Array(response.data);
           onRead(data.byteLength, entry.segment);
@@ -112,3 +112,4 @@ export function createSegmentLoader(api, segments, { map, signal, onRead = () =>
     },
   };
 }
+import {requestWithRetry} from '../services/retry-request.js';

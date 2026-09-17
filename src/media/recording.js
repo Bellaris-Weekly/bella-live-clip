@@ -1,5 +1,7 @@
-import { Input, HLS, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
-  Output, StreamTarget, Mp4OutputFormat, Conversion } from 'mediabunny';
+import { Input, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
+  Output, StreamTarget, Mp4OutputFormat, EncodedPacketSink, EncodedVideoPacketSource, EncodedAudioPacketSource } from 'mediabunny';
+import {createRecordingDownload} from './recording-download.js';
+import {RecordingTimeline} from './recording-timeline.js';
 export async function estimateRecordingRate(api, groups, signal) {
   // Sample each uninterrupted part so quality changes are reflected in its estimate.
   const rates=[];
@@ -23,26 +25,6 @@ export function estimateSelectionBytes(estimate, recordStart, selection) {
     }
   }
   return bytes;
-}
-
-// All media bytes live in one shared LRU, not in one retained buffer per HLS source.
-// A single server segment can exceed the budget; it is released on the next load.
-export function createSegmentCache(api,{signal,onRead=()=>{},maxBytes=32*1024*1024}={}) {
-  const cache=new Map(),pending=new Map();let held=0;
-  return async segment=>{
-    signal?.throwIfAborted();
-    const key=JSON.stringify([segment.url,segment.range]);
-    if(cache.has(key)){const value=cache.get(key);cache.delete(key);cache.set(key,value);return value;}
-    if(pending.has(key))return pending.get(key);
-    const promise=(async()=>{
-      const response=await api.request(segment.url,{type:'arraybuffer',range:segment.range,signal});
-      signal?.throwIfAborted();const data=new Uint8Array(response.data);
-      while(cache.size && held+data.byteLength>maxBytes){const [old,value]=cache.entries().next().value;cache.delete(old);held-=value.byteLength;}
-      cache.set(key,data);held+=data.byteLength;onRead(data.byteLength);return data;
-    })();
-    pending.set(key,promise);
-    try{return await promise;}finally{pending.delete(key);}
-  };
 }
 
 export function recordingSource(groups,read) {
@@ -79,28 +61,76 @@ export function recordingSource(groups,read) {
 }
 
 export async function saveRecording(api, groups, fileHandle, {signal,onProgress=()=>{}}={}) {
-  let file,input,output,conversion,canceling,bytes=0,written=0;
-  const cancel=()=>{if(conversion)canceling=conversion.cancel();};
-  signal?.addEventListener('abort',cancel,{once:true});
+  let file,input,output,bytes=0,written=0,processed=0,reconnecting=0,attempt=0;
+  const samples=[{at:performance.now(),bytes:0}], started=samples[0].at;
+  function report(complete=false){
+    const now=performance.now();
+    while(samples.length>1&&samples[1].at<now-5000)samples.shift();
+    const speed=(bytes-samples[0].bytes)/Math.max(1,(now-Math.max(started,samples[0].at))/1000);
+    onProgress({bytes,written,progress:complete?1:Math.min(.99,processed),speed,reconnecting,attempt});
+  }
+  const download=createRecordingDownload(api,groups,{signal,
+    onRead:size=>{bytes+=size;samples.push({at:performance.now(),bytes});report();},
+    onRetry:state=>{reconnecting=state.count;attempt=state.attempt;report();}});
+  const timeline=new RecordingTimeline(),tracks=new Map();
+  let groupIndex=-1,map;
   try {
-    signal?.throwIfAborted();file=await fileHandle.createWritable();
-    const read=createSegmentCache(api,{signal,onRead:size=>{bytes+=size;onProgress({bytes,written});}});
-    input=new Input({source:recordingSource(groups,read),formats:[HLS,MP4,MPEG_TS]});
-    // The wrapper leaves committing/aborting the file to this function, including on muxer cancellation.
-    const writable=new WritableStream({async write(chunk){signal?.throwIfAborted();await file.write(chunk);written=Math.max(written,chunk.position+chunk.data.byteLength);onProgress({bytes,written});}});
-    output=new Output({format:new Mp4OutputFormat({fastStart:'fragmented'}),target:new StreamTarget(writable,{chunked:true,chunkSize:1024*1024})});
-    conversion=await Conversion.init({input,output,copy:{mode:'forced'},showWarnings:false,composable:true});
-    signal?.throwIfAborted();
-    if(!conversion.isValid||conversion.discardedTracks.length)throw new Error('本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。');
-    conversion.onProgress=progress=>onProgress({progress,bytes,written});
-    await output.start();await conversion.execute();signal?.throwIfAborted();await output.finalize();signal?.throwIfAborted();await file.close();file=null;
+    download.signal.throwIfAborted();file=await fileHandle.createWritable();
+    const writable=new WritableStream({async write(chunk){download.signal.throwIfAborted();await file.write(chunk);written=Math.max(written,chunk.position+chunk.data.byteLength);report();}});
+    // Keep media on disk and write the index at completion. Regular MP4 carries
+    // the composition-time/edit metadata needed for B-frame playback sync.
+    output=new Output({format:new Mp4OutputFormat({fastStart:false}),target:new StreamTarget(writable,{chunked:true,chunkSize:1024*1024})});
+    for await(const item of download.segments()){
+      const discontinuity=item.groupIndex!==groupIndex;
+      if(discontinuity){groupIndex=item.groupIndex;map=groups[groupIndex].map?await download.readMap(groups[groupIndex].map):null;}
+      const data=map?new Uint8Array(map.byteLength+item.data.byteLength):item.data;
+      if(map){data.set(map);data.set(item.data,map.byteLength);}
+      input=new Input({source:new BufferSource(data),formats:[MP4,MPEG_TS]});
+      const segmentTracks=[];
+      for(const track of await input.getTracks()){
+        const key=`${track.type}:${track.number}`,codec=await track.getCodec();
+        if(!['video','audio'].includes(track.type)||!output.format.getSupportedCodecs().includes(codec))throw new Error('本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。');
+        const config=await track.getDecoderConfig();
+        let target=tracks.get(key);
+        if(!target){
+          if(output.state!=='pending')throw new Error('录像中途新增了音视频轨道，无法保存到同一个 MP4。');
+          const source=track.type==='video'?new EncodedVideoPacketSource(codec):new EncodedAudioPacketSource(codec);
+          if(track.type==='video')output.addVideoTrack(source,{rotation:await track.getRotation()});
+          else output.addAudioTrack(source);
+          target={source,codec};tracks.set(key,target);
+        }
+        if(target.codec!==codec)throw new Error('录像中途更换了编码，无法保存到同一个 MP4。');
+        const packets=[];
+        for await(const packet of new EncodedPacketSink(track).packets(undefined,undefined,{verifyKeyPackets:true})){
+          download.signal.throwIfAborted();packets.push(packet);
+        }
+        segmentTracks.push({key,packets,target,config});
+      }
+      const offset=timeline.append(segmentTracks,discontinuity);
+      if(output.state==='pending')await output.start();
+      // Interleave tracks in small batches without changing each track's decode order.
+      const cursors=segmentTracks.map(()=>0);
+      while(segmentTracks.some((track,i)=>cursors[i]<track.packets.length)){
+        for(const [i,track]of segmentTracks.entries()){
+          for(let batch=0;batch<32&&cursors[i]<track.packets.length;batch++){
+            download.signal.throwIfAborted();
+            const packet=track.packets[cursors[i]++];
+            await track.target.source.add(packet.clone({timestamp:Math.round((packet.timestamp+offset)*1e6)/1e6}),{decoderConfig:track.config});
+          }
+        }
+      }
+      input.dispose();input=null;processed=(item.index+1)/item.count;report();
+    }
+    download.signal.throwIfAborted();
+    for(const track of tracks.values())track.source.close();
+    await output.finalize();download.signal.throwIfAborted();await file.close();file=null;report(true);
     return {bytes:written};
   } catch(error) {
-    if(signal?.aborted)throw signal.reason;
+    if(download.signal.aborted)throw download.signal.reason;
     throw error;
   } finally {
-    signal?.removeEventListener('abort',cancel);
-    try{if(canceling)await canceling;if(output && output.state!=='finalized' && output.state!=='canceled')await output.cancel();}
+    await download.close();
+    try{if(output && output.state!=='finalized' && output.state!=='canceled')await output.cancel();}
     finally{input?.dispose();if(file)await file.abort();}
   }
 }
