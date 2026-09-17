@@ -1,9 +1,11 @@
 import Hls from 'hls.js';
 import {makeHlsLoader} from './preview-player.js';
+import {readSubmissionThumbnail} from './submission-player.js';
 
 export function thumbnailSamples(record,streams,view,count=6) {
  return Array.from({length:count},(_,i)=>{
   const time=view.start+(view.end-view.start)*(i+.5)/count;
+  if(record.kind==='submission')return {time,stream:record,local:time};
   const stream=streams.find(s=>time>=s.start_time-record.start&&time<s.end_time-record.start);
   return {time,stream,local:stream?time-(stream.start_time-record.start):null};
  });
@@ -11,6 +13,7 @@ export function thumbnailSamples(record,streams,view,count=6) {
 
 // A separate, muted decoder keeps thumbnail seeks away from the user's player.
 export async function readThumbnail(request,sample,signal) {
+ if(sample.stream.kind==='submission')return readSubmissionThumbnail(request,sample.stream,sample.local,signal);
  signal.throwIfAborted();
  const video=document.createElement('video');video.muted=true;video.playsInline=true;
  const hls=new Hls({loader:makeHlsLoader(request),enableWorker:false,startPosition:sample.local,maxBufferLength:2,maxMaxBufferLength:2,backBufferLength:0});

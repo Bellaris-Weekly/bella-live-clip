@@ -2,6 +2,7 @@
 <section id="panel" hidden aria-label="贝报切片助手">
 <header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>
 <div id="body">
+<button id="currentVideo" class="text-button" hidden>剪辑当前视频</button>
 <section id="library">
 <div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>
 <div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>
@@ -12,10 +13,10 @@
 <section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>
 <div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>
 <section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>
-<div class="timeline-footer"><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>
+<div class="timeline-footer"><label id="wholeRecordingLabel" class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>
 <section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>
 </section>
-<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>
+<section id="offline" class="empty" hidden><h2 id="offlineTitle">暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>
 <section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>
 </div>
 <span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>

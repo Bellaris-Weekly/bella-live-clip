@@ -4,6 +4,14 @@ import {thumbnailSamples,createThumbnails} from '../../../src/media/thumbnails.j
 const record={start:1000};
 const streams=[{start_time:1000,end_time:1020,stream:'first'},{start_time:1040,end_time:1060,stream:'second'}];
 const wait=()=>new Promise(resolve=>setTimeout(resolve,230));
+test('投稿缩略图使用视频时间，不需要伪造直播时间和 HLS 分片',()=>{
+ for(const view of [{start:0,end:60},{start:71,end:83}]){
+  const submission={kind:'submission',duration:100};
+  const samples=thumbnailSamples(submission,[],view);
+  assert.equal(samples.length,6);
+  assert.ok(samples.every(sample=>sample.stream===submission&&sample.local===sample.time&&sample.time>view.start&&sample.time<view.end));
+ }
+});
 class Element {
  children=[];textContent='';style={};
  ownerDocument={createElement:()=>new Element()};

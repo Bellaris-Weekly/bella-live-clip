@@ -1,9 +1,9 @@
 {
   "name": "bella-live-clip",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "private": true,
   "type": "module",
-  "description": "Bilibili live and replay clip downloader userscript",
+  "description": "Bilibili submission, live and replay clip downloader userscript",
   "scripts": {
     "build": "node tools/scripts/build.mjs",
     "test": "node --test tools/tests/unit/*.test.mjs",

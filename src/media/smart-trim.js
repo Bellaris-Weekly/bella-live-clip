@@ -111,8 +111,7 @@ async function trackMetadata(track) {
   return { languageCode, name: name ?? undefined, disposition };
 }
 
-async function smartTrim(input, { start, end, signal, onProgress, onProcessingStart }) {
-  const tracks = await input.getTracks();
+async function smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart }) {
   const videos = tracks.filter(track => track.type === 'video'), audios = tracks.filter(track => track.type === 'audio');
   if (videos.length !== 1 || tracks.length !== videos.length + audios.length
     || await videos[0].getCodec() !== 'avc'
@@ -151,7 +150,7 @@ async function muxPackets(output, streams, { start, end, signal, onProgress, sta
     await output.start();
     for (const stream of streams) {
       stream.next = await stream.iterator.next();
-      if (stream.isVideo && stream.next.done) throw new Error('选区内没有可解码的画面，请调整选区或使用原画导出。');
+      if (stream.next.done) throw new Error(stream.isVideo ? '选区内没有可解码的画面，请调整选区或使用原画导出。' : '选区内没有可读取的声音，已停止导出以避免丢失音轨。');
     }
     while (streams.some(stream => !stream.next.done)) {
       signal?.throwIfAborted();
@@ -183,8 +182,7 @@ async function muxPackets(output, streams, { start, end, signal, onProgress, sta
   }
 }
 
-async function encodeSelection(input, { start, end, signal, onProgress, onProcessingStart }) {
-  const tracks = await input.getTracks();
+async function encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart }) {
   if (!tracks.some(track => track.type === 'video') || tracks.some(track => !['video', 'audio'].includes(track.type))) {
     throw new Error('当前音视频轨道无法完整编码，请使用原画下载。');
   }
@@ -215,11 +213,59 @@ async function encodeSelection(input, { start, end, signal, onProgress, onProces
 export async function trimPrecise(input, { start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {} } = {}) {
   signal?.throwIfAborted();
   end ??= await input.computeDuration();
-  try { return await smartTrim(input, { start, end, signal, onProgress, onProcessingStart }); }
+  return trimPreciseTracks(await input.getTracks(), { start, end, signal, onProgress, onProcessingStart });
+}
+
+export async function trimPreciseTracks(tracks, { start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {} } = {}) {
+  signal?.throwIfAborted();
+  try { return await smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart }); }
   catch (error) {
     if (signal?.aborted) throw signal.reason;
     if (!(error instanceof UnsupportedAvcError)) throw error;
     onProgress(0, { strategy: 'full', message: '当前素材无法安全拼接，已改为按原码率整段编码' });
-    return encodeSelection(input, { start, end, signal, onProgress, onProcessingStart });
+    return encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart });
   }
+}
+
+// Copy complete GOPs so B-frame references remain decodable at both boundaries.
+// Audio uses the same origin, preserving offsets across separate DASH inputs.
+export async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {} }) {
+  signal?.throwIfAborted();
+  const track = tracks.find(item => item.type === 'video');
+  const sink = new EncodedPacketSink(track);
+  const normalizer = createAvcNormalizer(await track.getDecoderConfig());
+  const tick = 1 / await track.getTimeResolution();
+  let first = await sink.getKeyPacket(start, verified);
+  while (first && !normalizer.isIdr(first)) {
+    signal?.throwIfAborted();
+    first = await sink.getKeyPacket(first.timestamp - tick, verified);
+  }
+  first ??= await sink.getFirstKeyPacket(verified);
+  if (!first || !normalizer.isIdr(first) || first.timestamp >= end) throw new Error('选区没有可独立解码的关键帧。');
+  let last = await sink.getKeyPacket(end, verified);
+  while (last && (last.timestamp < end - tick / 2 || !normalizer.isIdr(last))) {
+    signal?.throwIfAborted();
+    last = await sink.getNextKeyPacket(last, verified);
+  }
+  // Expanding to GOP boundaries must never shrink the requested audio interval.
+  // Tracks can start later or end earlier than one another. Keep their offsets.
+  const origin = Math.min(start, first.timestamp);
+  const limit = Math.max(end, last?.timestamp ?? await track.computeDuration());
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
+  const video = new EncodedVideoPacketSource('avc');
+  output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
+  async function* packets() {
+    for await (const packet of sink.packets(first, last ?? undefined, verified)) {
+      signal?.throwIfAborted();
+      yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - origin }), decoderConfig: normalizer.decoderConfig };
+    }
+  }
+  const streams = [{ source: video, isVideo: true, iterator: packets() }];
+  for (const audio of tracks.filter(item => item.type === 'audio')) {
+    const source = new EncodedAudioPacketSource('aac');
+    output.addAudioTrack(source, await trackMetadata(audio));
+    streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
+  }
+  return muxPackets(output, streams, { start: origin, end: limit, signal, onProgress,
+    stats: { strategy: 'copy', message: '原画导出保留完整关键帧组，起止位置可能略有扩展' } });
 }

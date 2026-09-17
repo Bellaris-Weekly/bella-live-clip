@@ -4,9 +4,9 @@ import {RequestError} from './retry-request.js';
 const API = 'https://api.live.bilibili.com';
 
 export function createRequest(gmRequest) {
-  return (url, { auth = false, type = 'text', range = null, signal } = {}) => new Promise((resolve, reject) => {
+  return (url, { auth = false, type = 'text', range = null, signal, referer = 'https://live.bilibili.com/' } = {}) => new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(signal.reason); return; }
-    if (auth && new URL(url).origin !== API) { reject(new Error('账号请求只能发送至 B 站直播接口。')); return; }
+    if (auth && ![API, 'https://api.bilibili.com'].includes(new URL(url).origin)) { reject(new Error('账号请求只能发送至 B 站直播或视频接口。')); return; }
     let request;
     const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); };
     const fail = error => { cleanup(); reject(error); };
@@ -14,7 +14,7 @@ export function createRequest(gmRequest) {
     // anonymous requests use fetch in Tampermonkey, which ignores its native timeout option.
     const timer = setTimeout(() => { fail(new RequestError('请求超时，请重试。',{retryable:true})); request?.abort(); }, 45000);
     signal?.addEventListener('abort', abort, { once: true });
-    const headers = { Referer: 'https://live.bilibili.com/' };
+    const headers = { Referer: referer };
     if (range) headers.Range = `bytes=${range.offset}-${range.offset + range.length - 1}`;
     try {
       request = gmRequest({
