@@ -97,7 +97,7 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   drag={type,x:e.clientX,view:{...view},anchor:selection[type]};onScrubStart?.();track.setPointerCapture(e.pointerId);apply(e.clientX);
  });
  track.addEventListener('pointermove',e=>{if(!drag)return;pending=e.clientX;if(!frame)frame=requestAnimationFrame(flush);});
- function finish(e){if(!drag)return;flush();const type=drag.type;drag=null;if(track.hasPointerCapture(e.pointerId))track.releasePointerCapture(e.pointerId);if(type!=='playhead')fitView();onScrubEnd?.(current);}
+ function finish(e){if(!drag)return;flush();const type=drag.type;drag=null;if(track.hasPointerCapture(e.pointerId))track.releasePointerCapture(e.pointerId);if(type!=='playhead')fitView();onScrubEnd?.(current,{canceled:e.type==='pointercancel'});}
  track.addEventListener('pointerup',finish);track.addEventListener('pointercancel',finish);
  track.addEventListener('wheel',e=>{if(locked||!total||drag)return;e.preventDefault();stopZoom();const r=track.getBoundingClientRect();view=e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)?panWindow(view,total,(e.deltaX||e.deltaY)/r.width*(view.end-view.start)):zoomWindow(view,total,Math.exp(e.deltaY*.005),(e.clientX-r.left)/r.width);render();},{passive:false});
  function handleKeyDown(e){

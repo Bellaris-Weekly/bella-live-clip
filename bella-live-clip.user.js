@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.4
+// @version      2.11.5
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.4\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.5\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -770,7 +770,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       drag = null;
       if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
       if (type !== "playhead") fitView();
-      onScrubEnd?.(current);
+      onScrubEnd?.(current, { canceled: e.type === "pointercancel" });
     }
     track.addEventListener("pointerup", finish);
     track.addEventListener("pointercancel", finish);
@@ -1310,11 +1310,124 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     } };
   }
 
+  // src/services/submission-storyboard.js
+  function storyboardCell(data, time2) {
+    const { img_x_len: columns, img_y_len: rows, img_x_size: width, img_y_size: height, image, index } = data;
+    if (![columns, rows, width, height].every((value) => Number.isInteger(value) && value > 0) || !Array.isArray(index) || !index.length || !Array.isArray(image) || !image.length) throw new Error("这个视频暂无进度预览图。");
+    const offset = index[0] === 0 && index[1] === 0 ? 1 : 0;
+    let low = offset, high = index.length;
+    while (low < high) {
+      const middle = low + high >> 1;
+      if (index[middle] <= time2) low = middle + 1;
+      else high = middle;
+    }
+    const position = Math.max(0, low - 1 - offset), sheet = Math.floor(position / (columns * rows));
+    if (!image[sheet]) throw new Error("当前位置暂无进度预览图。");
+    const url2 = new URL(image[sheet], "https://www.bilibili.com");
+    if (url2.protocol !== "https:" || !(url2.hostname === "hdslb.com" || url2.hostname.endsWith(".hdslb.com"))) throw new Error("预览图地址不受支持。");
+    return { url: url2.href, x: position % columns * width, y: Math.floor(position % (columns * rows) / columns) * height, width, height, columns, rows };
+  }
+  function createSubmissionStoryboard({ metadataRequest, mediaRequest, submission, decode = (blob) => createImageBitmap(blob) }) {
+    let metadata = null, image = null, imageUrl = null, closed = false;
+    return {
+      async read(time2, signal) {
+        signal.throwIfAborted();
+        if (!metadata) {
+          const params = new URLSearchParams({ bvid: submission.bvid, cid: submission.cid, index: 1 });
+          const { data } = await metadataRequest(`https://api.bilibili.com/x/player/videoshot?${params}`, { auth: true, signal, referer: submission.referer });
+          signal.throwIfAborted();
+          const result = JSON.parse(data);
+          if (result.code !== 0 || !result.data) throw new Error("这个视频暂无进度预览图。");
+          metadata = result.data;
+        }
+        const cell = storyboardCell(metadata, time2);
+        if (imageUrl !== cell.url) {
+          const { data } = await mediaRequest(cell.url, { type: "arraybuffer", signal, referer: submission.referer });
+          signal.throwIfAborted();
+          const next = await decode(new Blob([data]));
+          if (signal.aborted || closed) {
+            next.close();
+            signal.throwIfAborted();
+            throw new DOMException("Preview closed", "AbortError");
+          }
+          image?.close();
+          image = next;
+          imageUrl = cell.url;
+        }
+        const width = image.width / cell.columns, height = image.height / cell.rows;
+        return { image, x: cell.x / cell.width * width, y: cell.y / cell.height * height, width, height };
+      },
+      dispose() {
+        closed = true;
+        image?.close();
+        image = null;
+        imageUrl = null;
+      }
+    };
+  }
+
+  // src/ui/page-progress.js
+  function bindPageProgress({ document: document2, getPlayer, isActive }) {
+    let drag = null, frame = null, finishFrame = null;
+    const timeFromLabel = (text) => text.trim().split(":").reduce((sum, part) => sum * 60 + Number(part), 0);
+    function paint() {
+      frame = null;
+      if (!drag || !isActive()) return;
+      const image = document2.querySelector(".bpx-player-progress-preview-image");
+      const label = document2.querySelector(".bpx-player-progress-preview-time")?.textContent ?? "";
+      const time2 = /^\d+(?::\d{2}){1,2}$/.test(label.trim()) ? timeFromLabel(label) : drag.time;
+      if (image?.complete && image.naturalWidth) drag.player.previewImage(image, time2);
+      else drag.player.seek(drag.time);
+    }
+    function move(event) {
+      if (!drag || event.pointerId !== drag.id || !isActive()) return;
+      const rect = drag.track.getBoundingClientRect();
+      drag.time = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * drag.duration;
+      if (frame === null) frame = requestAnimationFrame(paint);
+    }
+    function down(event) {
+      if (event.button !== 0 || !isActive()) return;
+      const track = event.target.closest(".bpx-player-progress-schedule-wrap, .bpx-player-progress");
+      const video = document2.querySelector(".bpx-player-container video, .bilibili-player-video video") ?? document2.querySelector("video");
+      if (!track || !video || !(video.duration > 0)) return;
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame);
+      finishFrame = null;
+      drag = { id: event.pointerId, track, duration: video.duration, player: getPlayer(), time: video.currentTime };
+      drag.player.begin();
+      move(event);
+    }
+    function finish(event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      const own = drag;
+      drag = null;
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      finishFrame = requestAnimationFrame(() => {
+        finishFrame = null;
+        own.player.end({ commit: false });
+      });
+    }
+    document2.addEventListener("pointerdown", down, { capture: true });
+    document2.addEventListener("pointermove", move, { capture: true });
+    document2.addEventListener("pointerup", finish, { capture: true });
+    document2.addEventListener("pointercancel", finish, { capture: true });
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame);
+      drag?.player.end({ commit: false });
+      drag = null;
+      document2.removeEventListener("pointerdown", down, { capture: true });
+      document2.removeEventListener("pointermove", move, { capture: true });
+      document2.removeEventListener("pointerup", finish, { capture: true });
+      document2.removeEventListener("pointercancel", finish, { capture: true });
+    };
+  }
+
   // src/media/submission-player.js
-  function createSubmissionPlayer({ canvas, loading, getVideo, isCurrent, onTime, onState, status: status2, getRange }) {
+  function createSubmissionPlayer({ canvas, loading, getVideo, isCurrent, onTime, onState, status: status2, getRange, createPreview }) {
     const context = canvas.getContext("2d");
     let source = null, submission = null, visible = false, frameId = null, stopTimer = null, range = null;
-    let scrubbing = false, resumeAfterScrub = false;
+    let scrubbing = false, previewTime = null, preview = null, previewRead = null, previewTimer = null;
     const listeners = [];
     const stopTimerNow = () => {
       clearTimeout(stopTimer);
@@ -1330,7 +1443,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       });
     };
     function draw() {
-      if (!source || !visible) return;
+      if (!source || !visible || scrubbing) return;
       onTime(source.currentTime);
       onState();
       if (source.readyState < 2 || source.seeking || !source.videoWidth) {
@@ -1346,7 +1459,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       loading.hidden = true;
     }
     function scheduleFrame() {
-      if (frameId !== null || !source || source.paused || !visible) return;
+      if (frameId !== null || !source || source.paused || !visible || scrubbing) return;
       const own = source;
       frameId = own.requestVideoFrameCallback(() => {
         frameId = null;
@@ -1374,13 +1487,18 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       check();
       scheduleFrame();
     }
+    function clearPreview() {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+      previewRead?.abort();
+      previewRead = null;
+    }
     function cancel() {
       stopTimerNow();
       range = null;
-      const resume = scrubbing && resumeAfterScrub;
+      clearPreview();
       scrubbing = false;
-      resumeAfterScrub = false;
-      if (resume) play();
+      previewTime = null;
     }
     function detach() {
       stopFrame();
@@ -1389,8 +1507,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       listeners.length = 0;
       source = null;
       range = null;
+      clearPreview();
       scrubbing = false;
-      resumeAfterScrub = false;
+      previewTime = null;
     }
     function refresh() {
       if (!visible || !submission) return;
@@ -1424,8 +1543,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
             loading.hidden = false;
           });
           listen("waiting", () => {
-            loading.hidden = false;
-            loading.textContent = "等待 B 站播放器缓冲…";
+            if (!scrubbing) {
+              loading.hidden = false;
+              loading.textContent = "等待 B 站播放器缓冲…";
+            }
             stopTimerNow();
           });
         }
@@ -1436,12 +1557,44 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         onState();
         return;
       }
-      loading.textContent = "等待 B 站播放器画面…";
+      if (!scrubbing) loading.textContent = "等待 B 站播放器画面…";
       update();
+    }
+    function showPreview(frame, time2) {
+      if (!scrubbing || !visible) return;
+      previewTime = time2;
+      onTime(time2);
+      canvas.width = Math.min(640, frame.width);
+      canvas.height = Math.round(canvas.width * frame.height / frame.width);
+      context.drawImage(frame.image, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
+      loading.hidden = true;
     }
     const seek = (time2) => {
       refresh();
-      if (source) source.currentTime = clamp(time2, 0, Math.max(0, submission.duration - 1e-3));
+      if (!submission || !visible) return;
+      const target = clamp(time2, 0, Math.max(0, submission.duration - 1e-3));
+      if (!scrubbing) {
+        if (source) source.currentTime = target;
+        return;
+      }
+      clearPreview();
+      previewTime = target;
+      onTime(target);
+      loading.hidden = false;
+      loading.textContent = "正在读取进度预览图…";
+      const own = new AbortController();
+      previewRead = own;
+      previewTimer = setTimeout(async () => {
+        try {
+          const frame = await preview.read(target, own.signal);
+          if (!own.signal.aborted && previewRead === own) showPreview(frame, target);
+        } catch (error) {
+          if (!own.signal.aborted && previewRead === own) {
+            loading.hidden = false;
+            loading.textContent = "当前位置暂无预览图，松开后定位播放";
+          }
+        }
+      }, 80);
     };
     const toggle = () => {
       refresh();
@@ -1470,6 +1623,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     canvas.addEventListener("dblclick", fullscreen);
     function clear() {
       detach();
+      preview?.dispose();
+      preview = null;
       submission = null;
       visible = false;
       context.clearRect(0, 0, canvas.width, canvas.height);
@@ -1479,13 +1634,14 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         signal.throwIfAborted();
         clear();
         submission = next;
+        preview = createPreview(next);
         visible = true;
         refresh();
         return { total: next.duration };
       },
       refresh,
       seek,
-      position: () => source?.currentTime ?? 0,
+      position: () => previewTime ?? source?.currentTime ?? 0,
       isPaused: () => !source || source.paused || source.ended,
       pause() {
         source?.pause();
@@ -1495,17 +1651,24 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       cancel,
       begin() {
         refresh();
+        clearPreview();
         range = null;
         stopTimerNow();
+        stopFrame();
         scrubbing = true;
-        resumeAfterScrub = !!source && !source.paused && !source.ended;
-        source?.pause();
+        previewTime = source?.currentTime ?? 0;
       },
-      end() {
-        const resume = scrubbing && resumeAfterScrub;
+      previewImage(image, time2) {
+        clearPreview();
+        showPreview({ image, x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight }, time2);
+      },
+      end({ commit = true } = {}) {
+        const target = previewTime, wasScrubbing = scrubbing;
+        clearPreview();
         scrubbing = false;
-        resumeAfterScrub = false;
-        if (resume) play();
+        previewTime = null;
+        if (wasScrubbing && commit && source && target !== null) source.currentTime = target;
+        update();
       },
       playSelection() {
         refresh();
@@ -63359,7 +63522,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         submissionThumbnails = true;
         thumbnails.update(timeline.getView());
       }
-    }, onScrubEnd: () => activePlayback()?.end(), onSelection: (selection) => {
+    }, onScrubEnd: (_, { canceled = false } = {}) => activePlayback()?.end({ commit: !canceled }), onSelection: (selection) => {
       updateExportSummary(selection);
       activePlayback()?.check();
     }, onView: (view3, motion) => {
@@ -63385,7 +63548,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         getVideo: () => document.querySelector(".bpx-player-container video, .bilibili-player-video video") ?? document.querySelector("video"),
         isCurrent: () => parseSubmissionUrl(readPageUrl())?.key === loadedRoute,
         getRange: () => timeline.getSelection(),
-        onState: () => syncPlayback()
+        onState: () => syncPlayback(),
+        createPreview: (submission) => createSubmissionStoryboard({ metadataRequest: submissionRequest, mediaRequest: api.request, submission })
       }) : createPlayer(options);
     }
     let lastPlaybackPaused;
@@ -63879,9 +64043,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const b = $("launcher").getBoundingClientRect();
       if (b.right > innerWidth || b.bottom > innerHeight) moveLauncher(b.left, b.top);
     });
+    const unbindPageProgress = bindPageProgress({ document, getPlayer: () => player, isActive: () => playerKind === "submission" && ready && (!controller || jobKind === "export") && !$("panel").hidden && parseSubmissionUrl(readPageUrl())?.key === loadedRoute });
     const navigationTimer = setInterval(checkCurrentVideo, 500);
     window.addEventListener("popstate", checkCurrentVideo);
     window.addEventListener("pagehide", () => {
+      unbindPageProgress();
       clearInterval(navigationTimer);
       window.removeEventListener("popstate", checkCurrentVideo);
       controller?.abort();

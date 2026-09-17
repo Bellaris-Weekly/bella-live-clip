@@ -7,6 +7,10 @@ const route=(index,part=1)=>`https://www.bilibili.com/video/${ids[index]}/?p=${p
 let pageUrl=route(0),delayedView=null,mediaGate=null;
 const reads=[],checks=[];
 const result=document.getElementById('result');
+const sheetCanvas=document.createElement('canvas');sheetCanvas.width=640;sheetCanvas.height=360;
+const sheetContext=sheetCanvas.getContext('2d');
+for(const [i,color]of ['#c84040','#40c840','#4040c8','#c8c840'].entries()){sheetContext.fillStyle=color;sheetContext.fillRect(i%2*320,Math.floor(i/2)*180,320,180);}
+const sheetBytes=new Promise(resolve=>sheetCanvas.toBlob(async blob=>resolve(await blob.arrayBuffer())));
 const assert=(condition,message)=>{if(!condition)throw new Error(message);};
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(check,label){for(let i=0;i<400;i++){if(check())return;await delay(50);}throw new Error(`等待超时：${label}`);}
@@ -25,6 +29,8 @@ const api={
    return {data:JSON.stringify({code:0,data:{bvid,aid:index+1,title:`测试投稿 ${index+1}`,owner:{name:'测试作者'},pages:[1,2].map(part=>({page:part,cid:1000+index*10+part,duration:30,part:`测试分段 ${part}`}))}}),url};
   }
   if(parsed.pathname==='/x/web-interface/nav')return {data:JSON.stringify({code:-101,data:{wbi_img:{img_url:'https://i.example/7cd084941338484aae1ad9425b84077c.png',sub_url:'https://i.example/4932caff0ff746eab6f01bf08b70ac45.png'}}}),url};
+  if(parsed.pathname==='/x/player/videoshot')return {data:JSON.stringify({code:0,data:{img_x_len:2,img_y_len:2,img_x_size:320,img_y_size:180,image:['https://preview.hdslb.com/sheet.jpg'],index:[0,0,8,16,24]}})};
+  if(parsed.hostname==='preview.hdslb.com'){reads.push({url,signal});return {data:await sheetBytes};}
   if(parsed.pathname==='/x/player/wbi/playurl')return {data:JSON.stringify({code:0,data:{format:'mp4',quality:80,timelength:30000,accept_quality:[80],accept_description:['1080P 测试'],durl:[{url:`https://fixture.bilivideo.com/${parsed.searchParams.get('cid')}.mp4`}]}}),url};
   if(parsed.hostname==='fixture.bilivideo.com'){
    const entry={signal,url};reads.push(entry);
@@ -66,6 +72,34 @@ document.getElementById('test').onclick=async()=>{
   $('close').click();assert(!pageVideo.paused,'关闭面板中断了页面播放');
   await app.open();assert(!pageVideo.paused,'重新打开中断了页面播放');
   pass('插件播放控制与开关面板保持页面播放意图');
+  const timelineRect=$('timeline').getBoundingClientRect();
+  const targetX=timelineRect.left+timelineRect.width*.7;
+  const beginEvent=new PointerEvent('pointerdown',{button:0,pointerId:41,clientX:targetX,bubbles:true});
+  // Synthetic pointer events have no native capture; stub only that DOM mechanic.
+  const capture=$('timeline').setPointerCapture;$('timeline').setPointerCapture=()=>{};
+  $('timeline').dispatchEvent(beginEvent);$('timeline').setPointerCapture=capture;
+  const pageBeforePreview=pageVideo.currentTime;
+  await until(()=>$('videoLoading').hidden&&$('pageMirror').width===320,'图集预览绘制');
+  const previewPixel=$('pageMirror').getContext('2d').getImageData(0,0,1,1).data;
+  assert(previewPixel[2]>previewPixel[0],'拖动没有显示对应的蓝色预览切片');
+  assert(Math.abs(pageVideo.currentTime-pageBeforePreview)<2&&!pageVideo.paused,'拖动期间改变了页面播放进度或状态');
+  $('timeline').dispatchEvent(new PointerEvent('pointerup',{pointerId:41,clientX:targetX,bubbles:true}));
+  await until(()=>!pageVideo.seeking&&pageVideo.currentTime>=21&&pageVideo.currentTime<22,'松开后同步到拖动位置');
+  pass('插件拖动时独立显示图集预览，松开后提交进度并恢复镜像');
+  pageVideo.currentTime=7;await until(()=>!pageVideo.seeking,'恢复测试起点');
+
+  const nativeTrack=document.createElement('div');nativeTrack.className='bpx-player-progress';nativeTrack.style.cssText='width:300px;height:12px';
+  const nativeImage=new Image();nativeImage.className='bpx-player-progress-preview-image';nativeImage.src=sheetCanvas.toDataURL();
+  const nativeTime=document.createElement('span');nativeTime.className='bpx-player-progress-preview-time';nativeTime.textContent='00:18';
+  document.body.append(nativeTrack,nativeImage,nativeTime);await nativeImage.decode();
+  nativeTrack.dispatchEvent(new PointerEvent('pointerdown',{button:0,pointerId:42,clientX:10,bubbles:true}));
+  await until(()=>$('clock').textContent.startsWith('00:18'),'原生进度预览同步到插件');
+  assert(pageVideo.currentTime<10,'原生预览阶段被插件强制跳转');
+  nativeTrack.dispatchEvent(new PointerEvent('pointerup',{pointerId:42,bubbles:true}));pageVideo.currentTime=19;
+  await until(()=>!pageVideo.seeking&&$('clock').textContent.startsWith('00:19'),'原生提交后恢复镜像');
+  nativeTrack.remove();nativeImage.remove();nativeTime.remove();
+  pass('B站进度条拖动复用原生预览图，最终跳转由原播放器完成');
+  pageVideo.currentTime=7;await until(()=>!pageVideo.seeking,'回到标记测试起点');
   const beforeMark=pageVideo.currentTime;$('markStart').click();
   assert(!pageVideo.paused&&Math.abs(pageVideo.currentTime-beforeMark)<.2,'标记起点打断了正常观看');
   const beforeStep=pageVideo.currentTime;

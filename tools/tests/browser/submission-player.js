@@ -6,7 +6,7 @@ export async function runSubmissionPlayerChecks({video,canvas,loading,submission
  const before={paused:video.paused,time:video.currentTime,muted:video.muted,volume:video.volume};
  const errors=[],times=[];
  const player=createSubmissionPlayer({canvas,loading,getVideo:()=>video,isCurrent:()=>true,
-  getRange:()=>({start:0,end:submission.duration}),onTime:t=>times.push(t),onState(){},status:e=>errors.push(e)});
+  createPreview:()=>({dispose(){}}),getRange:()=>({start:0,end:submission.duration}),onTime:t=>times.push(t),onState(){},status:e=>errors.push(e)});
  try{
   onProgress('显示页面播放器的已解码画面');
   await player.load(submission,new AbortController().signal);

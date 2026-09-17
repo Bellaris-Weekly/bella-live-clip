@@ -12,6 +12,8 @@ import {constrainRect,resizeRect} from '../ui/panel-geometry.js';
 import {ScheduleService} from '../services/schedule.js';
 import {createLibraryLoader} from './library-loader.js';
 import {createSubmissionService} from '../services/submission.js';
+import {createSubmissionStoryboard} from '../services/submission-storyboard.js';
+import {bindPageProgress} from '../ui/page-progress.js';
 import {parseSubmissionUrl} from '../domain/submission.js';
 import {createSubmissionPlayer} from '../media/submission-player.js';
 import {exportSubmission} from '../media/submission-export.js';
@@ -56,7 +58,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  const activePlayback=()=>playerKind==='submission'?player:playback;
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:()=>activePlayback()?.end(),onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>activePlayback()?.end({commit:!canceled}),onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  function usePlayer(kind){
   if(playerKind===kind)return;
@@ -65,7 +67,8 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   video.hidden=kind==='submission';$('pageMirror').hidden=kind!=='submission';
   player=kind==='submission'?createSubmissionPlayer({...options,canvas:$('pageMirror'),
    getVideo:()=>document.querySelector('.bpx-player-container video, .bilibili-player-video video')??document.querySelector('video'),
-   isCurrent:()=>parseSubmissionUrl(readPageUrl())?.key===loadedRoute,getRange:()=>timeline.getSelection(),onState:()=>syncPlayback()}):createPlayer(options);
+   isCurrent:()=>parseSubmissionUrl(readPageUrl())?.key===loadedRoute,getRange:()=>timeline.getSelection(),onState:()=>syncPlayback(),
+   createPreview:submission=>createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest:api.request,submission})}):createPlayer(options);
  }
  let lastPlaybackPaused;
  const syncPlayback=()=>{const paused=playerKind==='submission'?player.isPaused():video.paused||video.ended;if(paused===lastPlaybackPaused)return;lastPlaybackPaused=paused;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
@@ -229,8 +232,9 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   $('launcher').addEventListener('pointerdown',()=>{launcherMoved=false; launcherStart=$('launcher').getBoundingClientRect();});
   drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
   window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
+ const unbindPageProgress=bindPageProgress({document,getPlayer:()=>player,isActive:()=>playerKind==='submission'&&ready&&(!controller||jobKind==='export')&&!$('panel').hidden&&parseSubmissionUrl(readPageUrl())?.key===loadedRoute});
  const navigationTimer=setInterval(checkCurrentVideo,500);
  window.addEventListener('popstate',checkCurrentVideo);
- window.addEventListener('pagehide',()=>{clearInterval(navigationTimer);window.removeEventListener('popstate',checkCurrentVideo);controller?.abort();libraries.abortAll();leavePage();player?.destroy();});
+ window.addEventListener('pagehide',()=>{unbindPageProgress();clearInterval(navigationTimer);window.removeEventListener('popstate',checkCurrentVideo);controller?.abort();libraries.abortAll();leavePage();player?.destroy();});
   controls();if(!room&&!parseSubmissionUrl(readPageUrl()))void libraries.preload(member);return {open,root};
 }

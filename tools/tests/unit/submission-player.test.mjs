@@ -10,11 +10,11 @@ class PageVideo extends EventTarget {
  cancelVideoFrameCallback(id){this.frames.delete(id);}
  frame(){const pending=[...this.frames.values()];this.frames.clear();for(const fn of pending)fn();}
 }
-function fixture(){
+function fixture(read=async()=>({image:{preview:true},x:0,y:0,width:320,height:180})){
  let current=new PageVideo(),valid=true;
  const canvas=new EventTarget(),draws=[],times=[],errors=[],loading={};
  Object.assign(canvas,{width:0,height:0,getContext:()=>({drawImage:(...args)=>draws.push(args),clearRect(){}})});
- const player=createSubmissionPlayer({canvas,loading,getVideo:()=>current,isCurrent:()=>valid,onTime:t=>times.push(t),onState(){},status:e=>errors.push(e),getRange:()=>({start:20,end:23})});
+ const player=createSubmissionPlayer({canvas,loading,getVideo:()=>current,isCurrent:()=>valid,onTime:t=>times.push(t),onState(){},status:e=>errors.push(e),getRange:()=>({start:20,end:23}),createPreview:()=>({read,dispose(){}})});
  return {player,canvas,loading,draws,times,errors,get video(){return current;},replace(v){current=v;},invalidate(){valid=false;},load:()=>player.load({duration:5200},new AbortController().signal)};
 }
 
@@ -28,10 +28,10 @@ test('opening mirrors the current decoded frame without seeking, pausing or chan
  assert.equal(f.video.paused,false,'normal playback is not constrained to the selection');f.player.destroy();
 });
 
-test('scrubbing resumes only previously playing video; marking and normal checks never clamp playback',async()=>{
+test('scrubbing preserves page playback until release and commits only the final target',async()=>{
  for(const paused of [false,true]){
   const f=fixture();f.video.paused=paused;await f.load();
-  f.player.begin();assert.equal(f.video.paused,true);f.player.seek(51);f.player.end();
+  f.player.begin();assert.equal(f.video.paused,paused);f.player.seek(51);assert.equal(f.video.currentTime,12);f.player.end();
   assert.equal(f.video.currentTime,51);assert.equal(f.video.paused,paused);
   f.player.check();assert.equal(f.video.currentTime,51);f.player.destroy();
  }
@@ -81,4 +81,43 @@ test('a paused seek redraws once; absent or buffering video waits without fetchi
  const next=new PageVideo();next.paused=true;next.readyState=0;f.replace(next);f.player.refresh();assert.equal(f.draws.length,0);
  next.readyState=4;next.currentTime=100;next.dispatchEvent(new Event('seeked'));
  assert.equal(f.draws.length,1);assert.equal(f.times.at(-1),100);assert.equal(next.frames.size,0);f.player.destroy();
+});
+
+test('drag shows a storyboard still while page events cannot overwrite it, then resumes mirroring',async()=>{
+ const f=fixture();await f.load();f.player.begin();f.player.seek(80);
+ await new Promise(resolve=>setTimeout(resolve,100));
+ assert.equal(f.draws.at(-1)[0].preview,true);assert.equal(f.player.position(),80);
+ const count=f.draws.length;f.video.currentTime=14;f.video.dispatchEvent(new Event('timeupdate'));f.player.refresh();
+ assert.equal(f.draws.length,count);assert.equal(f.times.at(-1),80);assert.equal(f.video.paused,false);
+ f.player.end();assert.equal(f.video.currentTime,80);assert.equal(f.draws.at(-1)[0],f.video);f.player.destroy();
+});
+
+test('native progress preview reuses its image and release leaves the native seek untouched',async()=>{
+ const f=fixture();await f.load();f.player.begin();
+ const image={naturalWidth:320,naturalHeight:180};f.player.previewImage(image,75);
+ assert.equal(f.draws.at(-1)[0],image);assert.equal(f.video.currentTime,12);
+ f.video.currentTime=76;f.player.end({commit:false});assert.equal(f.video.currentTime,76);
+ assert.equal(f.draws.at(-1)[0],f.video);f.player.destroy();
+});
+
+test('releasing or closing a drag cancels pending preview reads before they can replace live frames',async()=>{
+ const f=fixture();await f.load();f.player.begin();f.player.seek(90);f.player.end();
+ const count=f.draws.length;await new Promise(resolve=>setTimeout(resolve,100));assert.equal(f.draws.length,count);
+ f.player.begin();f.player.seek(130);f.player.suspend();assert.equal(f.video.currentTime,90);
+ await new Promise(resolve=>setTimeout(resolve,100));f.player.resume();assert.equal(f.draws.at(-1)[0],f.video);f.player.destroy();
+});
+
+test('late preview responses cannot paint after release or after a different drag begins',async()=>{
+ const pending=[];
+ const f=fixture((time,signal)=>new Promise(resolve=>pending.push({time,signal,resolve})));
+ await f.load();f.player.begin();f.player.seek(81);
+ await new Promise(resolve=>setTimeout(resolve,100));
+ f.player.end();f.player.begin();f.player.seek(143);
+ const count=f.draws.length;
+ pending[0].resolve({image:{preview:true},x:0,y:0,width:320,height:180});
+ await Promise.resolve();assert.equal(pending[0].signal.aborted,true);assert.equal(f.draws.length,count);assert.equal(f.player.position(),143);
+ await new Promise(resolve=>setTimeout(resolve,100));
+ f.player.end({commit:false});const released=f.draws.length;
+ pending[1].resolve({image:{preview:true},x:0,y:0,width:320,height:180});
+ await Promise.resolve();assert.equal(f.draws.length,released);assert.equal(f.video.currentTime,81);f.player.destroy();
 });
