@@ -46,14 +46,14 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player.position(),seek:t=>{player.seek(t);timeline.setCurrent(t);updateClock(t);}});
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:selection=>{updateExportSummary(selection);playback.check();},onView:(view,motion)=>thumbnails.update(view,motion)});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:selection=>{updateExportSummary(selection);playback.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;thumbnails.update(view,motion);}});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
   $('selectionDuration').textContent=formatDuration(selection.end-selection.start);
-  $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}${!$('wholeRecording').checked&&exportMode==='precise'?'（原画参考）':''}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
+  $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
  function startEstimate(plan,signal){
   void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();

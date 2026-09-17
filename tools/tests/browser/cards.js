@@ -62,12 +62,15 @@ export async function runCardChecks(app, query, preloadProbe) {
   assert(Number(root.getElementById('endHandle').getAttribute('aria-valuenow'))===(query.has('timeline')?4976:24),'默认选区未覆盖整场');
   const durationNode=root.getElementById('selectionDuration'),sizeNode=root.getElementById('estimatedSize');
   assert(!/选中|预估/.test(durationNode.textContent+sizeNode.textContent),'摘要仍有多余前缀');
-  for(const prop of ['fontSize','fontWeight','color'])assert(getComputedStyle(durationNode)[prop]===getComputedStyle(sizeNode)[prop],'摘要文字样式不同');
-  checks.push('默认整场选区与统一摘要样式');
+  assert(durationNode.closest('.timeline-section')&&sizeNode.closest('.export-summary'),'时长与大小位置错误');
+  assert(root.getElementById('wholeRecording').closest('.timeline-footer').firstElementChild.contains(root.getElementById('wholeRecording')),'整场开关未移到左侧');
+  assert(root.getElementById('timelineZoom').textContent.endsWith('×'),'时间轴倍率未显示');
+  checks.push('默认整场选区与时间轴摘要布局');
   if(!query.has('schedule-error'))await until(()=>root.getElementById('recordMeta').textContent.endsWith('团播'));
   assert(!/历史回放|本场直播/.test(root.getElementById('recordMeta').textContent),'场次信息仍显示来源标签');
   const precise=root.querySelector('[data-mode="precise"]'),copy=root.querySelector('[data-mode="copy"]');
   precise.click();assert(precise.getAttribute('aria-pressed')==='true'&&copy.getAttribute('aria-pressed')==='false','精确模式切换失败');
+  assert(!sizeNode.textContent.includes('原画参考'),'精确模式仍显示原画参考');
   root.getElementById('wholeRecording').click();assert(root.getElementById('exportMode').hidden,'整场模式未隐藏切换');
   root.getElementById('wholeRecording').click();assert(!root.getElementById('exportMode').hidden&&precise.getAttribute('aria-pressed')==='true','退出整场后模式丢失');
   copy.click();assert(copy.getAttribute('aria-pressed')==='true','原画模式切换失败');

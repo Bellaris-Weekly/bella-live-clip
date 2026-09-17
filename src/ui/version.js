@@ -24,6 +24,7 @@ export function createVersionControl({ root, metadata, check }) {
     if (checking) return;
     checking = true;
     version.setAttribute('aria-busy', 'true');
+    version.dataset.checking = String(force);
     if (!available) describe('正在检查更新');
     try {
       const result = await check({ force });
@@ -33,6 +34,7 @@ export function createVersionControl({ root, metadata, check }) {
     } finally {
       checking = false;
       version.removeAttribute('aria-busy');
+      version.dataset.checking = 'false';
     }
   }
   version.onclick = event => {

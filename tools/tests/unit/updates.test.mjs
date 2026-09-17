@@ -84,11 +84,13 @@ test('version alone checks on click without changing its text, and becomes a tru
   f.element.onclick({preventDefault(){prevented=true;}});
   assert.equal(prevented,true); assert.equal(f.options.force,true);
   assert.equal(f.attributes.get('aria-busy'),'true'); assert.equal(f.element.textContent,label);
+  assert.equal(f.element.dataset.checking,'true');
   f.element.click(); assert.equal(f.calls,1);
   await f.settle({status:'available',version:'99.0.0',downloadURL:'https://example.com/evil'});
   assert.equal(f.element.dataset.update,'true'); assert.equal(f.element.href,metadata.downloadURL);
   assert.equal(f.element.textContent,label); assert.match(f.element.title,/99\.0\.0/);
   assert.equal(f.attributes.has('role'),false); assert.equal(f.attributes.has('aria-busy'),false);
+  assert.equal(f.element.dataset.checking,'false');
   f.element.onclick({preventDefault(){assert.fail('installation link should navigate normally');}});
   assert.equal(f.calls,1);
 });
@@ -97,6 +99,7 @@ test('silent current and failed checks only update the tooltip, with no link or 
   const f=versionFixture();
   for (const status of ['current','error']) {
     const pending=f.control.refresh(); assert.equal(f.options.force,false);
+    assert.equal(f.element.dataset.checking,'false');
     await f.settle({status}); await pending;
     assert.equal(f.element.textContent,`v${metadata.version}`);
     assert.equal(f.element.dataset.update,'false'); assert.equal(f.element.href,undefined);
