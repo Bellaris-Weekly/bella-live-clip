@@ -15,7 +15,8 @@ const {outputFiles}=await build({entryPoints:['src/main.js'],bundle:true,write:f
 }]});
 
 function start(pageWindow,sandboxWindow={}){
-  const context={unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
+  pageWindow.fetch ??= () => { throw new Error("Unexpected page fetch"); };
+  const context={URL,AbortController,setTimeout,clearTimeout,unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
     GM_xmlhttpRequest(){},GM_getValue(){},GM_setValue(){},GM_registerMenuCommand(){}};
   runInNewContext(outputFiles[0].text,context);
   return context.appOptions;
@@ -59,4 +60,15 @@ test('picker cancellation and permission errors propagate unchanged without retr
     await assert.rejects(saveFilePicker({}),value=>value===error);
     assert.equal(calls,1);
   }
+});
+
+
+test('submission APIs use the page fetch receiver rather than the userscript sandbox',async()=>{
+  const pageWindow={fetch(url,options){
+    assert.equal(this,pageWindow);
+    assert.equal(options.credentials,'include');
+    return Promise.resolve({ok:true,text:async()=>'{"code":0}'});
+  }};
+  const {submissionRequest}=start(pageWindow,{fetch(){assert.fail('sandbox fetch must not be used');}});
+  assert.equal((await submissionRequest('https://api.bilibili.com/x/web-interface/view')).data,'{"code":0}');
 });

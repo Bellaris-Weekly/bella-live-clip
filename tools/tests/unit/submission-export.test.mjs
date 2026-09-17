@@ -139,3 +139,18 @@ for (const [combined, videoOffset] of [[false, .1], [true, .37]]) {
     } finally { input.dispose(); }
   });
 }
+
+
+test('preview ranges read only the low source; precise exports still read only the high source',async()=>{
+ const video=await fixture('video'),audio=await fixture('audio');
+ const record=submission(false);
+ record.previewMedia={video:{url:'https://media.example/low-video'},audio:{url:'https://media.example/low-audio'},combined:false};
+ const urls=[];
+ const request=async(url,options)=>{urls.push(url);return transport({video,audio})(url,options);};
+ const preview=openSubmissionMedia(request,record,{preview:true});
+ try {assert.equal((await preview.getTracks()).length,2);} finally {preview.dispose();}
+ assert.ok(urls.length>0&&urls.every(url=>url.includes('/low-')));
+ urls.length=0;
+ await exportSubmission(request,record,{start:2,end:6},{precise:true});
+ assert.ok(urls.length>0&&urls.every(url=>!url.includes('/low-')));
+});

@@ -104,3 +104,28 @@ test('unsupported-only media hosts and domain lookalikes fail without widening a
   assert.throws(()=>normalizeSubmission(metadata(),{part:1},p),/CDN/);
  }
 });
+
+
+test('preview uses lowest AVC/AAC while export retains highest, regardless of API order',()=>{
+ for(const [low,high] of [[16,80],[32,120]]) {
+  const p=play();
+  p.dash.video=[stream(high,'avc1.640032',8000),stream(low,'avc1.640028',400),stream(low,'avc1.640028',200),stream(high,'avc1.640032',9000)];
+  p.dash.audio.reverse();
+  const result=normalizeSubmission(metadata(),{part:1},p);
+  assert.equal(result.previewMedia.video.url,`https://test.bilivideo.com/${low}`);
+  assert.equal(result.previewMedia.video.bandwidth,200);
+  assert.equal(result.previewMedia.audio.bandwidth,64000);
+  assert.equal(result.media.video.url,`https://test.bilivideo.com/${high}`);
+  assert.equal(result.media.video.bandwidth,9000);
+  assert.equal(result.media.audio.bandwidth,192000);
+ }
+});
+
+test('single representation and silent videos retain explicit preview sources',()=>{
+ const p=play();p.dash.video=[stream(16,'avc1.640028',400)];p.dash.audio=[];
+ const result=normalizeSubmission(metadata(),{part:1},p);
+ assert.deepEqual(result.previewMedia,result.media);
+ const combined=normalizeSubmission(metadata(),{part:1},{format:'mp4',quality:64,timelength:60000,durl:[{url:'https://test.bilivideo.com/movie.mp4'}]});
+ assert.equal(combined.previewMedia,combined.media);
+ assert.equal(combined.previewQualityLabel,combined.qualityLabel);
+});

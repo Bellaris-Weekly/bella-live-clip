@@ -45,7 +45,7 @@ function descriptor(stream) {
 export function normalizeSubmission(metadata, route, play) {
   const page = submissionPart(metadata, route);
   if (play.is_preview) throw new Error('当前账号只能试看这个视频，无法导出完整选段。');
-  let media, quality;
+  let media, previewMedia, quality, previewQuality;
   if (play.dash) {
     const videos = (play.dash.video ?? []).filter(item => /^avc[13]\./i.test(item.codecs ?? ''));
     videos.sort((a,b) => Number(b.id)-Number(a.id) || Number(b.bandwidth)-Number(a.bandwidth));
@@ -59,22 +59,27 @@ export function normalizeSubmission(metadata, route, play) {
       throw new Error('当前视频没有兼容的 AAC 音轨，无法保留声音导出。');
     }
     media = {video:descriptor(videos[0]), audio:audios.length ? descriptor(audios[0]) : null, combined:false};
+    previewMedia = {video:descriptor(videos.at(-1)), audio:audios.length ? descriptor(audios.at(-1)) : null, combined:false};
     quality = videos[0].id;
+    previewQuality = videos.at(-1).id;
   } else {
     if (play.durl?.length !== 1 || !/^mp4/i.test(play.format ?? '')) {
       throw new Error('当前视频没有可用的 DASH 或单文件 MP4，请检查账号权限。');
     }
     media = {video:descriptor(play.durl[0]), audio:null, combined:true};
-    quality = play.quality;
+    previewMedia = media;
+    quality = previewQuality = play.quality;
   }
   const duration = Number(play.timelength) / 1000 || Number(page.duration);
   if (!(duration > 0 && Number.isFinite(duration))) throw new Error('视频时长不可用，请重新加载。');
-  const qualityInfo = play.support_formats?.find(item => Number(item.quality) === Number(quality));
-  const index = play.accept_quality?.findIndex(item => Number(item) === Number(quality)) ?? -1;
-  const qualityLabel = qualityInfo?.new_description || qualityInfo?.display_desc ||
-    (index >= 0 && play.accept_description?.[index]) || `清晰度 ${quality}`;
+  const label = id => {
+    const info = play.support_formats?.find(item => Number(item.quality) === Number(id));
+    const index = play.accept_quality?.findIndex(item => Number(item) === Number(id)) ?? -1;
+    return info?.new_description || info?.display_desc ||
+      (index >= 0 && play.accept_description?.[index]) || `清晰度 ${id}`;
+  };
   return {kind:'submission', key:`${metadata.bvid}:${page.cid}`, bvid:metadata.bvid, cid:page.cid,
     part:page.page, title:metadata.title, partTitle:metadata.pages.length > 1 ? page.part : '',
     uploader:metadata.owner?.name ?? '', duration,
-    referer:`https://www.bilibili.com/video/${metadata.bvid}/?p=${page.page}`, qualityLabel, media};
+    referer:`https://www.bilibili.com/video/${metadata.bvid}/?p=${page.page}`, qualityLabel:label(quality), previewQualityLabel:label(previewQuality), media, previewMedia};
 }

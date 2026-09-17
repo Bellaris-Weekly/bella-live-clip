@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.2
+// @version      2.11.3
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.2\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.3\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -1135,7 +1135,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function normalizeSubmission(metadata, route, play) {
     const page = submissionPart(metadata, route);
     if (play.is_preview) throw new Error("当前账号只能试看这个视频，无法导出完整选段。");
-    let media, quality;
+    let media, previewMedia, quality, previewQuality;
     if (play.dash) {
       const videos = (play.dash.video ?? []).filter((item) => /^avc[13]\./i.test(item.codecs ?? ""));
       videos.sort((a, b) => Number(b.id) - Number(a.id) || Number(b.bandwidth) - Number(a.bandwidth));
@@ -1147,19 +1147,24 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         throw new Error("当前视频没有兼容的 AAC 音轨，无法保留声音导出。");
       }
       media = { video: descriptor(videos[0]), audio: audios.length ? descriptor(audios[0]) : null, combined: false };
+      previewMedia = { video: descriptor(videos.at(-1)), audio: audios.length ? descriptor(audios.at(-1)) : null, combined: false };
       quality = videos[0].id;
+      previewQuality = videos.at(-1).id;
     } else {
       if (play.durl?.length !== 1 || !/^mp4/i.test(play.format ?? "")) {
         throw new Error("当前视频没有可用的 DASH 或单文件 MP4，请检查账号权限。");
       }
       media = { video: descriptor(play.durl[0]), audio: null, combined: true };
-      quality = play.quality;
+      previewMedia = media;
+      quality = previewQuality = play.quality;
     }
     const duration = Number(play.timelength) / 1e3 || Number(page.duration);
     if (!(duration > 0 && Number.isFinite(duration))) throw new Error("视频时长不可用，请重新加载。");
-    const qualityInfo = play.support_formats?.find((item) => Number(item.quality) === Number(quality));
-    const index = play.accept_quality?.findIndex((item) => Number(item) === Number(quality)) ?? -1;
-    const qualityLabel = qualityInfo?.new_description || qualityInfo?.display_desc || index >= 0 && play.accept_description?.[index] || `清晰度 ${quality}`;
+    const label = (id) => {
+      const info = play.support_formats?.find((item) => Number(item.quality) === Number(id));
+      const index = play.accept_quality?.findIndex((item) => Number(item) === Number(id)) ?? -1;
+      return info?.new_description || info?.display_desc || index >= 0 && play.accept_description?.[index] || `清晰度 ${id}`;
+    };
     return {
       kind: "submission",
       key: `${metadata.bvid}:${page.cid}`,
@@ -1171,8 +1176,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       uploader: metadata.owner?.name ?? "",
       duration,
       referer: `https://www.bilibili.com/video/${metadata.bvid}/?p=${page.page}`,
-      qualityLabel,
-      media
+      qualityLabel: label(quality),
+      previewQualityLabel: label(previewQuality),
+      media,
+      previewMedia
     };
   }
 
@@ -28154,9 +28161,10 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     });
   }
   function openSubmissionMedia(request, submission, options = {}) {
+    const descriptor2 = options.preview ? submission.previewMedia : submission.media;
     const settings = { ...options, referer: submission.referer };
-    const videoInput = new Input({ source: remoteMp4Source(request, submission.media.video, settings), formats: [MP4] });
-    const audioInput = submission.media.combined ? videoInput : submission.media.audio ? new Input({ source: remoteMp4Source(request, submission.media.audio, settings), formats: [MP4] }) : null;
+    const videoInput = new Input({ source: remoteMp4Source(request, descriptor2.video, settings), formats: [MP4] });
+    const audioInput = descriptor2.combined ? videoInput : descriptor2.audio ? new Input({ source: remoteMp4Source(request, descriptor2.audio, settings), formats: [MP4] }) : null;
     return {
       videoInput,
       audioInput,
@@ -28165,7 +28173,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         const video = await videoInput.getPrimaryVideoTrack();
         const audios = audioInput ? await audioInput.getAudioTracks() : [];
         if (!video || await video.getCodec() !== "avc") throw new Error("当前视频没有可用的 H.264 画面。");
-        if (!submission.media.combined && submission.media.audio && !audios.length) throw new Error("音频文件缺少音轨，已停止导出以避免丢失声音。");
+        if (!descriptor2.combined && descriptor2.audio && !audios.length) throw new Error("音频文件缺少音轨，已停止导出以避免丢失声音。");
         if ((await Promise.all(audios.map((track) => track.getCodec()))).some((codec) => codec !== "aac")) throw new Error("当前视频的音频不是受支持的 AAC 格式。");
         options.signal?.throwIfAborted();
         return [video, ...audios];
@@ -28286,7 +28294,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       own.fillController = controller;
       own.fillTime = time2;
       const signal = controller.signal;
-      const media = openSubmissionMedia(request, own.submission, { signal });
+      const media = openSubmissionMedia(request, own.submission, { signal, preview: true });
       own.media = media;
       try {
         const tracks = await media.getTracks();
@@ -28391,7 +28399,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         loading.hidden = false;
         loading.textContent = "正在加载画面…";
         try {
-          const media = openSubmissionMedia(request, submission, { signal: controller.signal });
+          const media = openSubmissionMedia(request, submission, { signal: controller.signal, preview: true });
           own.media = media;
           let codecs;
           try {
@@ -28439,7 +28447,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   async function readSubmissionThumbnail(request, submission, time2, signal) {
     signal.throwIfAborted();
-    const media = openSubmissionMedia(request, submission, { signal });
+    const media = openSubmissionMedia(request, submission, { signal, preview: true });
     let sample;
     try {
       const track = await media.videoInput.getPrimaryVideoTrack();
@@ -63318,7 +63326,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   var cleanName = (label) => label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
 
   // src/app/application.js
-  function createApp({ api, get = (_, fallback) => fallback, set = () => {
+  function createApp({ api, submissionRequest = api.request, get = (_, fallback) => fallback, set = () => {
   }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
@@ -63327,7 +63335,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     document.documentElement.append(host);
     const $ = (id) => root.getElementById(id), video = $("fullVideo");
     const readPageUrl = typeof pageUrl === "function" ? pageUrl : () => pageUrl;
-    const room = roomIdFromUrl(readPageUrl()), submissions = createSubmissionService(api.request);
+    const room = roomIdFromUrl(readPageUrl()), submissions = createSubmissionService(submissionRequest);
     let player = null, playerKind = null, loadedRoute = null, observedRoute = parseSubmissionUrl(readPageUrl())?.key, jobKind = null, pendingRoute = false;
     const isSubmission = () => record?.kind === "submission";
     const metadata = readScriptMetadata(header_default);
@@ -63533,7 +63541,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       });
     }
     function renderRecordMeta() {
-      $("recordMeta").textContent = (isSubmission() ? [record.uploader, record.partTitle ? `P${record.part} · ${record.partTitle}` : "", record.qualityLabel] : [record.member, formatDate(record.start), record.schedule?.type]).filter(Boolean).join(" · ");
+      $("recordMeta").textContent = (isSubmission() ? [record.uploader, record.partTitle ? `P${record.part} · ${record.partTitle}` : "", `预览 ${record.previewQualityLabel}`, `导出 ${record.qualityLabel}`] : [record.member, formatDate(record.start), record.schedule?.type]).filter(Boolean).join(" · ");
     }
     function enrichRecordType() {
       if (!record || isSubmission() || record.schedule !== void 0 || $("panel").hidden) return;
@@ -63932,7 +63940,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           onload(response) {
             cleanup();
             if (response.status < 200 || response.status >= 300) {
-              reject(new RequestError(`请求失败（HTTP ${response.status}），请刷新场次后重试。`, {
+              reject(new RequestError(`请求失败（HTTP ${response.status}），请重新加载后重试。`, {
                 status: response.status,
                 retryable: response.status === 0 || response.status === 408 || response.status === 429 || response.status >= 500 && response.status <= 599
               }));
@@ -64017,10 +64025,38 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
   };
 
+  // src/services/submission-request.js
+  function createSubmissionRequest(pageFetch) {
+    return async (url2, { signal } = {}) => {
+      if (new URL(url2).origin !== "https://api.bilibili.com") throw new Error("视频账号请求只能发送至 B 站视频接口。");
+      signal?.throwIfAborted();
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal.reason);
+      signal?.addEventListener("abort", abort, { once: true });
+      const timer = setTimeout(() => controller.abort(new RequestError("视频接口请求超时，请重试。", { retryable: true })), 45e3);
+      try {
+        const response = await pageFetch(url2, { credentials: "include", mode: "cors", redirect: "error", signal: controller.signal });
+        if (!response.ok) {
+          const status2 = response.status;
+          const message = status2 === 412 ? "B 站暂时限制了视频请求（HTTP 412），请稍后重新检查。" : `视频接口请求失败（HTTP ${status2}），请重新检查。`;
+          throw new RequestError(message, { status: status2, retryable: status2 === 408 || status2 === 429 || status2 >= 500 && status2 <= 599 });
+        }
+        return { data: await response.text() };
+      } catch (error) {
+        if (controller.signal.aborted) throw controller.signal.reason;
+        throw error;
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+      }
+    };
+  }
+
   // src/main.js
   if (!document.getElementById("bella-live-clip-host")) {
     const app = createApp({
       api: new BiliApi(createRequest(GM_xmlhttpRequest)),
+      submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
       // Native Window methods need the page window, not the userscript sandbox receiver.
       saveFilePicker: typeof unsafeWindow.showSaveFilePicker === "function" ? unsafeWindow.showSaveFilePicker.bind(unsafeWindow) : null,
       get: (key, fallback) => GM_getValue(`biliClip.${key}`, fallback),

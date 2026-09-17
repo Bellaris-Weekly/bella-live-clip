@@ -26,11 +26,11 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null}){
+export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');
  const readPageUrl=typeof pageUrl==='function'?pageUrl:()=>pageUrl;
- const room=roomIdFromUrl(readPageUrl()),submissions=createSubmissionService(api.request);
+ const room=roomIdFromUrl(readPageUrl()),submissions=createSubmissionService(submissionRequest);
  let player=null,playerKind=null,loadedRoute=null,observedRoute=parseSubmissionUrl(readPageUrl())?.key,jobKind=null,pendingRoute=false;
  const isSubmission=()=>record?.kind==='submission';
  const metadata=readScriptMetadata(metadataText);
@@ -112,7 +112,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=
    renderCards();showScheduleResult(result);status('选择想剪辑的那场直播。');
   });
  }
- function renderRecordMeta(){$('recordMeta').textContent=(isSubmission()?[record.uploader,record.partTitle?`P${record.part} · ${record.partTitle}`:'',record.qualityLabel]:[record.member,formatDate(record.start),record.schedule?.type]).filter(Boolean).join(' · ');}
+ function renderRecordMeta(){$('recordMeta').textContent=(isSubmission()?[record.uploader,record.partTitle?`P${record.part} · ${record.partTitle}`:'',`预览 ${record.previewQualityLabel}`,`导出 ${record.qualityLabel}`]:[record.member,formatDate(record.start),record.schedule?.type]).filter(Boolean).join(' · ');}
  function enrichRecordType(){
   if(!record||isSubmission()||record.schedule!==undefined||$('panel').hidden)return;
   scheduleController?.abort();const own=new AbortController();scheduleController=own;const selected=record;

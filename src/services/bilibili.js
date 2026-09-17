@@ -22,7 +22,7 @@ export function createRequest(gmRequest) {
         onload(response) {
           cleanup();
           if (response.status < 200 || response.status >= 300) {
-            reject(new RequestError(`请求失败（HTTP ${response.status}），请刷新场次后重试。`,{status:response.status,
+            reject(new RequestError(`请求失败（HTTP ${response.status}），请重新加载后重试。`,{status:response.status,
               retryable:response.status===0||response.status===408||response.status===429||response.status>=500&&response.status<=599})); return;
           }
           if (range && response.status !== 206) {

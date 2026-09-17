@@ -55,10 +55,11 @@ export function remoteMp4Source(request, descriptor, { signal, referer, onRead =
 }
 
 export function openSubmissionMedia(request, submission, options = {}) {
+  const descriptor = options.preview ? submission.previewMedia : submission.media;
   const settings = { ...options, referer: submission.referer };
-  const videoInput = new Input({ source: remoteMp4Source(request, submission.media.video, settings), formats: [MP4] });
-  const audioInput = submission.media.combined ? videoInput : submission.media.audio
-    ? new Input({ source: remoteMp4Source(request, submission.media.audio, settings), formats: [MP4] }) : null;
+  const videoInput = new Input({ source: remoteMp4Source(request, descriptor.video, settings), formats: [MP4] });
+  const audioInput = descriptor.combined ? videoInput : descriptor.audio
+    ? new Input({ source: remoteMp4Source(request, descriptor.audio, settings), formats: [MP4] }) : null;
   return {
     videoInput, audioInput,
     async getTracks() {
@@ -66,7 +67,7 @@ export function openSubmissionMedia(request, submission, options = {}) {
       const video = await videoInput.getPrimaryVideoTrack();
       const audios = audioInput ? await audioInput.getAudioTracks() : [];
       if (!video || await video.getCodec() !== 'avc') throw new Error('当前视频没有可用的 H.264 画面。');
-      if (!submission.media.combined && submission.media.audio && !audios.length) throw new Error('音频文件缺少音轨，已停止导出以避免丢失声音。');
+      if (!descriptor.combined && descriptor.audio && !audios.length) throw new Error('音频文件缺少音轨，已停止导出以避免丢失声音。');
       if ((await Promise.all(audios.map(track => track.getCodec()))).some(codec => codec !== 'aac')) throw new Error('当前视频的音频不是受支持的 AAC 格式。');
       options.signal?.throwIfAborted();
       return [video, ...audios];

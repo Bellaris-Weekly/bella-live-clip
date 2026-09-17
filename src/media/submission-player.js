@@ -83,7 +83,7 @@ export function createSubmissionPlayer({video,loading,request,status,onTime}) {
   own.fillController=controller;
   own.fillTime=time;
   const signal=controller.signal;
-  const media=openSubmissionMedia(request,own.submission,{signal});
+  const media=openSubmissionMedia(request,own.submission,{signal,preview:true});
   own.media=media;
   try{
    const tracks=await media.getTracks();signal.throwIfAborted();
@@ -138,7 +138,7 @@ export function createSubmissionPlayer({video,loading,request,status,onTime}) {
    const own={submission,controller,unlink:()=>signal.removeEventListener('abort',abort),buffers:[],ready:false,running:false,failed:false};session=own;
    loading.hidden=false;loading.textContent='正在加载画面…';
    try{
-    const media=openSubmissionMedia(request,submission,{signal:controller.signal});own.media=media;
+    const media=openSubmissionMedia(request,submission,{signal:controller.signal,preview:true});own.media=media;
     let codecs;
     try{const tracks=await media.getTracks();codecs=await Promise.all(tracks.map(async track=>`${track.isVideoTrack()?'video':'audio'}/mp4; codecs="${await track.getCodecParameterString()}"`));}finally{media.dispose();own.media=null;}
     controller.signal.throwIfAborted();
@@ -161,7 +161,7 @@ export function createSubmissionPlayer({video,loading,request,status,onTime}) {
 
 export async function readSubmissionThumbnail(request,submission,time,signal){
  signal.throwIfAborted();
- const media=openSubmissionMedia(request,submission,{signal});let sample;
+ const media=openSubmissionMedia(request,submission,{signal,preview:true});let sample;
  try{
   const track=await media.videoInput.getPrimaryVideoTrack();
   if(!track)throw new Error('视频轨道为空');
