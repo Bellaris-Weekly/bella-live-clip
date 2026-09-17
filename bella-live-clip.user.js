@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.9.0
+// @version      2.9.1
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -31,7 +31,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.9.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.9.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -61870,7 +61870,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         const boundary = { iterator };
         boundaries.push(boundary);
         boundary.next = await iterator.next();
-        if (boundary.next.done) throw new Error("边界选区没有可编码的画面。");
+        if (boundary.next.done) throw new UnsupportedAvcError("边界区间没有独立可编码的画面");
         const value = boundary.next.value;
         boundary.normalizer = createAvcNormalizer(value.decoderConfig, value.packet);
         if (!boundary.normalizer.isIdr(value.packet)) throw new UnsupportedAvcError("边界编码没有生成独立关键帧");
@@ -61952,16 +61952,16 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
     const video = new EncodedVideoPacketSource("avc");
     output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-    const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
+    const streams = [{ source: video, isVideo: true, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
     for (const audio of audios) {
       const source = new EncodedAudioPacketSource("aac");
       output.addAudioTrack(source, await trackMetadata(audio));
       streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
     }
-    return muxPackets(output, streams, { start, end, signal, onProgress, stats, video });
+    return muxPackets(output, streams, { start, end, signal, onProgress, stats });
   }
-  async function muxPackets(output, streams, { start, end, signal, onProgress, stats, video }) {
-    let count = 0, progress = 0, canceling;
+  async function muxPackets(output, streams, { start, end, signal, onProgress, stats }) {
+    let progress = 0, canceling;
     const cancel = () => {
       canceling ??= output.cancel();
       void canceling.catch(() => {
@@ -61971,12 +61971,14 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     try {
       signal?.throwIfAborted();
       await output.start();
-      for (const stream of streams) stream.next = await stream.iterator.next();
+      for (const stream of streams) {
+        stream.next = await stream.iterator.next();
+        if (stream.isVideo && stream.next.done) throw new Error("选区内没有可解码的画面，请调整选区或使用原画导出。");
+      }
       while (streams.some((stream) => !stream.next.done)) {
         signal?.throwIfAborted();
         const stream = streams.filter((item) => !item.next.done).reduce((a, b) => a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b);
         const { packet, decoderConfig } = stream.next.value;
-        if (stream.source === video) count++;
         await stream.source.add(packet, { decoderConfig });
         progress = Math.max(progress, Math.min(0.99, (packet.timestamp + packet.duration) / (end - start)));
         onProgress(progress, stats);
@@ -61986,7 +61988,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       for (const stream of streams) stream.source.close();
       await output.finalize();
       signal?.throwIfAborted();
-      if (video && !count) throw new Error("选区内没有可导出的画面。");
       const blob = new Blob([output.target.buffer], { type: "video/mp4" });
       onProgress(1, stats);
       return blob;
@@ -62018,7 +62019,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         const source = new EncodedVideoPacketSource("avc");
         const settings = await readVideoEncodingSettings(track, { signal });
         output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
-        streams.push({ source, iterator: encodeVideoRange(track, { ...options, settings }) });
+        streams.push({ source, isVideo: true, iterator: encodeVideoRange(track, { ...options, settings }) });
       } else {
         const source = new EncodedAudioPacketSource("aac");
         output.addAudioTrack(source, await trackMetadata(track));
@@ -62308,7 +62309,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
     });
     const timeline = new RecordingTimeline(), tracks = /* @__PURE__ */ new Map();
-    let groupIndex = -1, map;
+    let groupIndex = -1, map, pendingDiscontinuity = false;
     try {
       download.signal.throwIfAborted();
       file = await fileHandle.createWritable();
@@ -62323,6 +62324,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         const discontinuity = item.groupIndex !== groupIndex;
         if (discontinuity) {
           groupIndex = item.groupIndex;
+          pendingDiscontinuity = true;
+          for (const target of tracks.values()) target.needsKey = true;
           map = groups[groupIndex].map ? await download.readMap(groups[groupIndex].map) : null;
         }
         const data = map ? new Uint8Array(map.byteLength + item.data.byteLength) : item.data;
@@ -62342,18 +62345,32 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
             const source = track.type === "video" ? new EncodedVideoPacketSource(codec) : new EncodedAudioPacketSource(codec);
             if (track.type === "video") output.addVideoTrack(source, { rotation: await track.getRotation() });
             else output.addAudioTrack(source);
-            target = { source, codec };
+            target = { source, codec, needsKey: true, written: false };
             tracks.set(key, target);
           }
           if (target.codec !== codec) throw new Error("录像中途更换了编码，无法保存到同一个 MP4。");
           const packets = [];
-          for await (const packet of new EncodedPacketSink(track).packets(void 0, void 0, { verifyKeyPackets: true })) {
+          for await (const original of new EncodedPacketSink(track).packets()) {
             download.signal.throwIfAborted();
+            const type = await track.determinePacketType(original) ?? original.type;
+            const packet = type === original.type ? original : original.clone({ type });
+            if (target.needsKey) {
+              if (packet.type !== "key") continue;
+              target.needsKey = false;
+            }
             packets.push(packet);
           }
           segmentTracks.push({ key, packets, target, config });
         }
-        const offset = timeline.append(segmentTracks, discontinuity);
+        if (!segmentTracks.some((track) => track.packets.length)) {
+          input.dispose();
+          input = null;
+          processed = (item.index + 1) / item.count;
+          report();
+          continue;
+        }
+        const offset = timeline.append(segmentTracks, pendingDiscontinuity);
+        pendingDiscontinuity = false;
         if (output.state === "pending") await output.start();
         const cursors = segmentTracks.map(() => 0);
         while (segmentTracks.some((track, i) => cursors[i] < track.packets.length)) {
@@ -62362,6 +62379,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
               download.signal.throwIfAborted();
               const packet = track.packets[cursors[i]++];
               await track.target.source.add(packet.clone({ timestamp: Math.round((packet.timestamp + offset) * 1e6) / 1e6 }), { decoderConfig: track.config });
+              track.target.written = true;
             }
           }
         }
@@ -62371,6 +62389,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         report();
       }
       download.signal.throwIfAborted();
+      if (!tracks.size || [...tracks.values()].some((track) => !track.written)) throw new Error("录像轨道缺少可独立解码的关键帧，无法完整导出。");
       for (const track of tracks.values()) track.source.close();
       await output.finalize();
       download.signal.throwIfAborted();

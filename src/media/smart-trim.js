@@ -44,7 +44,10 @@ async function* videoPackets(track, { start, end, settings, normalizer, plan, si
       const boundary = { iterator };
       boundaries.push(boundary);
       boundary.next = await iterator.next();
-      if (boundary.next.done) throw new Error('边界选区没有可编码的画面。');
+      // A time interval need not contain a frame (offset track starts, gaps,
+      // or sub-frame boundary rounding). Decode the complete selection before
+      // deciding it is empty; a boundary seek alone cannot establish that.
+      if (boundary.next.done) throw new UnsupportedAvcError('边界区间没有独立可编码的画面');
       const value = boundary.next.value;
       boundary.normalizer = createAvcNormalizer(value.decoderConfig, value.packet);
       if (!boundary.normalizer.isIdr(value.packet)) throw new UnsupportedAvcError('边界编码没有生成独立关键帧');
@@ -130,23 +133,26 @@ async function smartTrim(input, { start, end, signal, onProgress, onProcessingSt
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
   const video = new EncodedVideoPacketSource('avc');
   output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-  const streams = [{ source: video, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
+  const streams = [{ source: video, isVideo: true, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
   for (const audio of audios) {
     const source = new EncodedAudioPacketSource('aac');
     output.addAudioTrack(source, await trackMetadata(audio));
     streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
   }
-  return muxPackets(output, streams, { start, end, signal, onProgress, stats, video });
+  return muxPackets(output, streams, { start, end, signal, onProgress, stats });
 }
 
-async function muxPackets(output, streams, { start, end, signal, onProgress, stats, video }) {
-  let count = 0, progress = 0, canceling;
+async function muxPackets(output, streams, { start, end, signal, onProgress, stats }) {
+  let progress = 0, canceling;
   const cancel = () => { canceling ??= output.cancel(); void canceling.catch(() => {}); };
   signal?.addEventListener('abort', cancel, { once: true });
   try {
     signal?.throwIfAborted();
     await output.start();
-    for (const stream of streams) stream.next = await stream.iterator.next();
+    for (const stream of streams) {
+      stream.next = await stream.iterator.next();
+      if (stream.isVideo && stream.next.done) throw new Error('选区内没有可解码的画面，请调整选区或使用原画导出。');
+    }
     while (streams.some(stream => !stream.next.done)) {
       signal?.throwIfAborted();
       // One pending packet per track preserves each track's decode order while
@@ -154,7 +160,6 @@ async function muxPackets(output, streams, { start, end, signal, onProgress, sta
       const stream = streams.filter(item => !item.next.done)
         .reduce((a, b) => a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b);
       const { packet, decoderConfig } = stream.next.value;
-      if (stream.source === video) count++;
       await stream.source.add(packet, { decoderConfig });
       progress = Math.max(progress, Math.min(.99, (packet.timestamp + packet.duration) / (end - start)));
       onProgress(progress, stats);
@@ -164,7 +169,6 @@ async function muxPackets(output, streams, { start, end, signal, onProgress, sta
     for (const stream of streams) stream.source.close();
     await output.finalize();
     signal?.throwIfAborted();
-    if (video && !count) throw new Error('选区内没有可导出的画面。');
     const blob = new Blob([output.target.buffer], { type: 'video/mp4' });
     onProgress(1, stats);
     return blob;
@@ -197,7 +201,7 @@ async function encodeSelection(input, { start, end, signal, onProgress, onProces
       const source = new EncodedVideoPacketSource('avc');
       const settings = await readVideoEncodingSettings(track, { signal });
       output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
-      streams.push({ source, iterator: encodeVideoRange(track, { ...options, settings }) });
+      streams.push({ source, isVideo: true, iterator: encodeVideoRange(track, { ...options, settings }) });
     } else {
       const source = new EncodedAudioPacketSource('aac');
       output.addAudioTrack(source, await trackMetadata(track));

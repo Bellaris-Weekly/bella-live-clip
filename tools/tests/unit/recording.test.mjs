@@ -158,3 +158,41 @@ test('清单比接口报告的录像更长时，选区不能重新选中已结�
   assert.deepEqual(api.seen,['https://example.com/list'],'没有相交录像时不下载分片');
  }
 });
+
+async function partialGopFixture(packets) {
+ const source=new EncodedVideoPacketSource('avc'),output=new Output({format:new Mp4OutputFormat({fastStart:'fragmented'}),target:new BufferTarget()});
+ output.addVideoTrack(source);await output.start();
+ const decoderConfig={...bConfig,description:new Uint8Array(Buffer.from(bConfig.description,'base64'))};
+ // Some containers mark their first sample sync even when its AVC payload is a delta frame.
+ for(const [i,p]of packets.entries())await source.add(new EncodedPacket(new Uint8Array(Buffer.from(p.data,'base64')),i===0?'key':p.type,p.timestamp,p.duration),{decoderConfig});
+ source.close();await output.finalize();return output.target.buffer;
+}
+async function savedPackets(parts,groups) {
+ const file=disk();await saveRecording({request:async url=>({data:parts[Number(url)]})},groups,file);
+ const input=new Input({source:new BufferSource(file.data()),formats:[MP4]}),packets=[];
+ try{for await(const p of new EncodedPacketSink(await input.getPrimaryVideoTrack()).packets(undefined,undefined,{verifyKeyPackets:true}))packets.push(p);}
+ finally{input.dispose();}return packets;
+}
+for(const prefix of [1,3])test(`整场跳过 ${prefix} 个未验证为关键帧的开头包，保留完整 GOP 的负载与 B 帧次序`,async()=>{
+ const leading=bPackets.slice(1,prefix+1).map((p,i)=>({...p,timestamp:i/30}));
+ const complete=bPackets.map(p=>({...p,timestamp:p.timestamp+.4}));
+ const data=await partialGopFixture([...leading,...complete]);
+ const packets=await savedPackets([data],[{segments:[{url:'0',duration:.8}]}]);
+ assert.equal(packets.length,bPackets.length);assert.equal(packets[0].type,'key');
+ packets.forEach((p,i)=>{assert.deepEqual(p.data,new Uint8Array(Buffer.from(bPackets[i].data,'base64')));assert.ok(Math.abs(p.timestamp-bPackets[i].timestamp)<.00002);});
+});
+
+test('首个关键帧可在后续文件，正常文件边界的依赖帧不丢失，断流后重新等待关键帧',async()=>{
+ const orphan=[{...bPackets[1],timestamp:0}],complete=bPackets.map(p=>({...p,timestamp:p.timestamp+.4}));
+ const parts=await Promise.all([partialGopFixture(orphan),partialGopFixture(complete.slice(0,4)),partialGopFixture(complete.slice(4))]);
+ const segments=parts.map((_,i)=>({url:String(i),duration:.4}));
+ const packets=await savedPackets(parts,[{segments},{segments}]);
+ assert.equal(packets.length,bPackets.length*2);
+ packets.forEach((p,i)=>{const original=bPackets[i%bPackets.length];assert.deepEqual(p.data,new Uint8Array(Buffer.from(original.data,'base64')));assert.ok(Math.abs(p.timestamp-original.timestamp-(i>=bPackets.length?.4:0))<.00002);});
+});
+
+test('整条视频轨道都没有真实关键帧时明确报错并中止文件',async()=>{
+ const data=await partialGopFixture([{...bPackets[1],timestamp:0}]),file=disk();
+ await assert.rejects(saveRecording({request:async()=>({data})},[{segments:[{url:'0',duration:1}]}],file),/缺少可独立解码的关键帧/);
+ assert.equal(file.aborted,true);assert.equal(file.closed,false);
+});

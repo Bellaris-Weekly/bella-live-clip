@@ -73,7 +73,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
     onRead:size=>{bytes+=size;samples.push({at:performance.now(),bytes});report();},
     onRetry:state=>{reconnecting=state.count;attempt=state.attempt;report();}});
   const timeline=new RecordingTimeline(),tracks=new Map();
-  let groupIndex=-1,map;
+  let groupIndex=-1,map,pendingDiscontinuity=false;
   try {
     download.signal.throwIfAborted();file=await fileHandle.createWritable();
     const writable=new WritableStream({async write(chunk){download.signal.throwIfAborted();await file.write(chunk);written=Math.max(written,chunk.position+chunk.data.byteLength);report();}});
@@ -82,7 +82,11 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
     output=new Output({format:new Mp4OutputFormat({fastStart:false}),target:new StreamTarget(writable,{chunked:true,chunkSize:1024*1024})});
     for await(const item of download.segments()){
       const discontinuity=item.groupIndex!==groupIndex;
-      if(discontinuity){groupIndex=item.groupIndex;map=groups[groupIndex].map?await download.readMap(groups[groupIndex].map):null;}
+      if(discontinuity){
+        groupIndex=item.groupIndex;pendingDiscontinuity=true;
+        for(const target of tracks.values())target.needsKey=true;
+        map=groups[groupIndex].map?await download.readMap(groups[groupIndex].map):null;
+      }
       const data=map?new Uint8Array(map.byteLength+item.data.byteLength):item.data;
       if(map){data.set(map);data.set(item.data,map.byteLength);}
       input=new Input({source:new BufferSource(data),formats:[MP4,MPEG_TS]});
@@ -97,16 +101,28 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
           const source=track.type==='video'?new EncodedVideoPacketSource(codec):new EncodedAudioPacketSource(codec);
           if(track.type==='video')output.addVideoTrack(source,{rotation:await track.getRotation()});
           else output.addAudioTrack(source);
-          target={source,codec};tracks.set(key,target);
+          target={source,codec,needsKey:true,written:false};tracks.set(key,target);
         }
         if(target.codec!==codec)throw new Error('录像中途更换了编码，无法保存到同一个 MP4。');
         const packets=[];
-        for await(const packet of new EncodedPacketSink(track).packets(undefined,undefined,{verifyKeyPackets:true})){
-          download.signal.throwIfAborted();packets.push(packet);
+        for await(const original of new EncodedPacketSink(track).packets()){
+          download.signal.throwIfAborted();
+          // Container sync flags may be wrong in either direction, including
+          // AAC marked as dependent. Inspect every packet, not just sync flags.
+          const type=await track.determinePacketType(original)??original.type;
+          const packet=type===original.type?original:original.clone({type});
+          // A recording (or a new discontinuity) can begin inside a GOP.
+          // Wait for a verified random-access packet, even across files. Ordinary
+          // segment boundaries must keep delta packets belonging to the prior GOP.
+          if(target.needsKey){if(packet.type!=='key')continue;target.needsKey=false;}
+          packets.push(packet);
         }
         segmentTracks.push({key,packets,target,config});
       }
-      const offset=timeline.append(segmentTracks,discontinuity);
+      if(!segmentTracks.some(track=>track.packets.length)){
+        input.dispose();input=null;processed=(item.index+1)/item.count;report();continue;
+      }
+      const offset=timeline.append(segmentTracks,pendingDiscontinuity);pendingDiscontinuity=false;
       if(output.state==='pending')await output.start();
       // Interleave tracks in small batches without changing each track's decode order.
       const cursors=segmentTracks.map(()=>0);
@@ -116,12 +132,14 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
             download.signal.throwIfAborted();
             const packet=track.packets[cursors[i]++];
             await track.target.source.add(packet.clone({timestamp:Math.round((packet.timestamp+offset)*1e6)/1e6}),{decoderConfig:track.config});
+            track.target.written=true;
           }
         }
       }
       input.dispose();input=null;processed=(item.index+1)/item.count;report();
     }
     download.signal.throwIfAborted();
+    if(!tracks.size||[...tracks.values()].some(track=>!track.written))throw new Error('录像轨道缺少可独立解码的关键帧，无法完整导出。');
     for(const track of tracks.values())track.source.close();
     await output.finalize();download.signal.throwIfAborted();await file.close();file=null;report(true);
     return {bytes:written};

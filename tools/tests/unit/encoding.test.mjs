@@ -192,3 +192,44 @@ test('编码失败保留原始错误，并关闭当帧、解码流和编码器',
   assert.ok(native.encoders.every(encoder => encoder.state === 'closed'));
   for (const sample of source.samples) assert.throws(() => sample.toVideoFrame(), /closed/);
 });
+
+for(const firstTimestamp of [.1,1.7])test(`精确导出遇到首帧前空区间时回退整段编码，保留 ${firstTimestamp} 秒画面偏移`,async t=>{
+ const {Input,BufferSource,MP4,BufferTarget,Mp4OutputFormat,EncodedVideoPacketSource,EncodedPacket}=await import('mediabunny');
+ const {trimPrecise}=await import('../../../src/media/smart-trim.js');
+ const native=webCodecs(t),source=new EncodedVideoPacketSource('avc');
+ const original=new Output({format:new Mp4OutputFormat({fastStart:false}),target:new BufferTarget()});
+ original.addVideoTrack(source);await original.start();
+ for(let i=0;i<4;i++)await source.add(new EncodedPacket(frameBytes,'key',firstTimestamp+i*.1,.1),{decoderConfig});
+ source.close();await original.finalize();
+ const input=new Input({source:new BufferSource(original.target.buffer),formats:[MP4]}),ranges=[],samples=[],events=[];
+ t.mock.method(InputVideoTrack.prototype,'canDecode',async()=>true);
+ t.mock.method(VideoSampleSink.prototype,'samples',function(start,end){
+  ranges.push([start,end]);
+  return (async function*(){for(let i=0;i<4;i++){
+   const timestamp=firstTimestamp+i*.1;
+   if(timestamp>=end)break;
+   const sample=new VideoSample(new Uint8Array(16*16*4),{format:'RGBA',codedWidth:16,codedHeight:16,timestamp,duration:.1});
+   samples.push(sample);yield sample;
+  }})();
+ });
+ try{
+  const blob=await trimPrecise(input,{start:0,end:firstTimestamp+.35,onProgress:(progress,detail)=>events.push({progress,...detail})});
+  assert.ok(blob.size>0);assert.equal(events.at(-1).strategy,'full');
+  assert.ok(events.some(e=>e.message?.includes('整段编码')));
+  assert.deepEqual(ranges,[[0,firstTimestamp],[0,firstTimestamp+.35]],'空边界之后从完整选区重新解码');
+  assert.equal(native.frames.length,4);assert.equal(native.frames[0].timestamp,Math.trunc(firstTimestamp*1e6));
+  assert.ok(native.frames.every(frame=>frame.closed));
+  for(const sample of samples)assert.throws(()=>sample.toVideoFrame(),/closed/);
+ }finally{input.dispose();}
+});
+
+test('精确模式整段回退仍没有解码画面时不能交付空视频',async t=>{
+ const {trimPrecise}=await import('../../../src/media/smart-trim.js');
+ webCodecs(t);
+ const {video}=track();
+ // A non-AVC input selects full encoding directly, then produces no samples.
+ video.getCodec=async()=> 'vp9';video.canDecode=async()=>true;
+ video.getLanguageCode=async()=> 'und';video.getName=async()=>null;video.getDisposition=async()=>({});video.getRotation=async()=>0;
+ sampleStream(t,[]);
+ await assert.rejects(trimPrecise({getTracks:async()=>[video]},{start:0,end:1}),/选区内没有可解码的画面/);
+});

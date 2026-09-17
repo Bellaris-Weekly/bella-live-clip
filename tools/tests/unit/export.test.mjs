@@ -248,3 +248,44 @@ test('尾部规划后从头处理会恢复前向预读，不受规划游标影�
     assert.ok(seen.includes('2'), '规划读过后面的分片也必须预读实际处理位置的下一片');
   } finally { await loader.close(); }
 });
+
+function markAudioDependent(bytes) {
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  function boxes(start,end){const result=[];for(let at=start;at<end;){const size=view.getUint32(at);assert.ok(size>=8);result.push({at,size,type:new TextDecoder().decode(bytes.subarray(at+4,at+8))});at+=size;}return result;}
+  let changed=0;
+  for(const moof of boxes(0,bytes.length).filter(b=>b.type==='moof'))for(const traf of boxes(moof.at+8,moof.at+moof.size).filter(b=>b.type==='traf')){
+    const children=boxes(traf.at+8,traf.at+traf.size),header=children.find(b=>b.type==='tfhd');
+    if(view.getUint32(header.at+12)!==2)continue;
+    const flags=view.getUint32(header.at+8)&0xffffff;
+    let cursor=header.at+16;
+    for(const [flag,size]of [[1,8],[2,4],[8,4],[16,4]])if(flags&flag)cursor+=size;
+    if(flags&32){view.setUint32(cursor,view.getUint32(cursor)|0x10000);changed++;}
+    for(const run of children.filter(b=>b.type==='trun')){
+      const flags=view.getUint32(run.at+8)&0xffffff,count=view.getUint32(run.at+12);let cursor=run.at+16;
+      if(flags&1)cursor+=4;
+      if(flags&4){view.setUint32(cursor,view.getUint32(cursor)|0x10000);cursor+=4;changed++;}
+      for(let i=0;i<count;i++){
+        if(flags&0x100)cursor+=4;if(flags&0x200)cursor+=4;
+        if(flags&0x400){view.setUint32(cursor,view.getUint32(cursor)|0x10000);cursor+=4;changed++;}
+        if(flags&0x800)cursor+=4;
+      }
+    }
+  }
+  assert.ok(changed);return bytes;
+}
+
+test('AAC 容器误标依赖包时仍保留全部声音，不把音频首包当作损坏 GOP 丢弃',async()=>{
+  const data=markAudioDependent(await fixture()),writes=[];
+  const input=new Input({source:new BlobSource(new Blob([data])),formats:[MP4]});
+  try{assert.equal((await new EncodedPacketSink(await input.getPrimaryAudioTrack()).getFirstPacket({verifyKeyPackets:true})).type,'delta','真实复现容器误标且 verifyKeyPackets 不纠正的音频首包');}finally{input.dispose();}
+  await saveRecording({request:async()=>({data:data.buffer})},[{segments:[{url:'sample',duration:2}]}],{async createWritable(){return{
+    async write(chunk){writes.push({...chunk,data:chunk.data.slice()});},async close(){},async abort(){assert.fail('cannot abort');},
+  };}});
+  const bytes=new Uint8Array(Math.max(...writes.map(c=>c.position+c.data.length)));for(const c of writes)bytes.set(c.data,c.position);
+  const output=new Input({source:new BlobSource(new Blob([bytes])),formats:[MP4]});
+  try{
+    let count=0;for await(const p of new EncodedPacketSink(await output.getPrimaryAudioTrack()).packets()){
+      assert.equal(p.type,'key');assert.deepEqual(p.data,audioFrame);assert.ok(Math.abs(p.timestamp-count*1024/48000)<.00001);count++;
+    }assert.equal(count,93);assert.ok(await output.getPrimaryVideoTrack());
+  }finally{output.dispose();}
+});
