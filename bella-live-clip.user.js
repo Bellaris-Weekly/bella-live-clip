@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.7.0
+// @version      2.8.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -30,7 +30,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.7.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.8.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -34337,13 +34337,54 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   }
 
   // src/media/playback.js
-  function createPlayback(video, onError) {
-    let scrubbing = false, resume = false;
-    const play = () => video.play().catch((error) => {
+  function createPlayback(video, onError, { getRange, position, seek }) {
+    let scrubbing = false, resume = false, timer;
+    const clearTimer = () => {
+      clearTimeout(timer);
+      timer = void 0;
+    };
+    const playVideo = () => video.play().catch((error) => {
       if (error.name !== "AbortError") onError(error.message, true);
     });
+    function constrain(restart = false) {
+      const range = getRange();
+      if (!range) return true;
+      const time = position();
+      if (time >= range.end && !restart) {
+        clearTimer();
+        video.pause();
+        if (time !== range.end) seek(range.end);
+        return false;
+      }
+      if (time < range.start || time >= range.end) seek(range.start);
+      return true;
+    }
+    const play = (restart = false) => {
+      if (constrain(restart)) void playVideo();
+    };
+    function check() {
+      clearTimer();
+      if (scrubbing || video.paused || video.seeking || video.readyState < 2) return;
+      const range = getRange();
+      if (!range) return;
+      if (position() < range.start) {
+        play();
+        return;
+      }
+      if (!constrain()) return;
+      if (video.playbackRate > 0) timer = setTimeout(check, (range.end - position()) / video.playbackRate * 1e3);
+    }
+    video.addEventListener("play", () => {
+      if (scrubbing || video.paused || video.seeking || video.readyState < 2) return;
+      if (constrain(true) && video.paused) void playVideo();
+      check();
+    });
+    for (const event of ["playing", "timeupdate", "seeked", "ratechange"]) video.addEventListener(event, check);
+    for (const event of ["pause", "waiting", "emptied", "ended"]) video.addEventListener(event, clearTimer);
     return {
+      check,
       begin() {
+        clearTimer();
         resume = !video.paused && !video.ended;
         scrubbing = true;
         video.pause();
@@ -34351,16 +34392,17 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       end() {
         if (!scrubbing) return;
         scrubbing = false;
-        if (resume) void play();
+        if (resume) play();
         resume = false;
       },
       cancel() {
+        clearTimer();
         scrubbing = false;
         resume = false;
         video.pause();
       },
       toggle() {
-        if (video.paused) void play();
+        if (video.paused) play(true);
         else video.pause();
       }
     };
@@ -62415,13 +62457,20 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     let rect = constrainRect(get("windowV2", defaults2()), viewport());
     const applyRect = () => Object.assign($("panel").style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
     applyRect();
-    const playback = createPlayback(video, status2);
+    const playback = createPlayback(video, status2, { getRange: () => ready ? timeline.getSelection() : null, position: () => player.position(), seek: (t) => {
+      player.seek(t);
+      timeline.setCurrent(t);
+      updateClock(t);
+    } });
     bindVideoControls(video, playback, status2);
     const thumbnails = createThumbnails({ container: $("thumbnails"), request: api.request });
     const timeline = createTimeline({ track: $("timeline"), startHandle: $("startHandle"), endHandle: $("endHandle"), selectionElement: $("selection"), playhead: $("playhead"), ticks: $("ticks"), labels: $("timelineLabels"), onPreview: (t) => {
       player.seek(t);
       updateClock(t);
-    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: updateExportSummary, onView: (view3, motion) => thumbnails.update(view3, motion) });
+    }, onScrubStart: () => playback.begin(), onScrubEnd: () => playback.end(), onSelection: (selection) => {
+      updateExportSummary(selection);
+      playback.check();
+    }, onView: (view3, motion) => thumbnails.update(view3, motion) });
     const updateClock = (t) => {
       $("clock").textContent = formatTimeRange(t, playbackTotal, " / ");
     };

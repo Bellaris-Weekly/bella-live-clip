@@ -43,10 +43,10 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
  let rect=constrainRect(get('windowV2',defaults()),viewport());
  const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
- const playback=createPlayback(video,status);
+ const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player.position(),seek:t=>{player.seek(t);timeline.setCurrent(t);updateClock(t);}});
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:updateExportSummary,onView:(view,motion)=>thumbnails.update(view,motion)});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player.seek(t);updateClock(t);},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end(),onSelection:selection=>{updateExportSummary(selection);playback.check();},onView:(view,motion)=>thumbnails.update(view,motion)});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  const player=createPlayer({video,loading:$('videoLoading'),api,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}});
  const syncPlayback=()=>{const paused=video.paused||video.ended;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
