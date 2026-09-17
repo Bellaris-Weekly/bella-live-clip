@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.1
+// @version      2.11.2
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,10 +32,9 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.2\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
-  var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
   function parseVersion(version2) {
     if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version2)) throw new Error("版本信息无效");
     return version2.split(".").map(BigInt);
@@ -55,19 +54,15 @@
     parseVersion(version2);
     return { version: version2, namespace: value("namespace"), updateURL: value("updateURL"), downloadURL: value("downloadURL") };
   }
-  function createUpdateChecker({ request, metadata, get, set, now: now2 = Date.now }) {
+  function createUpdateChecker({ request, metadata, now: now2 = Date.now }) {
     let pending;
-    return function check({ force = false } = {}) {
+    return function check() {
       if (pending) return pending;
-      const cached = get("updateCheck", null), time2 = now2();
-      if (!force && cached?.installed === metadata.version && time2 >= cached.checkedAt && time2 - cached.checkedAt < CHECK_INTERVAL) {
-        return Promise.resolve(cached.result);
-      }
       pending = (async () => {
         let result;
         try {
           const url2 = new URL(metadata.updateURL);
-          url2.searchParams.set("_check", String(time2));
+          url2.searchParams.set("_check", String(now2()));
           const { data } = await request(url2.href, { auth: false });
           const latest = readScriptMetadata(data);
           if (latest.namespace !== metadata.namespace) throw new Error("更新源返回了其他脚本");
@@ -75,7 +70,6 @@
         } catch {
           result = { status: "error" };
         }
-        set("updateCheck", { installed: metadata.version, checkedAt: time2, result });
         return result;
       })().finally(() => {
         pending = null;
@@ -106,14 +100,14 @@
       }
     }
     render();
-    async function refresh(force = false) {
+    async function refresh(manual = false) {
       if (checking) return;
       checking = true;
       version2.setAttribute("aria-busy", "true");
-      version2.dataset.checking = String(force);
+      version2.dataset.checking = String(manual);
       if (!available) describe("正在检查更新");
       try {
-        const result = await check({ force });
+        const result = await check();
         if (result.status !== "error") available = result.status === "available" ? result.version : null;
         render();
         if (!available) describe(result.status === "error" ? "检查失败，点击重试" : "已是最新版本，点击重新检查");
@@ -63337,7 +63331,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     let player = null, playerKind = null, loadedRoute = null, observedRoute = parseSubmissionUrl(readPageUrl())?.key, jobKind = null, pendingRoute = false;
     const isSubmission = () => record?.kind === "submission";
     const metadata = readScriptMetadata(header_default);
-    const versionControl = createVersionControl({ root, metadata, check: createUpdateChecker({ request: api.request, metadata, get, set }) });
+    const versionControl = createVersionControl({ root, metadata, check: createUpdateChecker({ request: api.request, metadata }) });
     for (const [id, name] of [["close", "close"], ["refreshLibrary", "refresh"], ["togglePlayback", "play"]]) $(id).innerHTML = icon(name);
     $("back").innerHTML = icon("back") + "<span>选择直播</span>";
     $("download").innerHTML = "<span>导出</span>" + icon("download");

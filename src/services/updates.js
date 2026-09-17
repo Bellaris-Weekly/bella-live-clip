@@ -1,5 +1,3 @@
-const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
-
 // Releases use stable SemVer (x.y.z), as enforced by check-version.mjs.
 export function parseVersion(version) {
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) throw new Error('版本信息无效');
@@ -23,19 +21,15 @@ export function readScriptMetadata(text) {
   return { version, namespace: value('namespace'), updateURL: value('updateURL'), downloadURL: value('downloadURL') };
 }
 
-export function createUpdateChecker({ request, metadata, get, set, now = Date.now }) {
+export function createUpdateChecker({ request, metadata, now = Date.now }) {
   let pending;
-  return function check({ force = false } = {}) {
+  return function check() {
     if (pending) return pending;
-    const cached = get('updateCheck', null), time = now();
-    if (!force && cached?.installed === metadata.version && time >= cached.checkedAt && time - cached.checkedAt < CHECK_INTERVAL) {
-      return Promise.resolve(cached.result);
-    }
     pending = (async () => {
       let result;
       try {
         const url = new URL(metadata.updateURL);
-        url.searchParams.set('_check', String(time));
+        url.searchParams.set('_check', String(now()));
         const { data } = await request(url.href, { auth: false });
         const latest = readScriptMetadata(data);
         if (latest.namespace !== metadata.namespace) throw new Error('更新源返回了其他脚本');
@@ -43,7 +37,6 @@ export function createUpdateChecker({ request, metadata, get, set, now = Date.no
       } catch {
         result = { status: 'error' };
       }
-      set('updateCheck', { installed: metadata.version, checkedAt: time, result });
       return result;
     })().finally(() => { pending = null; });
     return pending;

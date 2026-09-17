@@ -8,10 +8,10 @@ const header = readFileSync(new URL('../../../src/header.txt', import.meta.url),
 const metadata = readScriptMetadata(header);
 const script = version => header.replace(/@version\s+\S+/, `@version ${version}`);
 function fixture(request) {
-  let time = 1000, cached = null, calls = 0;
+  let calls = 0;
   const check = createUpdateChecker({ metadata, request: async (...args) => { calls++; return request(...args); },
-    get: () => cached, set: (_, value) => { cached = value; }, now: () => time });
-  return { check, advance: value => { time += value; }, get calls() { return calls; }, get cached() { return cached; } };
+    now: () => 1000 });
+  return { check, get calls() { return calls; } };
 }
 
 test('stable versions compare numeric components, including multi-digit minor/patch and major transitions', () => {
@@ -28,28 +28,28 @@ test('metadata is restricted to the userscript block and accepts CRLF', () => {
   assert.equal(readScriptMetadata(header+'\n// @version 99.0.0').version,metadata.version);
 });
 
-test('automatic checks cache for 24 hours; manual checks bypass and stay anonymous', async () => {
+test('each completed check requests fresh metadata, even within the same millisecond', async () => {
+  let latest = metadata.version;
   const f = fixture(async (url, options) => {
     assert.equal(new URL(url).origin,new URL(metadata.updateURL).origin);
     assert.ok(new URL(url).searchParams.has('_check'));
     assert.equal(options.auth,false);
-    return {data:script('99.0.0')};
+    return {data:script(latest)};
   });
+  assert.equal((await f.check()).status,'current');
+  latest = '99.0.0';
   assert.deepEqual(await f.check(),{status:'available',version:'99.0.0'});
-  await f.check(); assert.equal(f.calls,1);
-  await f.check({force:true}); assert.equal(f.calls,2);
-  f.advance(24*60*60*1000); await f.check(); assert.equal(f.calls,3);
-  assert.deepEqual(Object.keys(f.cached).sort(),['checkedAt','installed','result']);
+  await f.check(); assert.equal(f.calls,3);
 });
 
-test('concurrent checks share a request, failures throttle automatic checks and allow manual retry', async () => {
+test('concurrent checks share a request; a failed check can retry immediately', async () => {
   let resolve;
   const f = fixture(() => new Promise(done => { resolve=done; }));
-  const first=f.check(); const second=f.check({force:true});
+  const first=f.check(); const second=f.check();
   assert.equal(first,second); assert.equal(f.calls,1);
   resolve({data:'Bad gateway'}); assert.deepEqual(await first,{status:'error'});
-  await f.check(); assert.equal(f.calls,1);
-  const retry=f.check({force:true}); resolve({data:script(metadata.version)});
+  const retry=f.check(); assert.equal(f.calls,2);
+  resolve({data:script(metadata.version)});
   assert.equal((await retry).status,'current');
 });
 
@@ -60,20 +60,14 @@ test('network failures and wrong script identity do not report a current version
   assert.equal((await fixture(async()=>({data:script('1.0.0')})).check()).status,'current');
 });
 
-test('installed version changes invalidate old cached update results', async () => {
-  let calls=0;
-  const check=createUpdateChecker({metadata,request:async()=>{calls++;return {data:header};},get:()=>({installed:'1.0.0',checkedAt:Date.now(),result:{status:'available',version:'2.0.0'}}),set:()=>{}});
-  assert.equal((await check()).status,'current'); assert.equal(calls,1);
-});
-
 function versionFixture() {
   const attributes = new Map(), element = { dataset: {}, setAttribute: (key,value) => attributes.set(key,value),
     removeAttribute(key) { attributes.delete(key); if (key === 'href') delete this.href; },
     click() { this.onclick({preventDefault(){}}); } };
-  let resolve, options, calls = 0;
+  let resolve, calls = 0;
   const control = createVersionControl({root:{getElementById:id=>{assert.equal(id,'version');return element;}},metadata,
-    check:args=>{options=args;calls++;return new Promise(done=>{resolve=done;});}});
-  return {element,attributes,control,get options(){return options;},get calls(){return calls;},settle:async result=>{resolve(result);await Promise.resolve();}};
+    check:()=>{calls++;return new Promise(done=>{resolve=done;});}});
+  return {element,attributes,control,get calls(){return calls;},settle:async result=>{resolve(result);await Promise.resolve();}};
 }
 
 test('version alone checks on click without changing its text, and becomes a trusted install link when available', async () => {
@@ -82,7 +76,7 @@ test('version alone checks on click without changing its text, and becomes a tru
   assert.equal(f.attributes.get('role'),'button');
   let prevented=false;
   f.element.onclick({preventDefault(){prevented=true;}});
-  assert.equal(prevented,true); assert.equal(f.options.force,true);
+  assert.equal(prevented,true);
   assert.equal(f.attributes.get('aria-busy'),'true'); assert.equal(f.element.textContent,label);
   assert.equal(f.element.dataset.checking,'true');
   f.element.click(); assert.equal(f.calls,1);
@@ -98,14 +92,14 @@ test('version alone checks on click without changing its text, and becomes a tru
 test('silent current and failed checks only update the tooltip, with no link or badge', async () => {
   const f=versionFixture();
   for (const status of ['current','error']) {
-    const pending=f.control.refresh(); assert.equal(f.options.force,false);
+    const pending=f.control.refresh();
     assert.equal(f.element.dataset.checking,'false');
     await f.settle({status}); await pending;
     assert.equal(f.element.textContent,`v${metadata.version}`);
     assert.equal(f.element.dataset.update,'false'); assert.equal(f.element.href,undefined);
     assert.match(f.element.title,status==='error'?/重试/:/已是最新/);
   }
-  f.element.click(); assert.equal(f.options.force,true); await f.settle({status:'current'});
+  f.element.click(); await f.settle({status:'current'});
 });
 
 test('a failed recheck preserves a known update; a successful current result clears it', async () => {
@@ -123,7 +117,7 @@ test('version supports keyboard checks and preserves native Enter navigation for
   for (const key of ['Enter',' ']) {
     let prevented=false;
     f.element.onkeydown({key,preventDefault(){prevented=true;}});
-    assert.equal(prevented,true); assert.equal(f.options.force,true);
+    assert.equal(prevented,true);
     await f.settle({status:'current'});
   }
   const pending=f.control.refresh(); await f.settle({status:'available',version:'3.0.0'}); await pending;

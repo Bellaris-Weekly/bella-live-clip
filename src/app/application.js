@@ -34,7 +34,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=
  let player=null,playerKind=null,loadedRoute=null,observedRoute=parseSubmissionUrl(readPageUrl())?.key,jobKind=null,pendingRoute=false;
  const isSubmission=()=>record?.kind==='submission';
  const metadata=readScriptMetadata(metadataText);
- const versionControl=createVersionControl({root,metadata,check:createUpdateChecker({request:api.request,metadata,get,set})});
+ const versionControl=createVersionControl({root,metadata,check:createUpdateChecker({request:api.request,metadata})});
  for(const [id,name]of[['close','close'],['refreshLibrary','refresh'],['togglePlayback','play']])$(id).innerHTML=icon(name);
  $('back').innerHTML=icon('back')+'<span>选择直播</span>';
  $('download').innerHTML='<span>导出</span>'+icon('download');

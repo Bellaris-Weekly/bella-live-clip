@@ -20,14 +20,14 @@ export function createVersionControl({ root, metadata, check }) {
     }
   }
   render();
-  async function refresh(force = false) {
+  async function refresh(manual = false) {
     if (checking) return;
     checking = true;
     version.setAttribute('aria-busy', 'true');
-    version.dataset.checking = String(force);
+    version.dataset.checking = String(manual);
     if (!available) describe('正在检查更新');
     try {
-      const result = await check({ force });
+      const result = await check();
       if (result.status !== 'error') available = result.status === 'available' ? result.version : null;
       render();
       if (!available) describe(result.status === 'error' ? '检查失败，点击重试' : '已是最新版本，点击重新检查');
