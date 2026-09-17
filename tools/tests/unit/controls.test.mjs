@@ -42,3 +42,11 @@ test('重复渲染不写入 DOM，切换模式保留按钮节点，新建卡片�
   f.update({...state,busy:true});assert.equal(card.disabled,true);
   f.update({...state,page:'library'});assert.equal(card.disabled,false);assert.equal(f.download.hidden,true);
 });
+
+test('整场停止按钮在收尾期间锁定，任务结束或切换片段后恢复普通取消',()=>{
+ const f=fixture(),state={busy:true,ready:true,whole:true,page:'edit'};
+ f.update(state);assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,false);
+ f.update({...state,stopping:true});assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,true);assert.equal(f.download.disabled,true);
+ f.update({...state,busy:false});assert.equal(f.cancel.disabled,false);assert.equal(f.cancel.hidden,true);
+ f.update({...state,whole:false});assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,false);
+});

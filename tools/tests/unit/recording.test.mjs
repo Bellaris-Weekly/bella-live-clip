@@ -196,3 +196,60 @@ test('整条视频轨道都没有真实关键帧时明确报错并中止文件',
  await assert.rejects(saveRecording({request:async()=>({data})},[{segments:[{url:'0',duration:1}]}],file),/缺少可独立解码的关键帧/);
  assert.equal(file.aborted,true);assert.equal(file.closed,false);
 });
+
+for(const boundary of ['segment','write','retry'])test(`停止并保存：在 ${boundary} 时停止仍生成可读取的 MP4，保留已完成部分`,async()=>{
+ const data=await fixture(),stop=new AbortController(),events=[];let reads=0;
+ const segments=Array.from({length:12},(_,i)=>({url:String(i),duration:3}));
+ const api={async request(url,{signal}){
+  reads++;signal.throwIfAborted();
+  if(boundary==='retry'&&url==='6')throw new RequestError('offline',{retryable:true});
+  return {data:data.buffer};
+ }};
+ const file=disk(()=>{if(boundary==='write'&&!stop.signal.aborted)stop.abort();});
+ const result=await saveRecording(api,[{segments}],file,{stopSignal:stop.signal,onProgress:e=>{
+  events.push(e);
+  if(boundary==='segment'&&e.progress>0&&!stop.signal.aborted)stop.abort();
+  if(boundary==='retry'&&e.reconnecting&&e.progress>0&&!stop.signal.aborted)stop.abort();
+ }});
+ assert.equal(result.stopped,true);assert.equal(result.saved,true);assert.equal(file.closed,true);assert.equal(file.aborted,false);
+ assert.ok(result.duration>=3&&result.duration<36);assert.ok(reads<12);
+ assert.ok(events.some(e=>e.phase==='finalizing'));assert.equal(events.at(-1).phase,'saved');assert.ok(events.at(-1).progress<1);
+ const input=new Input({source:new BufferSource(file.data()),formats:[MP4]});
+ try{
+  assert.ok(Math.abs(await input.computeDuration()-result.duration)<.01);
+  let count=0;for await(const packet of new EncodedPacketSink(await input.getPrimaryVideoTrack()).packets()){assert.ok(packet.data.length);count++;}
+  assert.equal(count,Math.round(result.duration/3)*2400,'停止发生在写盘中也必须把当前分片完整写完');
+ }finally{input.dispose();}
+});
+
+test('还没有可保存内容时停止，不把空文件当作成功；收尾磁盘错误不能被停止信号掩盖',async()=>{
+ const data=await fixture();
+ for(const when of ['before','waiting','finalize','close']){
+  const stop=new AbortController(),failure=new Error('disk unavailable'),file=disk();
+  const original=file.createWritable;
+  file.createWritable=async()=>{
+   const writer=await original();
+   return {...writer,async write(chunk){if(stop.signal.aborted&&when==='finalize')throw failure;await writer.write(chunk);},async close(){if(when==='close')throw failure;await writer.close();}};
+  };
+  if(when==='before')stop.abort();
+  const api={async request(url,{signal}){if(when==='waiting'){stop.abort();signal.throwIfAborted();}return {data:data.buffer};}};
+  const promise=saveRecording(api,[{segments:[{url:'a',duration:3},{url:'b',duration:3}]}],file,{stopSignal:stop.signal,onProgress:e=>{if(e.progress>0)stop.abort();}});
+  if(when==='finalize'||when==='close'){
+   await assert.rejects(promise,error=>error===failure);assert.equal(file.aborted,true);assert.equal(file.closed,false);
+  }else{
+   const result=await promise;assert.deepEqual(result,{stopped:true,saved:false,bytes:0,duration:0});assert.equal(file.closed,false);
+  }
+ }
+});
+
+test('收尾期间页面硬取消仍中止事务，而正常收尾期间点击停止不会破坏已完成文件',async()=>{
+ const data=await fixture();
+ for(const hard of [false,true]){
+  const controller=new AbortController(),stop=new AbortController(),file=disk();
+  const promise=saveRecording({request:async()=>({data:data.buffer})},[{segments:[{url:'a',duration:3}]}],file,{
+   signal:controller.signal,stopSignal:stop.signal,onProgress:e=>{if(e.phase==='finalizing'){if(hard)controller.abort();else stop.abort();}},
+  });
+  if(hard){await assert.rejects(promise,error=>error===controller.signal.reason);assert.equal(file.aborted,true);}
+  else{const result=await promise;assert.equal(result.stopped,false);assert.equal(result.saved,true);assert.equal(result.duration,3);assert.equal(file.closed,true);}
+ }
+});

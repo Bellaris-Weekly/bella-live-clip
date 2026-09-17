@@ -60,27 +60,35 @@ export function recordingSource(groups,read) {
   });
 }
 
-export async function saveRecording(api, groups, fileHandle, {signal,onProgress=()=>{}}={}) {
-  let file,input,output,bytes=0,written=0,processed=0,reconnecting=0,attempt=0;
+export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,onProgress=()=>{}}={}) {
+  let file,input,output,bytes=0,written=0,processed=0,reconnecting=0,attempt=0,phase='downloading';
+  const requests=new AbortController();
+  const abort=()=>requests.abort(signal.reason),stop=()=>{phase='stopping';requests.abort(stopSignal.reason);};
+  signal?.addEventListener('abort',abort,{once:true});stopSignal?.addEventListener('abort',stop,{once:true});
+  if(signal?.aborted)abort();else if(stopSignal?.aborted)stop();
   const samples=[{at:performance.now(),bytes:0}], started=samples[0].at;
   function report(complete=false){
     const now=performance.now();
     while(samples.length>1&&samples[1].at<now-5000)samples.shift();
     const speed=(bytes-samples[0].bytes)/Math.max(1,(now-Math.max(started,samples[0].at))/1000);
-    onProgress({bytes,written,progress:complete?1:Math.min(.99,processed),speed,reconnecting,attempt});
+    onProgress({bytes,written,progress:complete?processed:Math.min(.99,processed),speed,reconnecting,attempt,phase});
   }
-  const download=createRecordingDownload(api,groups,{signal,
+  const download=createRecordingDownload(api,groups,{signal:requests.signal,
     onRead:size=>{bytes+=size;samples.push({at:performance.now(),bytes});report();},
     onRetry:state=>{reconnecting=state.count;attempt=state.attempt;report();}});
   const timeline=new RecordingTimeline(),tracks=new Map();
   let groupIndex=-1,map,pendingDiscontinuity=false;
   try {
-    download.signal.throwIfAborted();file=await fileHandle.createWritable();
-    const writable=new WritableStream({async write(chunk){download.signal.throwIfAborted();await file.write(chunk);written=Math.max(written,chunk.position+chunk.data.byteLength);report();}});
+    signal?.throwIfAborted();
+    if(stopSignal?.aborted)return {stopped:true,saved:false,bytes:0,duration:0};
+    file=await fileHandle.createWritable();
+    // A graceful stop cancels requests, not the disk transaction. Index writes
+    // must remain possible after the network signal has been aborted.
+    const writable=new WritableStream({async write(chunk){signal?.throwIfAborted();await file.write(chunk);written=Math.max(written,chunk.position+chunk.data.byteLength);report();}});
     // Keep media on disk and write the index at completion. Regular MP4 carries
     // the composition-time/edit metadata needed for B-frame playback sync.
     output=new Output({format:new Mp4OutputFormat({fastStart:false}),target:new StreamTarget(writable,{chunked:true,chunkSize:1024*1024})});
-    for await(const item of download.segments()){
+    try{for await(const item of download.segments()){
       const discontinuity=item.groupIndex!==groupIndex;
       if(discontinuity){
         groupIndex=item.groupIndex;pendingDiscontinuity=true;
@@ -129,7 +137,9 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
       while(segmentTracks.some((track,i)=>cursors[i]<track.packets.length)){
         for(const [i,track]of segmentTracks.entries()){
           for(let batch=0;batch<32&&cursors[i]<track.packets.length;batch++){
-            download.signal.throwIfAborted();
+            // Finish all tracks of a segment once muxing starts. Stopping in
+            // the middle of a batch could leave audio/video at different ends.
+            signal?.throwIfAborted();
             const packet=track.packets[cursors[i]++];
             await track.target.source.add(packet.clone({timestamp:Math.round((packet.timestamp+offset)*1e6)/1e6}),{decoderConfig:track.config});
             track.target.written=true;
@@ -137,16 +147,23 @@ export async function saveRecording(api, groups, fileHandle, {signal,onProgress=
         }
       }
       input.dispose();input=null;processed=(item.index+1)/item.count;report();
+    }}catch(error){
+      signal?.throwIfAborted();
+      if(!stopSignal?.aborted||error!==stopSignal.reason||download.signal.reason!==stopSignal.reason)throw error;
     }
-    download.signal.throwIfAborted();
+    signal?.throwIfAborted();
+    const stopped=Boolean(stopSignal?.aborted&&processed<1);
+    if(stopped&&(!tracks.size||[...tracks.values()].some(track=>!track.written)))return {stopped:true,saved:false,bytes:0,duration:0};
     if(!tracks.size||[...tracks.values()].some(track=>!track.written))throw new Error('录像轨道缺少可独立解码的关键帧，无法完整导出。');
+    phase='finalizing';report();
     for(const track of tracks.values())track.source.close();
-    await output.finalize();download.signal.throwIfAborted();await file.close();file=null;report(true);
-    return {bytes:written};
+    await output.finalize();signal?.throwIfAborted();await file.close();file=null;phase='saved';report(true);
+    return {bytes:written,stopped,saved:true,duration:timeline.end};
   } catch(error) {
-    if(download.signal.aborted)throw download.signal.reason;
+    if(signal?.aborted)throw signal.reason;
     throw error;
   } finally {
+    signal?.removeEventListener('abort',abort);stopSignal?.removeEventListener('abort',stop);
     await download.close();
     try{if(output && output.state!=='finalized' && output.state!=='canceled')await output.cancel();}
     finally{input?.dispose();if(file)await file.abort();}

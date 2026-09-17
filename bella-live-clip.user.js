@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.9.1
+// @version      2.10.0
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -31,7 +31,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.9.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.10.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  贝拉、乃琳、嘉然、心宜、思诺直播与历史回放片段下载，浅色时间轴裁剪，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -137,7 +137,7 @@
   }
 
   // src/ui/template.html
-  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>取消</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2>暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
   var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
@@ -357,7 +357,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const assign = (element, key, value) => {
       if (element[key] !== value) element[key] = value;
     };
-    return ({ busy, ready, page, whole }) => {
+    return ({ busy, ready, page, whole, stopping = false }) => {
       for (const element of [...navigation, ...cards.children]) assign(element, "disabled", busy);
       for (const element of editor) assign(element, "disabled", busy || !ready);
       for (const element of marks) assign(element, "disabled", busy || !ready || whole);
@@ -371,6 +371,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       assign(download, "hidden", page !== "edit");
       assign(cancel, "hidden", !busy);
       assign(progress, "hidden", !busy);
+      assign(cancel, "textContent", "停止");
+      assign(cancel, "disabled", stopping);
       assign(launcher.dataset, "busy", String(busy));
     };
   }
@@ -62285,18 +62287,27 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       });
     });
   }
-  async function saveRecording(api, groups, fileHandle, { signal, onProgress = () => {
+  async function saveRecording(api, groups, fileHandle, { signal, stopSignal, onProgress = () => {
   } } = {}) {
-    let file, input, output, bytes2 = 0, written = 0, processed = 0, reconnecting = 0, attempt = 0;
+    let file, input, output, bytes2 = 0, written = 0, processed = 0, reconnecting = 0, attempt = 0, phase = "downloading";
+    const requests = new AbortController();
+    const abort = () => requests.abort(signal.reason), stop = () => {
+      phase = "stopping";
+      requests.abort(stopSignal.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    stopSignal?.addEventListener("abort", stop, { once: true });
+    if (signal?.aborted) abort();
+    else if (stopSignal?.aborted) stop();
     const samples = [{ at: performance.now(), bytes: 0 }], started = samples[0].at;
     function report(complete = false) {
       const now2 = performance.now();
       while (samples.length > 1 && samples[1].at < now2 - 5e3) samples.shift();
       const speed = (bytes2 - samples[0].bytes) / Math.max(1, (now2 - Math.max(started, samples[0].at)) / 1e3);
-      onProgress({ bytes: bytes2, written, progress: complete ? 1 : Math.min(0.99, processed), speed, reconnecting, attempt });
+      onProgress({ bytes: bytes2, written, progress: complete ? processed : Math.min(0.99, processed), speed, reconnecting, attempt, phase });
     }
     const download = createRecordingDownload(api, groups, {
-      signal,
+      signal: requests.signal,
       onRead: (size) => {
         bytes2 += size;
         samples.push({ at: performance.now(), bytes: bytes2 });
@@ -62311,96 +62322,109 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     const timeline = new RecordingTimeline(), tracks = /* @__PURE__ */ new Map();
     let groupIndex = -1, map, pendingDiscontinuity = false;
     try {
-      download.signal.throwIfAborted();
+      signal?.throwIfAborted();
+      if (stopSignal?.aborted) return { stopped: true, saved: false, bytes: 0, duration: 0 };
       file = await fileHandle.createWritable();
       const writable = new WritableStream({ async write(chunk) {
-        download.signal.throwIfAborted();
+        signal?.throwIfAborted();
         await file.write(chunk);
         written = Math.max(written, chunk.position + chunk.data.byteLength);
         report();
       } });
       output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new StreamTarget(writable, { chunked: true, chunkSize: 1024 * 1024 }) });
-      for await (const item of download.segments()) {
-        const discontinuity = item.groupIndex !== groupIndex;
-        if (discontinuity) {
-          groupIndex = item.groupIndex;
-          pendingDiscontinuity = true;
-          for (const target of tracks.values()) target.needsKey = true;
-          map = groups[groupIndex].map ? await download.readMap(groups[groupIndex].map) : null;
-        }
-        const data = map ? new Uint8Array(map.byteLength + item.data.byteLength) : item.data;
-        if (map) {
-          data.set(map);
-          data.set(item.data, map.byteLength);
-        }
-        input = new Input({ source: new BufferSource(data), formats: [MP42, MPEG_TS] });
-        const segmentTracks = [];
-        for (const track of await input.getTracks()) {
-          const key = `${track.type}:${track.number}`, codec = await track.getCodec();
-          if (!["video", "audio"].includes(track.type) || !output.format.getSupportedCodecs().includes(codec)) throw new Error("本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。");
-          const config = await track.getDecoderConfig();
-          let target = tracks.get(key);
-          if (!target) {
-            if (output.state !== "pending") throw new Error("录像中途新增了音视频轨道，无法保存到同一个 MP4。");
-            const source = track.type === "video" ? new EncodedVideoPacketSource(codec) : new EncodedAudioPacketSource(codec);
-            if (track.type === "video") output.addVideoTrack(source, { rotation: await track.getRotation() });
-            else output.addAudioTrack(source);
-            target = { source, codec, needsKey: true, written: false };
-            tracks.set(key, target);
+      try {
+        for await (const item of download.segments()) {
+          const discontinuity = item.groupIndex !== groupIndex;
+          if (discontinuity) {
+            groupIndex = item.groupIndex;
+            pendingDiscontinuity = true;
+            for (const target of tracks.values()) target.needsKey = true;
+            map = groups[groupIndex].map ? await download.readMap(groups[groupIndex].map) : null;
           }
-          if (target.codec !== codec) throw new Error("录像中途更换了编码，无法保存到同一个 MP4。");
-          const packets = [];
-          for await (const original of new EncodedPacketSink(track).packets()) {
-            download.signal.throwIfAborted();
-            const type = await track.determinePacketType(original) ?? original.type;
-            const packet = type === original.type ? original : original.clone({ type });
-            if (target.needsKey) {
-              if (packet.type !== "key") continue;
-              target.needsKey = false;
+          const data = map ? new Uint8Array(map.byteLength + item.data.byteLength) : item.data;
+          if (map) {
+            data.set(map);
+            data.set(item.data, map.byteLength);
+          }
+          input = new Input({ source: new BufferSource(data), formats: [MP42, MPEG_TS] });
+          const segmentTracks = [];
+          for (const track of await input.getTracks()) {
+            const key = `${track.type}:${track.number}`, codec = await track.getCodec();
+            if (!["video", "audio"].includes(track.type) || !output.format.getSupportedCodecs().includes(codec)) throw new Error("本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。");
+            const config = await track.getDecoderConfig();
+            let target = tracks.get(key);
+            if (!target) {
+              if (output.state !== "pending") throw new Error("录像中途新增了音视频轨道，无法保存到同一个 MP4。");
+              const source = track.type === "video" ? new EncodedVideoPacketSource(codec) : new EncodedAudioPacketSource(codec);
+              if (track.type === "video") output.addVideoTrack(source, { rotation: await track.getRotation() });
+              else output.addAudioTrack(source);
+              target = { source, codec, needsKey: true, written: false };
+              tracks.set(key, target);
             }
-            packets.push(packet);
+            if (target.codec !== codec) throw new Error("录像中途更换了编码，无法保存到同一个 MP4。");
+            const packets = [];
+            for await (const original of new EncodedPacketSink(track).packets()) {
+              download.signal.throwIfAborted();
+              const type = await track.determinePacketType(original) ?? original.type;
+              const packet = type === original.type ? original : original.clone({ type });
+              if (target.needsKey) {
+                if (packet.type !== "key") continue;
+                target.needsKey = false;
+              }
+              packets.push(packet);
+            }
+            segmentTracks.push({ key, packets, target, config });
           }
-          segmentTracks.push({ key, packets, target, config });
-        }
-        if (!segmentTracks.some((track) => track.packets.length)) {
+          if (!segmentTracks.some((track) => track.packets.length)) {
+            input.dispose();
+            input = null;
+            processed = (item.index + 1) / item.count;
+            report();
+            continue;
+          }
+          const offset = timeline.append(segmentTracks, pendingDiscontinuity);
+          pendingDiscontinuity = false;
+          if (output.state === "pending") await output.start();
+          const cursors = segmentTracks.map(() => 0);
+          while (segmentTracks.some((track, i) => cursors[i] < track.packets.length)) {
+            for (const [i, track] of segmentTracks.entries()) {
+              for (let batch = 0; batch < 32 && cursors[i] < track.packets.length; batch++) {
+                signal?.throwIfAborted();
+                const packet = track.packets[cursors[i]++];
+                await track.target.source.add(packet.clone({ timestamp: Math.round((packet.timestamp + offset) * 1e6) / 1e6 }), { decoderConfig: track.config });
+                track.target.written = true;
+              }
+            }
+          }
           input.dispose();
           input = null;
           processed = (item.index + 1) / item.count;
           report();
-          continue;
         }
-        const offset = timeline.append(segmentTracks, pendingDiscontinuity);
-        pendingDiscontinuity = false;
-        if (output.state === "pending") await output.start();
-        const cursors = segmentTracks.map(() => 0);
-        while (segmentTracks.some((track, i) => cursors[i] < track.packets.length)) {
-          for (const [i, track] of segmentTracks.entries()) {
-            for (let batch = 0; batch < 32 && cursors[i] < track.packets.length; batch++) {
-              download.signal.throwIfAborted();
-              const packet = track.packets[cursors[i]++];
-              await track.target.source.add(packet.clone({ timestamp: Math.round((packet.timestamp + offset) * 1e6) / 1e6 }), { decoderConfig: track.config });
-              track.target.written = true;
-            }
-          }
-        }
-        input.dispose();
-        input = null;
-        processed = (item.index + 1) / item.count;
-        report();
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (!stopSignal?.aborted || error !== stopSignal.reason || download.signal.reason !== stopSignal.reason) throw error;
       }
-      download.signal.throwIfAborted();
+      signal?.throwIfAborted();
+      const stopped = Boolean(stopSignal?.aborted && processed < 1);
+      if (stopped && (!tracks.size || [...tracks.values()].some((track) => !track.written))) return { stopped: true, saved: false, bytes: 0, duration: 0 };
       if (!tracks.size || [...tracks.values()].some((track) => !track.written)) throw new Error("录像轨道缺少可独立解码的关键帧，无法完整导出。");
+      phase = "finalizing";
+      report();
       for (const track of tracks.values()) track.source.close();
       await output.finalize();
-      download.signal.throwIfAborted();
+      signal?.throwIfAborted();
       await file.close();
       file = null;
+      phase = "saved";
       report(true);
-      return { bytes: written };
+      return { bytes: written, stopped, saved: true, duration: timeline.end };
     } catch (error) {
-      if (download.signal.aborted) throw download.signal.reason;
+      if (signal?.aborted) throw signal.reason;
       throw error;
     } finally {
+      signal?.removeEventListener("abort", abort);
+      stopSignal?.removeEventListener("abort", stop);
       await download.close();
       try {
         if (output && output.state !== "finalized" && output.state !== "canceled") await output.cancel();
@@ -62684,6 +62708,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     let scheduleController = null, exportMode = "copy";
     const urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
+    let fullStopController = null, fullFinishing = false;
     const status2 = (text, error = false) => {
       $("status").textContent = text;
       $("status").dataset.error = error;
@@ -62750,7 +62775,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     const updateControls = createControls(root, timeline);
     function controls() {
-      updateControls({ busy: Boolean(controller), ready, page, whole: $("wholeRecording").checked });
+      updateControls({ busy: Boolean(controller), ready, page, whole: $("wholeRecording").checked, stopping: fullFinishing || Boolean(fullStopController?.signal.aborted) });
       updateFeedback();
     }
     function showPage(next) {
@@ -62768,9 +62793,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         await action(own.signal);
       } catch (e) {
         own.abort();
-        status2(e.name === "AbortError" ? "已取消。" : e.message, e.name !== "AbortError");
+        status2(e.name === "AbortError" ? "已停止。" : e.message, e.name !== "AbortError");
       } finally {
         controller = null;
+        fullStopController = null;
+        fullFinishing = false;
         controls();
       }
     }
@@ -62930,13 +62957,25 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         player.pause();
         clearDownloads();
         status2("正在下载整场并写入文件…");
-        const result = await saveRecording(api, await recordingPlan.load(signal), handle, { signal, onProgress: (p) => {
+        const groups = await recordingPlan.load(signal);
+        signal.throwIfAborted();
+        fullStopController = new AbortController();
+        controls();
+        const result = await saveRecording(api, groups, handle, { signal, stopSignal: fullStopController.signal, onProgress: (p) => {
           if (p.progress !== void 0) $("progress").value = p.progress * 100;
-          status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+          if (p.phase === "stopping" || p.phase === "finalizing") {
+            fullFinishing = true;
+            controls();
+            status2("正在保存…");
+          } else if (p.phase !== "saved") status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
         } });
-        status2("整场下载完成。");
+        if (!result.saved) {
+          status2("已停止。");
+          return;
+        }
+        status2(result.stopped ? "已停止。" : "整场下载完成。");
         const message = document.createElement("p");
-        message.textContent = `整场已保存到所选位置 · ${formatBytes(result.bytes)}`;
+        message.textContent = `${result.stopped ? "已完成部分" : "整场"}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
         $("downloads").append(message);
       });
     }
@@ -62978,7 +63017,13 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       libraryScroll = 0;
       void library();
     });
-    $("cancel").onclick = () => controller?.abort();
+    $("cancel").onclick = () => {
+      if (fullStopController) {
+        fullStopController.abort();
+        controls();
+        status2("正在保存…");
+      } else controller?.abort();
+    };
     $("download").onclick = () => $("wholeRecording").checked ? downloadFull() : download();
     $("wholeRecording").onchange = () => {
       if ($("wholeRecording").checked) {

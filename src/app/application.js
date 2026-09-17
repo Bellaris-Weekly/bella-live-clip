@@ -37,6 +37,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules});let scheduleController=null,exportMode='copy';
  const urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
+ let fullStopController=null,fullFinishing=false;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
  function updateFeedback(){$('feedback').hidden=!controller&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
  const viewport=()=>({width:innerWidth,height:innerHeight});
@@ -59,10 +60,10 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
  }
  const updateControls=createControls(root,timeline);
- function controls(){updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked});updateFeedback();}
+ function controls(){updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action){if(controller)return;const own=new AbortController();controller=own;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已取消。':e.message,e.name!=='AbortError');}finally{controller=null;controls();}}
+ async function job(action){if(controller)return;const own=new AbortController();controller=own;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;fullStopController=null;fullFinishing=false;controls();}}
  function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
  function leavePage(){
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
@@ -123,9 +124,16 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
   await job(async signal=>{
    const handle=await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   const result=await saveRecording(api,await recordingPlan.load(signal),handle,{signal,onProgress:p=>{if(p.progress!==undefined)$('progress').value=p.progress*100;status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);}});
-   status('整场下载完成。');
-   const message=document.createElement('p');message.textContent=`整场已保存到所选位置 · ${formatBytes(result.bytes)}`;$('downloads').append(message);
+   const groups=await recordingPlan.load(signal);signal.throwIfAborted();
+   fullStopController=new AbortController();controls();
+   const result=await saveRecording(api,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
+    if(p.progress!==undefined)$('progress').value=p.progress*100;
+    if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
+    else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+   }});
+   if(!result.saved){status('已停止。');return;}
+   status(result.stopped?'已停止。':'整场下载完成。');
+   const message=document.createElement('p');message.textContent=`${result.stopped?'已完成部分':'整场'}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
   });
  }
  async function open(){$('panel').hidden=false;void versionControl.refresh();if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
@@ -139,7 +147,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=loc
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
  $('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=currentRoom;$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>record.live?currentRoom():enterRecord(record);
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
- $('cancel').onclick=()=>controller?.abort();$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
+ $('cancel').onclick=()=>{if(fullStopController){fullStopController.abort();controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
  $('wholeRecording').onchange=()=>{
   if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({start:0,end:playbackTotal},true);}
   else{timeline.setSelection(clipSelection,true);clipSelection=null;}
