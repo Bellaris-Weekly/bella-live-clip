@@ -9,13 +9,13 @@ export function createControls(root,timeline){
   const exportMode=$('exportMode'),cancel=$('cancel'),progress=$('progress'),launcher=$('launcher');
   let locked;
   const assign=(element,key,value)=>{if(element[key]!==value)element[key]=value;};
-  return ({busy,ready,page,whole,stopping=false})=>{
+  return ({busy,ready,page,whole,submission=false,stopping=false})=>{
     for(const element of [...navigation,...cards.children])assign(element,'disabled',busy);
     for(const element of editor)assign(element,'disabled',busy||!ready);
     for(const element of marks)assign(element,'disabled',busy||!ready||whole);
     const nextLocked=busy||!ready||whole;
     if(locked!==nextLocked){locked=nextLocked;timeline.lock(locked);}
-    assign(exportMode,'hidden',whole);
+    assign(exportMode,'hidden',whole||submission);
     assign(label,'textContent',whole?'导出整场':'导出');
     assign(download,'hidden',page!=='edit');
     assign(cancel,'hidden',!busy);assign(progress,'hidden',!busy);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.0
+// @version      2.11.1
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.0\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.1\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   var CHECK_INTERVAL = 24 * 60 * 60 * 1e3;
@@ -358,7 +358,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const assign = (element, key, value) => {
       if (element[key] !== value) element[key] = value;
     };
-    return ({ busy, ready, page, whole, stopping = false }) => {
+    return ({ busy, ready, page, whole, submission = false, stopping = false }) => {
       for (const element of [...navigation, ...cards.children]) assign(element, "disabled", busy);
       for (const element of editor) assign(element, "disabled", busy || !ready);
       for (const element of marks) assign(element, "disabled", busy || !ready || whole);
@@ -367,7 +367,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         locked = nextLocked;
         timeline.lock(locked);
       }
-      assign(exportMode, "hidden", whole);
+      assign(exportMode, "hidden", whole || submission);
       assign(label, "textContent", whole ? "导出整场" : "导出");
       assign(download, "hidden", page !== "edit");
       assign(cancel, "hidden", !busy);
@@ -63443,8 +63443,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       $("currentVideo").hidden = !route || page === "edit" && loadedRoute === route.key;
       $("wholeRecordingLabel").hidden = isSubmission();
       $("refreshEditor").textContent = isSubmission() ? "重新加载视频" : "刷新录像";
-      root.querySelector('[data-mode="copy"]').title = isSubmission() ? "原画快速，不重新编码；起止位置按完整关键帧组扩展" : "原画快速，不重新编码";
-      updateControls({ busy: Boolean(controller), ready, page, whole: $("wholeRecording").checked, stopping: fullFinishing || Boolean(fullStopController?.signal.aborted) });
+      updateControls({ busy: Boolean(controller), ready, page, whole: $("wholeRecording").checked, submission: isSubmission(), stopping: fullFinishing || Boolean(fullStopController?.signal.aborted) });
       updateFeedback();
     }
     function showPage(next) {
@@ -63667,7 +63666,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           $("progress").value = p.progress * 100;
           status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次） · ` : ""}${p.message ? p.message + " · " : ""}${isSubmission() ? "" : `已下载 ${p.downloaded}/${p.count} 片 · `}处理 ${Math.round((p.processing ?? p.progress) * 100)}% · ${formatBytes(p.bytes)}`);
         };
-        const outputs = isSubmission() ? [{ blob: await exportSubmission(api.request, record, selection, { signal, precise: exportMode === "precise", onProgress }), ...selection }] : await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress });
+        const outputs = isSubmission() ? [{ blob: await exportSubmission(api.request, record, selection, { signal, precise: true, onProgress }), ...selection }] : await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress });
         for (const [i, output] of outputs.entries()) {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(output.blob);
@@ -63677,7 +63676,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           $("downloads").append(a);
         }
         if (outputs.length === 1) $("downloads").firstElementChild.click();
-        status2(outputs.length === 1 ? `MP4 已生成，可点击下方链接再次保存。${isSubmission() && exportMode === "copy" ? "原画模式保留完整关键帧组，实际起止可能扩展；需要精确切点请使用精确模式。" : ""}` : `选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
+        status2(outputs.length === 1 ? "MP4 已生成，可点击下方链接再次保存。" : `选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
       }, "export");
     }
     async function downloadFull() {

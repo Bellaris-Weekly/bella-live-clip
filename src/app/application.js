@@ -79,8 +79,7 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=
   $('currentVideo').hidden=!route||page==='edit'&&loadedRoute===route.key;
   $('wholeRecordingLabel').hidden=isSubmission();
   $('refreshEditor').textContent=isSubmission()?'重新加载视频':'刷新录像';
-  root.querySelector('[data-mode="copy"]').title=isSubmission()?'原画快速，不重新编码；起止位置按完整关键帧组扩展':'原画快速，不重新编码';
-  updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
+  updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,submission:isSubmission(),stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
  async function job(action,kind='load'){if(controller)return;const own=new AbortController();controller=own;jobKind=kind;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo(false);}}}
@@ -158,9 +157,9 @@ export function createApp({api,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=
   void currentVideo(false);
  }
  async function download(){await job(async signal=>{const selection=timeline.getSelection();player.pause();clearDownloads();status('正在读取选中的片段…');const onProgress=p=>{$('progress').value=p.progress*100;status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次） · `:''}${p.message?p.message+' · ':''}${isSubmission()?'':`已下载 ${p.downloaded}/${p.count} 片 · `}处理 ${Math.round((p.processing??p.progress)*100)}% · ${formatBytes(p.bytes)}`);};
-  const outputs=isSubmission()?[{blob:await exportSubmission(api.request,record,selection,{signal,precise:exportMode==='precise',onProgress}),...selection}]:await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress});
+  const outputs=isSubmission()?[{blob:await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress}),...selection}]:await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress});
   for(const [i,output]of outputs.entries()){const a=document.createElement('a');a.href=URL.createObjectURL(output.blob);urls.push(a.href);a.download=fileName(record,output.start,output.end,outputs.length>1?`_第${i+1}段`:'');a.textContent=`保存${outputs.length>1?'第 '+(i+1)+' 段':''} MP4 · ${formatBytes(output.blob.size)}`;$('downloads').append(a);}
-  if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?`MP4 已生成，可点击下方链接再次保存。${isSubmission()&&exportMode==='copy'?'原画模式保留完整关键帧组，实际起止可能扩展；需要精确切点请使用精确模式。':''}`:`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
+  if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?'MP4 已生成，可点击下方链接再次保存。':`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
  },'export');}
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.

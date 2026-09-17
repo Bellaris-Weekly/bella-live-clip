@@ -50,3 +50,15 @@ test('整场停止按钮在收尾期间锁定，任务结束或切换片段后�
  f.update({...state,busy:false});assert.equal(f.cancel.disabled,false);assert.equal(f.cancel.hidden,true);
  f.update({...state,whole:false});assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,false);
 });
+
+
+test('投稿固定精确模式隐藏选择器，返回直播恢复模式选择',()=>{
+ const f=fixture();
+ for(const busy of [false,true]){
+  const state={busy,ready:true,page:'edit',whole:false};
+  f.update({...state,submission:true});assert.equal(f.exportMode.hidden,true);
+  f.update({...state,submission:false});assert.equal(f.exportMode.hidden,false);
+  f.update({...state,submission:false,whole:true});assert.equal(f.exportMode.hidden,true);
+  f.update({...state,submission:true});assert.equal(f.exportMode.hidden,true);
+ }
+});

@@ -57,6 +57,7 @@ document.getElementById('test').onclick=async()=>{
   assert(pageVideo.paused,'进入剪辑没有暂停页面视频');
   assert($('recordMeta').textContent.includes('P1 · 测试分段 1'),'第一投稿分 P 错误');
   assert($('wholeRecordingLabel').hidden,'投稿仍显示直播整场入口');
+  assert($('exportMode').hidden,'投稿不应提供导出模式选项');
   pass('第一投稿载入，保留播放位置并暂停页面视频');
   await navigate(1,2);await until(()=>editable()&&title(1)&&$('recordMeta').textContent.includes('P2 · 测试分段 2'),'第二投稿第二分 P');
   pass('切换不同投稿和非首分 P');
@@ -75,6 +76,9 @@ document.getElementById('test').onclick=async()=>{
   await app.open();await until(()=>editable()&&title(1),'取消后关闭重开恢复');
   pass('预览取消后关闭重开能恢复');
 
+  assert($('exportMode').hidden,'切换视频后重新显示了模式选择');
+  $('fullVideo').currentTime=7.13;await until(()=>!$('fullVideo').seeking,'选区起点');$('markStart').click();
+  $('fullVideo').currentTime=10.47;await until(()=>!$('fullVideo').seeking,'选区终点');$('markEnd').click();
   mediaGate=gate();const exportGate=mediaGate;
   $('download').click();await until(()=>exportGate.reads.length>0,'导出媒体读取');
   await navigate(0,2);
@@ -85,9 +89,9 @@ document.getElementById('test').onclick=async()=>{
   const link=$('downloads').querySelector('a');
   assert(link.download.startsWith('测试投稿 2_P1_测试分段 1'),'导出文件名跟随了新页面');
   const blob=await (await fetch(link.href)).blob(),info=await inspectMedia(blob);
-  assert(info.hasAudio&&info.hasVideo&&info.duration>29,'导出没有保留完整音视频');
+  assert(info.hasAudio&&info.hasVideo&&Math.abs(info.duration-3.34)<.05,'投稿没有固定精确裁剪或丢失音视频');
   await fetch('/artifact/submission-navigation-export.mp4',{method:'POST',body:blob});
-  pass('导出期间导航保持原视频、文件名及声音');
+  pass('投稿无模式选项且固定精确裁剪，导出期间导航保持原视频、文件名及声音');
 
   $('currentVideo').click();await until(()=>editable()&&title(0),'主动载入新当前视频');
   assert($('recordMeta').textContent.includes('P2 · 测试分段 2'),'导出后当前视频分 P 错误');
