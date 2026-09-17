@@ -191,7 +191,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #version[data-update=true]{color:#b84040;border-color:#d87575;background:#fff5f5}
 #version[data-update=true]::before{opacity:1}
 #version[data-update=true]:hover{background:#ffeaea}
-#version[data-checking=true]::before{width:7px;height:7px;left:3px;opacity:1;background:transparent;border:1.5px solid currentColor;border-right-color:transparent;animation:version-check .65s linear infinite}
+#version[data-checking=true]{padding-left:15px}
+#version[data-checking=true]::before{width:7px;height:7px;left:4px;opacity:1;background:transparent;border:1.5px solid currentColor;border-right-color:transparent;animation:version-check .65s linear infinite}
 @keyframes version-check{to{transform:rotate(360deg)}}
 @container (max-width:420px){
  #header{gap:6px;padding-inline:12px}
