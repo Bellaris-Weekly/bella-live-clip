@@ -29,8 +29,8 @@ const api={
    return {data:JSON.stringify({code:0,data:{bvid,aid:index+1,title:`测试投稿 ${index+1}`,owner:{name:'测试作者'},pages:[1,2].map(part=>({page:part,cid:1000+index*10+part,duration:30,part:`测试分段 ${part}`}))}}),url};
   }
   if(parsed.pathname==='/x/web-interface/nav')return {data:JSON.stringify({code:-101,data:{wbi_img:{img_url:'https://i.example/7cd084941338484aae1ad9425b84077c.png',sub_url:'https://i.example/4932caff0ff746eab6f01bf08b70ac45.png'}}}),url};
-  if(parsed.pathname==='/x/player/videoshot')return {data:JSON.stringify({code:0,data:{img_x_len:2,img_y_len:2,img_x_size:320,img_y_size:180,image:['https://preview.hdslb.com/sheet.jpg'],index:[0,0,8,16,24]}})};
-  if(parsed.hostname==='preview.hdslb.com'){reads.push({url,signal});return {data:await sheetBytes};}
+  if(parsed.pathname==='/x/player/videoshot'){reads.push({storyboardMetadata:true,signal});await delay(100);signal?.throwIfAborted();return {data:JSON.stringify({code:0,data:{img_x_len:2,img_y_len:2,img_x_size:320,img_y_size:180,image:['https://preview.hdslb.com/sheet.jpg'],index:[0,0,8,16,24]}})};}
+  if(parsed.hostname==='preview.hdslb.com'){reads.push({url,signal});await delay(200);signal?.throwIfAborted();return {data:await sheetBytes};}
   if(parsed.pathname==='/x/player/wbi/playurl')return {data:JSON.stringify({code:0,data:{format:'mp4',quality:80,timelength:30000,accept_quality:[80],accept_description:['1080P 测试'],durl:[{url:`https://fixture.bilivideo.com/${parsed.searchParams.get('cid')}.mp4`}]}}),url};
   if(parsed.hostname==='fixture.bilivideo.com'){
    const entry={signal,url};reads.push(entry);
@@ -73,13 +73,31 @@ document.getElementById('test').onclick=async()=>{
   await app.open();assert(!pageVideo.paused,'重新打开中断了页面播放');
   pass('插件播放控制与开关面板保持页面播放意图');
   const timelineRect=$('timeline').getBoundingClientRect();
-  const targetX=timelineRect.left+timelineRect.width*.7;
+  const targetX=timelineRect.left+timelineRect.width*(21.25/30);
   const beginEvent=new PointerEvent('pointerdown',{button:0,pointerId:41,clientX:targetX,bubbles:true});
   // Synthetic pointer events have no native capture; stub only that DOM mechanic.
   const capture=$('timeline').setPointerCapture;$('timeline').setPointerCapture=()=>{};
   $('timeline').dispatchEvent(beginEvent);$('timeline').setPointerCapture=capture;
   const pageBeforePreview=pageVideo.currentTime;
-  await until(()=>$('videoLoading').hidden&&$('pageMirror').width===320,'图集预览绘制');
+  let movingFrames=0;
+  for(let i=0;i<40;i++){
+   const x=timelineRect.left+timelineRect.width*(17+i%5*.5)/30;
+   $('timeline').dispatchEvent(new PointerEvent('pointermove',{pointerId:41,clientX:x,bubbles:true}));
+   await delay(16);
+   if($('videoLoading').hidden&&$('pageMirror').width===320)movingFrames++;
+  }
+  assert(movingFrames>0,'连续拖动期间始终没有预览画面');
+  assert(reads.filter(item=>item.storyboardMetadata).length===1,'连续拖动重复请求了预览索引');
+  assert(reads.filter(item=>item.url==='https://preview.hdslb.com/sheet.jpg').length===1,'连续拖动重复下载了同一图集');
+  for(const [time,color]of [[2,[200,64,64]],[10,[64,200,64]],[18,[64,64,200]],[26,[200,200,64]],[10,[64,200,64]]]){
+   $('timeline').dispatchEvent(new PointerEvent('pointermove',{pointerId:41,clientX:timelineRect.left+timelineRect.width*time/30,bubbles:true}));
+   await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+   const pixel=$('pageMirror').getContext('2d').getImageData(0,0,1,1).data;
+   assert($('videoLoading').hidden&&color.every((value,index)=>Math.abs(pixel[index]-value)<3),`缓存预览没有及时显示对应切片：time=${time}, pixel=${Array.from(pixel)}, hidden=${$('videoLoading').hidden}`);
+  }
+  $('timeline').dispatchEvent(new PointerEvent('pointermove',{pointerId:41,clientX:targetX,bubbles:true}));
+  await until(()=>$('clock').textContent.startsWith('00:21')&&$('videoLoading').hidden&&$('pageMirror').width===320,'图集预览绘制');
+  pass('连续拖动在慢请求完成后立即出图，索引和图集各请求一次，缓存切片随移动更新');
   const previewPixel=$('pageMirror').getContext('2d').getImageData(0,0,1,1).data;
   assert(previewPixel[2]>previewPixel[0],'拖动没有显示对应的蓝色预览切片');
   assert(Math.abs(pageVideo.currentTime-pageBeforePreview)<2&&!pageVideo.paused,'拖动期间改变了页面播放进度或状态');

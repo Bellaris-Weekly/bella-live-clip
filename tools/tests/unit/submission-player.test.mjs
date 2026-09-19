@@ -92,6 +92,24 @@ test('drag shows a storyboard still while page events cannot overwrite it, then 
  f.player.end();assert.equal(f.video.currentTime,80);assert.equal(f.draws.at(-1)[0],f.video);f.player.destroy();
 });
 
+test('continuous pointer movement paints previews without waiting for the pointer to stop',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const reads=[];
+ const f=fixture(async time=>{reads.push(time);return {image:{time},x:0,y:0,width:320,height:180};});
+ await f.load();f.player.begin();
+ try{
+  for(const time of [80,81,90,140,139]){
+   f.player.seek(time);
+   await Promise.resolve();
+   assert.equal(f.draws.at(-1)[0].time,time,'each available frame paints during movement');
+   assert.equal(f.video.currentTime,12);
+   t.mock.timers.tick(16);
+  }
+  assert.deepEqual(reads,[80,81,90,140,139]);
+  f.player.end();assert.equal(f.video.currentTime,139);
+ }finally{f.player.destroy();}
+});
+
 test('native progress preview reuses its image and release leaves the native seek untouched',async()=>{
  const f=fixture();await f.load();f.player.begin();
  const image={naturalWidth:320,naturalHeight:180};f.player.previewImage(image,75);

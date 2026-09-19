@@ -5,7 +5,7 @@ import {clamp} from '../shared/math.js';
 export function createSubmissionPlayer({canvas,loading,getVideo,isCurrent,onTime,onState,status,getRange,createPreview}) {
  const context=canvas.getContext('2d');
  let source=null,submission=null,visible=false,frameId=null,stopTimer=null,range=null;
- let scrubbing=false,previewTime=null,preview=null,previewRead=null,previewTimer=null;
+ let scrubbing=false,previewTime=null,preview=null,previewRead=null;
  const listeners=[];
  const stopTimerNow=()=>{clearTimeout(stopTimer);stopTimer=null;};
  const stopFrame=()=>{if(frameId!==null)source?.cancelVideoFrameCallback(frameId);frameId=null;};
@@ -36,7 +36,7 @@ export function createSubmissionPlayer({canvas,loading,getVideo,isCurrent,onTime
  }
  function update(){draw();check();scheduleFrame();}
  function clearPreview(){
-  clearTimeout(previewTimer);previewTimer=null;previewRead?.abort();previewRead=null;
+  previewRead?.abort();previewRead=null;
  }
  function cancel(){
   stopTimerNow();range=null;clearPreview();scrubbing=false;previewTime=null;
@@ -71,16 +71,14 @@ export function createSubmissionPlayer({canvas,loading,getVideo,isCurrent,onTime
   canvas.width=Math.min(640,frame.width);canvas.height=Math.round(canvas.width*frame.height/frame.width);
   context.drawImage(frame.image,frame.x,frame.y,frame.width,frame.height,0,0,canvas.width,canvas.height);loading.hidden=true;
  }
- const seek=time=>{
+ const seek=async time=>{
   refresh();if(!submission||!visible)return;
   const target=clamp(time,0,Math.max(0,submission.duration-.001));
   if(!scrubbing){if(source)source.currentTime=target;return;}
   clearPreview();previewTime=target;onTime(target);loading.hidden=false;loading.textContent='正在读取进度预览图…';
   const own=new AbortController();previewRead=own;
-  previewTimer=setTimeout(async()=>{
-   try{const frame=await preview.read(target,own.signal);if(!own.signal.aborted&&previewRead===own)showPreview(frame,target);}
-   catch(error){if(!own.signal.aborted&&previewRead===own){loading.hidden=false;loading.textContent='当前位置暂无预览图，松开后定位播放';}}
-  },80);
+  try{const frame=await preview.read(target,own.signal);if(!own.signal.aborted&&previewRead===own)showPreview(frame,target);}
+  catch(error){if(!own.signal.aborted&&previewRead===own){loading.hidden=false;loading.textContent='当前位置暂无预览图，松开后定位播放';}}
  };
  const toggle=()=>{refresh();range=null;stopTimerNow();if(source){if(source.paused||source.ended)play();else source.pause();}};
  const click=event=>{if(event.detail===1)toggle();};

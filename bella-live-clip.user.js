@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.6
+// @version      2.11.7
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.6\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.7\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -1338,40 +1338,85 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return { url: url2.href, x: position % columns * width, y: Math.floor(position % (columns * rows) / columns) * height, width, height, columns, rows };
   }
   function createSubmissionStoryboard({ metadataRequest, mediaRequest, submission, decode = (blob) => createImageBitmap(blob) }) {
-    let metadata = null, image = null, imageUrl = null, closed = false;
+    const lifetime = new AbortController(), sheets = /* @__PURE__ */ new Map();
+    let metadata = null;
+    async function wait2(pending, signal) {
+      signal.throwIfAborted();
+      let abort;
+      try {
+        const result = await Promise.race([pending, new Promise((_, reject) => {
+          abort = () => reject(signal.reason);
+          signal.addEventListener("abort", abort, { once: true });
+        })]);
+        signal.throwIfAborted();
+        lifetime.signal.throwIfAborted();
+        return result;
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+    }
+    function getMetadata() {
+      if (!metadata) metadata = (async () => {
+        const params = new URLSearchParams({ bvid: submission.bvid, cid: submission.cid, index: 1 });
+        const { data } = await metadataRequest(`https://api.bilibili.com/x/player/videoshot?${params}`, { auth: true, signal: lifetime.signal, referer: submission.referer });
+        lifetime.signal.throwIfAborted();
+        const result = JSON.parse(data);
+        if (result.code !== 0 || !result.data) throw new Error("这个视频暂无进度预览图。");
+        return result.data;
+      })().catch((error) => {
+        metadata = null;
+        throw error;
+      });
+      return metadata;
+    }
+    function release(entry) {
+      entry.controller.abort();
+      entry.image?.close();
+    }
+    function getSheet(url2) {
+      let entry = sheets.get(url2);
+      if (entry) {
+        sheets.delete(url2);
+        sheets.set(url2, entry);
+        return entry.pending;
+      }
+      entry = { controller: new AbortController(), image: null, pending: null };
+      sheets.set(url2, entry);
+      if (sheets.size > 2) {
+        const oldest = sheets.keys().next().value;
+        release(sheets.get(oldest));
+        sheets.delete(oldest);
+      }
+      const { signal } = entry.controller;
+      entry.pending = (async () => {
+        const { data } = await mediaRequest(url2, { type: "arraybuffer", signal, referer: submission.referer });
+        signal.throwIfAborted();
+        const image = await decode(new Blob([data]));
+        if (signal.aborted) {
+          image.close();
+          signal.throwIfAborted();
+        }
+        entry.image = image;
+        return image;
+      })().catch((error) => {
+        if (sheets.get(url2) === entry) sheets.delete(url2);
+        throw error;
+      });
+      return entry.pending;
+    }
     return {
       async read(time2, signal) {
         signal.throwIfAborted();
-        if (!metadata) {
-          const params = new URLSearchParams({ bvid: submission.bvid, cid: submission.cid, index: 1 });
-          const { data } = await metadataRequest(`https://api.bilibili.com/x/player/videoshot?${params}`, { auth: true, signal, referer: submission.referer });
-          signal.throwIfAborted();
-          const result = JSON.parse(data);
-          if (result.code !== 0 || !result.data) throw new Error("这个视频暂无进度预览图。");
-          metadata = result.data;
-        }
-        const cell = storyboardCell(metadata, time2);
-        if (imageUrl !== cell.url) {
-          const { data } = await mediaRequest(cell.url, { type: "arraybuffer", signal, referer: submission.referer });
-          signal.throwIfAborted();
-          const next = await decode(new Blob([data]));
-          if (signal.aborted || closed) {
-            next.close();
-            signal.throwIfAborted();
-            throw new DOMException("Preview closed", "AbortError");
-          }
-          image?.close();
-          image = next;
-          imageUrl = cell.url;
-        }
+        lifetime.signal.throwIfAborted();
+        const cell = storyboardCell(await wait2(getMetadata(), signal), time2);
+        const image = await wait2(getSheet(cell.url), signal);
         const width = image.width / cell.columns, height = image.height / cell.rows;
         return { image, x: cell.x / cell.width * width, y: cell.y / cell.height * height, width, height };
       },
       dispose() {
-        closed = true;
-        image?.close();
-        image = null;
-        imageUrl = null;
+        lifetime.abort();
+        for (const entry of sheets.values()) release(entry);
+        sheets.clear();
       }
     };
   }
@@ -1437,7 +1482,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function createSubmissionPlayer({ canvas, loading, getVideo, isCurrent, onTime, onState, status: status2, getRange, createPreview }) {
     const context = canvas.getContext("2d");
     let source = null, submission = null, visible = false, frameId = null, stopTimer = null, range = null;
-    let scrubbing = false, previewTime = null, preview = null, previewRead = null, previewTimer = null;
+    let scrubbing = false, previewTime = null, preview = null, previewRead = null;
     const listeners = [];
     const stopTimerNow = () => {
       clearTimeout(stopTimer);
@@ -1498,8 +1543,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       scheduleFrame();
     }
     function clearPreview() {
-      clearTimeout(previewTimer);
-      previewTimer = null;
       previewRead?.abort();
       previewRead = null;
     }
@@ -1579,7 +1622,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       context.drawImage(frame.image, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
       loading.hidden = true;
     }
-    const seek = (time2) => {
+    const seek = async (time2) => {
       refresh();
       if (!submission || !visible) return;
       const target = clamp(time2, 0, Math.max(0, submission.duration - 1e-3));
@@ -1594,17 +1637,15 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       loading.textContent = "正在读取进度预览图…";
       const own = new AbortController();
       previewRead = own;
-      previewTimer = setTimeout(async () => {
-        try {
-          const frame = await preview.read(target, own.signal);
-          if (!own.signal.aborted && previewRead === own) showPreview(frame, target);
-        } catch (error) {
-          if (!own.signal.aborted && previewRead === own) {
-            loading.hidden = false;
-            loading.textContent = "当前位置暂无预览图，松开后定位播放";
-          }
+      try {
+        const frame = await preview.read(target, own.signal);
+        if (!own.signal.aborted && previewRead === own) showPreview(frame, target);
+      } catch (error) {
+        if (!own.signal.aborted && previewRead === own) {
+          loading.hidden = false;
+          loading.textContent = "当前位置暂无预览图，松开后定位播放";
         }
-      }, 80);
+      }
     };
     const toggle = () => {
       refresh();
@@ -1706,7 +1747,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     };
   }
 
-  // node_modules/mediabunny/dist/modules/src/misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2300,7 +2341,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype && Object.values(value).every((x) => typeof x === "string");
   };
 
-  // node_modules/mediabunny/dist/modules/src/logging.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/logging.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2361,7 +2402,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   Logging._level = LogLevel.Info;
   Logging._emitterInstance = null;
 
-  // node_modules/mediabunny/dist/modules/src/metadata.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/metadata.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2512,7 +2553,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/shared/bitstream.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/shared/bitstream.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2591,7 +2632,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/shared/aac-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/shared/aac-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2763,7 +2804,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     bitstream.writeBits(13, frameLength);
   };
 
-  // node_modules/mediabunny/dist/modules/shared/ac3-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/shared/ac3-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -2774,7 +2815,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   var AC3_SAMPLE_RATES = [48e3, 44100, 32e3];
   var EAC3_REDUCED_SAMPLE_RATES = [24e3, 22050, 16e3];
 
-  // node_modules/mediabunny/dist/modules/src/codec-data.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/codec-data.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -5206,7 +5247,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return popcount(channelLayout) + popcount(channelLayout & DTS_CHANNEL_LAYOUT_PAIR_MASK);
   };
 
-  // node_modules/mediabunny/dist/modules/src/codec.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/codec.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6129,7 +6170,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/shared/mp3-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/shared/mp3-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6376,7 +6417,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return channel === 3 ? 1 : 2;
   };
 
-  // node_modules/mediabunny/dist/modules/src/demuxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/demuxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6392,7 +6433,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/packet.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/packet.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6560,7 +6601,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6607,7 +6648,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   };
   var psshBoxesAreEqual = (a, b) => a.systemId === b.systemId && uint8ArraysAreEqual(a.data, b.data);
 
-  // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-reader.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-reader.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6685,7 +6726,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/aes.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/aes.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -6873,7 +6914,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     });
   };
 
-  // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -9895,7 +9936,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return ranges;
   };
 
-  // node_modules/mediabunny/dist/modules/src/adts/adts-reader.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/adts/adts-reader.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -9956,7 +9997,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     };
   };
 
-  // node_modules/mediabunny/dist/modules/src/adts/adts-demuxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/adts/adts-demuxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -9966,7 +10007,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
    */
   var SAMPLES_PER_AAC_FRAME = 1024;
 
-  // node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -9986,7 +10027,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return string;
   };
 
-  // node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-demuxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-demuxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -11773,7 +11814,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/hls/hls-misc.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/hls/hls-misc.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -11843,7 +11884,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/segmented-input.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/segmented-input.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -12225,7 +12266,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/source.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/source.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -13338,7 +13379,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/hls/hls-segmented-input.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/hls/hls-segmented-input.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -13923,7 +13964,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/hls/hls-demuxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/hls/hls-demuxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -14587,7 +14628,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return languageSubtag;
   };
 
-  // node_modules/mediabunny/dist/modules/src/input-format.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/input-format.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -14754,7 +14795,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/sample.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/sample.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -16871,7 +16912,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     });
   };
 
-  // node_modules/mediabunny/dist/modules/src/encode.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/encode.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -17486,7 +17527,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return null;
   };
 
-  // node_modules/mediabunny/dist/modules/src/custom-coder.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/custom-coder.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -17499,7 +17540,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   var customVideoEncoders = [];
   var customAudioEncoders = [];
 
-  // node_modules/mediabunny/dist/modules/src/pcm.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/pcm.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -17582,7 +17623,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return sign === 0 ? decoded : -decoded;
   };
 
-  // node_modules/mediabunny/dist/modules/src/media-sink.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/media-sink.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -19180,7 +19221,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/input-track.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/input-track.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -20208,7 +20249,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return best;
   };
 
-  // node_modules/mediabunny/dist/modules/src/input.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/input.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -20569,7 +20610,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/reader.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/reader.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -20789,7 +20830,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return lines;
   };
 
-  // node_modules/mediabunny/dist/modules/src/muxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/muxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -20829,7 +20870,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/subtitles.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/subtitles.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -20846,7 +20887,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return hours.toString().padStart(2, "0") + ":" + minutes.toString().padStart(2, "0") + ":" + seconds.toString().padStart(2, "0") + "." + milliseconds.toString().padStart(3, "0");
   };
 
-  // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-boxes.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-boxes.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -22615,7 +22656,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return language;
   };
 
-  // node_modules/mediabunny/dist/modules/src/writer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/writer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -22714,7 +22755,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/target.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/target.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -23108,7 +23149,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-muxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/isobmff/isobmff-muxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -24153,7 +24194,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-muxer.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/mpeg-ts/mpeg-ts-muxer.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -24739,7 +24780,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return result;
   };
 
-  // node_modules/mediabunny/dist/modules/src/resample.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/resample.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -24925,7 +24966,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/media-source.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/media-source.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -26358,7 +26399,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/output-format.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/output-format.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -26604,7 +26645,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/output.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/output.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -27133,7 +27174,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/conversion.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/conversion.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -28483,7 +28524,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/index.js
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/mediabunny/dist/modules/src/index.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
    *
@@ -29593,7 +29634,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
   };
 
-  // node_modules/hls.js/dist/hls.mjs
+  // ../../../../Documents/ChatGPT/直播片段下载/node_modules/hls.js/dist/hls.mjs
   var isFiniteNumber = Number.isFinite || function(value) {
     return typeof value === "number" && isFinite(value);
   };
