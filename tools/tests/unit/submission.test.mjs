@@ -11,6 +11,17 @@ const metadata = (bvid=ids[0]) => ({bvid,aid:123,title:'视频标题',owner:{nam
 const stream = (id,codecs,bandwidth) => ({id,codecs,bandwidth,baseUrl:`https://test.bilivideo.com/${id}`,backupUrl:[`http://backup.bilivideo.cn/${id}`]});
 const play = () => ({timelength:90000,quality:120,support_formats:[{quality:80,new_description:'1080P'},{quality:64,new_description:'720P'}],dash:{video:[stream(120,'hev1.1.6',3000),stream(64,'avc1.640028',900),stream(80,'avc1.640032',1500)],audio:[stream(30216,'mp4a.40.2',64000),stream(30280,'mp4a.40.2',192000)]}});
 
+test('保留两种 API 命名的分段索引并拒绝无效范围', () => {
+ for (const field of ['SegmentBase', 'segment_base']) {
+  const p = play(); p.dash.video[2][field] = field === 'SegmentBase' ? {indexRange:'950-18437'} : {index_range:'950-18437'};
+  assert.deepEqual(normalizeSubmission(metadata(),{part:1},p).media.video.indexRange,{offset:950,length:17488});
+ }
+ for (const indexRange of ['bad', '50-10', '0-9007199254740991']) {
+  const p=play(); p.dash.video[2].SegmentBase={indexRange};
+  assert.throws(()=>normalizeSubmission(metadata(),{part:1},p),/索引范围/);
+ }
+});
+
 test('recognizes two video identities, av IDs and current parts without accepting foreign routes',()=>{
  for(const bvid of ids) assert.deepEqual(parseSubmissionUrl(`https://www.bilibili.com/video/${bvid}/?p=2`),{bvid,part:2,key:`${bvid}:2`});
  assert.deepEqual(parseSubmissionUrl('https://www.bilibili.com/video/av123'),{aid:'123',part:1,key:'av123:1'});

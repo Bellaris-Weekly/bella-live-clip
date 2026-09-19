@@ -5,17 +5,82 @@ import { config } from '../support/synthetic-frame.mjs';
 import { exportSubmission } from '../../../src/media/submission-export.js';
 import { RequestError } from '../../../src/services/retry-request.js';
 import { openSubmissionMedia } from '../../../src/media/remote-mp4.js';
+import { withSegmentIndex } from '../support/indexed-mp4.mjs';
+import { createFragmentIndex } from '../../../src/media/mp4-index.js';
 
-async function fixture(kind, packetSize = 6, { videoOffset = 0, videoFrames = 300 } = {}) {
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
+test('损坏或层级分段索引明确失败，不能退回全文件扫描', async () => {
+  const file = withSegmentIndex(await fixture('video', 6, { fragmented: true }));
+  for (const mutate of [
+    (view, offset) => view.setUint32(offset + 16, 0),
+    (view, offset) => view.setUint32(offset + 32, 0x80000010),
+    (view, offset) => view.setUint32(offset + 32, file.bytes.length),
+    (view, offset) => view.setUint16(offset + 30, 100),
+  ]) {
+    const bytes = file.bytes.slice(), view = new DataView(bytes.buffer);
+    mutate(view, file.indexRange.offset);
+    const record = submission(true); record.media.video.indexRange = file.indexRange;
+    const calls = [];
+    await assert.rejects(exportSubmission(transport({ video: bytes }, calls), record, { start: 2, end: 6 }, { precise: true }), /索引无效/);
+    assert.equal(calls.length, 2, '只读长度和索引，不能扫描媒体');
+  }
+  for (const length of [12, 28]) {
+    await assert.rejects(createFragmentIndex(new Uint8Array(length), { offset: 0, length }, 100), /索引无效/);
+  }
+});
+
+test('读取分段索引时可取消，不交付迟到结果或开始媒体下载', async () => {
+  const file = withSegmentIndex(await fixture('video', 6, { fragmented: true }));
+  const record = submission(true); record.media.video.indexRange = file.indexRange;
+  const controller = new AbortController(), reason = new Error('取消索引读取');
+  const read = transport({ video: file.bytes }), calls = [];
+  const operation = exportSubmission(async (url, options) => {
+    calls.push(options.range);
+    const response = await read(url, options);
+    if (options.range.length > 1) controller.abort(reason);
+    return response;
+  }, record, { start: 2, end: 6 }, { signal: controller.signal, precise: true });
+  await assert.rejects(operation, error => error === reason);
+  assert.equal(calls.length, 2);
+});
+
+for (const [seconds, start, version, timescale, firstOffset] of [[60, 42, 0, 1000, 0], [100, 82, 1, 48000, 32]]) {
+  test(`SIDX v${version}: ${seconds}秒分段视频靠后精确剪辑不扫描整片，保留时间与画面包`, async () => {
+    const file = withSegmentIndex(await fixture('video', 16384, { videoFrames: seconds * 30, fragmented: true }), { version, timescale, firstOffset });
+    const record = submission(true); record.duration = seconds; record.media.video.indexRange = file.indexRange;
+    const calls = [], events = [];
+    const blob = await exportSubmission(transport({ video: file.bytes }, calls), record, { start, end: start + 4 }, { precise: true, onProgress: e => events.push(e) });
+    const transferred = calls.reduce((sum, call) => sum + call.range.length, 0);
+    assert.ok(transferred < file.bytes.length / 3, `${transferred} / ${file.bytes.length}: 不应沿途预读整个文件`);
+    assert.ok(calls.length < 40, `${calls.length}次请求：不能逐个扫描前面的分片`);
+    assert.ok(events.filter(e => e.bytes > 0 && e.progress === 0).every(e => e.phase === 'preparing' || e.phase === 'processing'));
+    assert.ok(events.some(e => e.phase === 'processing'));
+    assert.equal(events.at(-1).phase, 'complete');
+    assert.ok(Math.abs(events.at(-1).estimatedBytes / blob.size - 1) < .02);
+    const output = new Input({ source: new BufferSource(await blob.arrayBuffer()), formats: [MP4] });
+    try {
+      assert.equal(await output.computeDuration(), 4);
+      const packets = [];
+      for await (const packet of new EncodedPacketSink(await output.getPrimaryVideoTrack()).packets()) packets.push(packet);
+      assert.equal(packets.length, 120); assert.equal(packets[0].timestamp, 0);
+      assert.ok(packets.every(packet => packet.byteLength === 16384));
+    } finally { output.dispose(); }
+  });
+}
+
+async function fixture(kind, packetSize = 6, { videoOffset = 0, videoFrames = 300, fragmented = false } = {}) {
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: fragmented ? 'fragmented' : false, minimumFragmentDuration: 2 }), target: new BufferTarget() });
   const video = kind !== 'audio' && new EncodedVideoPacketSource('avc');
   const audio = kind !== 'video' && new EncodedAudioPacketSource('aac');
   if (video) output.addVideoTrack(video);
   if (audio) output.addAudioTrack(audio);
   await output.start();
   if (video) {
-    for (let i = 0; i < videoFrames; i++) await video.add(new EncodedPacket(Uint8Array.from({length:packetSize},(_,index)=>[0,0,0,2,i%60 ? 0x41 : 0x65,0x88][index]??0),
+    for (let i = 0; i < videoFrames; i++) {
+      const data = new Uint8Array(packetSize); data.set([0,0,0,2,i%60 ? 0x41 : 0x65,0x88]);
+      new DataView(data.buffer).setUint32(0, packetSize - 4);
+      await video.add(new EncodedPacket(data,
       i%60 ? 'delta' : 'key', videoOffset+i/30, 1/30), { decoderConfig: { ...config, description: new Uint8Array(Buffer.from(config.description, 'base64')) } });
+    }
     video.close();
   }
   if (audio) {

@@ -23,6 +23,7 @@ import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
 import {exportSelection} from '../media/export.js';
 import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from '../media/recording.js';
+import {renderExportProgress} from '../ui/export-progress.js';
 import {fileName} from '../media/file-name.js';
 import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
@@ -75,7 +76,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
   $('selectionDuration').textContent=formatDuration(selection.end-selection.start);
-  if(isSubmission()){const rate=record.media.video.bandwidth+(record.media.audio?.bandwidth||0);$('estimatedSize').textContent=rate?`约 ${formatBytes(rate*(selection.end-selection.start)/8)}`:'大小暂不可用';return;}
+  if(isSubmission()){const rate=record.media.video.bandwidth+(record.media.audio?.bandwidth||0);$('estimatedSize').textContent=rate?`预计成品约 ${formatBytes(rate*(selection.end-selection.start)/8)}`:'大小暂不可用';return;}
   $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
  function startEstimate(plan,signal){
@@ -162,7 +163,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   if(controller){if(jobKind==='load'){pendingRoute=true;controller.abort();}return;}
   void currentVideo();
  }
- async function download(){await job(async signal=>{const selection=timeline.getSelection();if(isSubmission())player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');const onProgress=p=>{$('progress').value=p.progress*100;status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次） · `:''}${p.message?p.message+' · ':''}${isSubmission()?'':`已下载 ${p.downloaded}/${p.count} 片 · `}处理 ${Math.round((p.processing??p.progress)*100)}% · ${formatBytes(p.bytes)}`);};
+ async function download(){await job(async signal=>{const selection=timeline.getSelection();if(isSubmission())player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');const onProgress=p=>{renderExportProgress($('progress'),status,p,isSubmission());if(isSubmission()&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
   const outputs=isSubmission()?[{blob:await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress}),...selection}]:await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress});
   for(const [i,output]of outputs.entries()){const a=document.createElement('a');a.href=URL.createObjectURL(output.blob);urls.push(a.href);a.download=fileName(record,output.start,output.end,outputs.length>1?`_第${i+1}段`:'');a.textContent=`保存${outputs.length>1?'第 '+(i+1)+' 段':''} MP4 · ${formatBytes(output.blob.size)}`;$('downloads').append(a);}
   if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?'MP4 已生成，可点击下方链接再次保存。':`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);

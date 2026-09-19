@@ -39,7 +39,18 @@ function descriptor(stream) {
     ...(stream.backupUrl ?? stream.backup_url ?? [])];
   const urls = [...new Set(candidates.map(allowedMedia).filter(Boolean))];
   if (!urls.length) throw new Error('视频未返回受支持的 CDN 地址，请重新加载后重试。');
-  return {url:urls[0], bandwidth:Number(stream.bandwidth) || 0, backupUrls:urls.slice(1)};
+  const index = (stream.SegmentBase ?? stream.segment_base)?.indexRange
+    ?? stream.segment_base?.index_range;
+  let indexRange;
+  if (index !== undefined) {
+    const match = /^(\d+)-(\d+)$/.exec(index);
+    const offset = Number(match?.[1]), end = Number(match?.[2]);
+    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset < 0 || end < offset || !Number.isSafeInteger(end + 1)) {
+      throw new Error('视频分段索引范围无效，请重新加载。');
+    }
+    indexRange = { offset, length:end - offset + 1 };
+  }
+  return {url:urls[0], bandwidth:Number(stream.bandwidth) || 0, backupUrls:urls.slice(1), ...(indexRange ? {indexRange} : {})};
 }
 
 export function normalizeSubmission(metadata, route, play) {

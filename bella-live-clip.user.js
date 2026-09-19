@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.5
+// @version      2.11.6
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.5\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.6\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -1131,7 +1131,17 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     ];
     const urls = [...new Set(candidates.map(allowedMedia).filter(Boolean))];
     if (!urls.length) throw new Error("视频未返回受支持的 CDN 地址，请重新加载后重试。");
-    return { url: urls[0], bandwidth: Number(stream.bandwidth) || 0, backupUrls: urls.slice(1) };
+    const index = (stream.SegmentBase ?? stream.segment_base)?.indexRange ?? stream.segment_base?.index_range;
+    let indexRange;
+    if (index !== void 0) {
+      const match = /^(\d+)-(\d+)$/.exec(index);
+      const offset = Number(match?.[1]), end = Number(match?.[2]);
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(end) || offset < 0 || end < offset || !Number.isSafeInteger(end + 1)) {
+        throw new Error("视频分段索引范围无效，请重新加载。");
+      }
+      indexRange = { offset, length: end - offset + 1 };
+    }
+    return { url: urls[0], bandwidth: Number(stream.bandwidth) || 0, backupUrls: urls.slice(1), ...indexRange ? { indexRange } : {} };
   }
   function normalizeSubmission(metadata, route, play) {
     const page = submissionPart(metadata, route);
@@ -28487,17 +28497,87 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
   globalThis[MEDIABUNNY_LOADED_SYMBOL] = true;
 
+  // src/media/mp4-index.js
+  async function createFragmentIndex(prefix, indexRange, fileSize) {
+    const fail = () => {
+      throw new Error("视频分段索引无效，无法定位选段，请重新加载视频。");
+    };
+    const bytes2 = prefix.subarray(indexRange.offset, indexRange.offset + indexRange.length);
+    const view3 = new DataView(bytes2.buffer, bytes2.byteOffset, bytes2.byteLength);
+    if (bytes2.length < 32 || view3.getUint32(0) !== bytes2.length || String.fromCharCode(...bytes2.subarray(4, 8)) !== "sidx" || bytes2[8] > 1) fail();
+    const version2 = bytes2[8], trackId = view3.getUint32(12), timescale = view3.getUint32(16);
+    let pos = 20;
+    const word = () => {
+      const length = version2 ? 8 : 4;
+      if (pos + length > bytes2.length) fail();
+      const value = version2 ? Number(view3.getBigUint64(pos)) : view3.getUint32(pos);
+      pos += length;
+      if (!Number.isSafeInteger(value)) fail();
+      return value;
+    };
+    let time2 = word(), offset = indexRange.offset + bytes2.length + word();
+    if (!timescale || pos + 4 > bytes2.length) fail();
+    const count = view3.getUint16(pos + 2);
+    pos += 4;
+    if (!count || pos + count * 12 !== bytes2.length) fail();
+    const segments = [], entries = [];
+    for (let i = 0; i < count; i++, pos += 12) {
+      const reference = view3.getUint32(pos), duration = view3.getUint32(pos + 4), sap = view3.getUint32(pos + 8);
+      if (reference >= 2147483648 || !reference || !duration || offset + reference > fileSize) fail();
+      segments.push({ start: time2 / timescale, end: (time2 + duration) / timescale, bytes: reference });
+      if (sap >>> 31 && (sap & 268435455) === 0) entries.push({ time: time2, offset });
+      time2 += duration;
+      offset += reference;
+      if (!Number.isSafeInteger(time2) || !Number.isSafeInteger(offset)) fail();
+    }
+    if (!entries.length) fail();
+    const input = new Input({ source: new BufferSource(prefix), formats: [MP4] });
+    let trackScale;
+    try {
+      const tracks = await input.getTracks();
+      const track = tracks.find((item) => item.id === trackId);
+      if (!track) fail();
+      trackScale = await track.getTimeResolution();
+    } finally {
+      input.dispose();
+    }
+    const trailer = new Uint8Array(8 + 24 + entries.length * 19 + 16);
+    const out = new DataView(trailer.buffer);
+    const box2 = (at, size, type) => {
+      out.setUint32(at, size);
+      trailer.set([...type].map((char) => char.charCodeAt(0)), at + 4);
+    };
+    box2(0, trailer.length, "mfra");
+    box2(8, 24 + entries.length * 19, "tfra");
+    trailer[16] = 1;
+    out.setUint32(20, trackId);
+    out.setUint32(28, entries.length);
+    pos = 32;
+    for (const entry of entries) {
+      const timestamp = Math.floor(entry.time * trackScale / timescale);
+      if (!Number.isSafeInteger(timestamp)) fail();
+      out.setBigUint64(pos, BigInt(timestamp));
+      out.setBigUint64(pos + 8, BigInt(entry.offset));
+      trailer.set([1, 1, 1], pos + 16);
+      pos += 19;
+    }
+    box2(pos, 16, "mfro");
+    out.setUint32(pos + 12, trailer.length);
+    return { trailer, segments };
+  }
+
   // src/media/remote-mp4.js
   var CHUNK_SIZE = 1024 * 1024;
   function remoteMp4Source(request, descriptor2, { signal, referer, onRead = () => {
   }, onRetry = () => {
+  }, onIndex = () => {
   } } = {}) {
     const api = typeof request === "function" ? { request } : request;
     const controller = new AbortController();
     const abort = () => controller.abort(signal.reason);
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
-    let sizePromise, size;
+    let sizePromise, size, prefix, trailer;
     async function readRange(start, end) {
       controller.signal.throwIfAborted();
       const range = { offset: start, length: end - start };
@@ -28521,18 +28601,43 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       signal?.removeEventListener("abort", abort);
       controller.abort();
     };
+    async function initialize() {
+      await readRange(0, 1);
+      if (descriptor2.indexRange) {
+        const end = descriptor2.indexRange.offset + descriptor2.indexRange.length;
+        if (end > size) throw new Error("视频分段索引超出文件范围。");
+        prefix = new Uint8Array(end);
+        for (let start = 0; start < end; start += CHUNK_SIZE) {
+          prefix.set(await readRange(start, Math.min(end, start + CHUNK_SIZE)), start);
+        }
+        const index = await createFragmentIndex(prefix, descriptor2.indexRange, size);
+        controller.signal.throwIfAborted();
+        trailer = index.trailer;
+        onIndex(index.segments, descriptor2);
+      }
+      return size + (trailer?.length ?? 0);
+    }
     return new CustomSource({
       maxCacheSize: 8 * CHUNK_SIZE,
       prefetchProfile: "network",
       getSize() {
-        return sizePromise ??= readRange(0, 1).then(() => size);
+        return sizePromise ??= initialize();
       },
       read(start, end) {
         return new ReadableStream({
           async pull(stream) {
             try {
-              const next = Math.min(end, start + CHUNK_SIZE);
-              stream.enqueue(await readRange(start, next));
+              let next = Math.min(end, start + CHUNK_SIZE), bytes2;
+              if (prefix && start < prefix.length) {
+                next = Math.min(next, prefix.length);
+                bytes2 = prefix.subarray(start, next);
+              } else if (start >= size) {
+                bytes2 = trailer.subarray(start - size, next - size);
+              } else {
+                next = Math.min(next, size);
+                bytes2 = await readRange(start, next);
+              }
+              stream.enqueue(bytes2);
               start = next;
               if (start === end) stream.close();
             } catch (error) {
@@ -29258,6 +29363,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
   }
   async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {
+  }, onProcessingStart = () => {
   } }) {
     signal?.throwIfAborted();
     const track = tracks.find((item) => item.type === "video");
@@ -29293,6 +29399,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       output.addAudioTrack(source, await trackMetadata(audio));
       streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
     }
+    onProcessingStart();
     return muxPackets(output, streams, {
       start: origin,
       end: limit,
@@ -29310,13 +29417,17 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > submission.duration + 1e-3) {
       throw new Error("视频选区无效，请重新选择起止位置。");
     }
-    let bytes2 = 0, progress = 0, message;
+    let bytes2 = 0, progress = 0, message, phase = "preparing";
+    const estimates = /* @__PURE__ */ new Map();
+    const descriptors = [submission.media.video, submission.media.audio].filter(Boolean);
+    for (const descriptor2 of descriptors) estimates.set(descriptor2, descriptor2.bandwidth ? descriptor2.bandwidth * (end - start) / 8 : null);
     const retries = /* @__PURE__ */ new Map();
-    const report = (phase = "processing") => onProgress({
+    const report = () => onProgress({
       progress,
       bytes: bytes2,
       phase,
       message,
+      estimatedBytes: [...estimates.values()].every((value) => value !== null) ? [...estimates.values()].reduce((sum, value) => sum + value, 0) : null,
       reconnecting: retries.size,
       attempt: Math.max(0, ...retries.values())
     });
@@ -29326,6 +29437,10 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         bytes2 += size;
         report();
       },
+      onIndex(segments, descriptor2) {
+        estimates.set(descriptor2, segments.reduce((sum, segment) => sum + segment.bytes * Math.max(0, Math.min(end, segment.end) - Math.max(start, segment.start)) / (segment.end - segment.start), 0));
+        report();
+      },
       onRetry(state, descriptor2) {
         if (state) retries.set(descriptor2, state.attempt);
         else retries.delete(descriptor2);
@@ -29333,13 +29448,17 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       }
     });
     try {
-      report("download");
+      report();
       const tracks = await media.getTracks();
       const trim = precise ? trimPreciseTracks : trimCopyTracks;
       const blob = await trim(tracks, {
         start,
         end,
         signal,
+        onProcessingStart() {
+          phase = "processing";
+          report();
+        },
         onProgress(value, detail) {
           progress = Math.max(progress, Math.min(0.99, value));
           message = detail?.message ?? message;
@@ -29348,7 +29467,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       });
       signal?.throwIfAborted();
       progress = 1;
-      report("complete");
+      phase = "complete";
+      report();
       return blob;
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
@@ -63441,6 +63561,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     return outputs;
   }
 
+  // src/ui/export-progress.js
+  function renderExportProgress(progress, status2, state, submission) {
+    const preparing = submission && state.phase === "preparing";
+    if (preparing) progress.removeAttribute("value");
+    else progress.value = state.progress * 100;
+    const parts = [];
+    if (state.reconnecting) parts.push(`网络波动，自动重连中（第 ${state.attempt} 次）`);
+    if (state.message) parts.push(state.message);
+    if (!submission) parts.push(`已下载 ${state.downloaded}/${state.count} 片`);
+    parts.push(preparing ? "正在定位选段" : `处理 ${Math.round((state.processing ?? state.progress) * 100)}%`);
+    parts.push(`已读取 ${formatBytes(state.bytes)}`);
+    status2(parts.join(" · "));
+  }
+
   // src/media/file-name.js
   function fileName(record, start, end, part = "") {
     if (record.kind === "submission") {
@@ -63566,7 +63700,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       $("selectionDuration").textContent = formatDuration(selection.end - selection.start);
       if (isSubmission()) {
         const rate = record.media.video.bandwidth + (record.media.audio?.bandwidth || 0);
-        $("estimatedSize").textContent = rate ? `约 ${formatBytes(rate * (selection.end - selection.start) / 8)}` : "大小暂不可用";
+        $("estimatedSize").textContent = rate ? `预计成品约 ${formatBytes(rate * (selection.end - selection.start) / 8)}` : "大小暂不可用";
         return;
       }
       $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
@@ -63818,8 +63952,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         clearDownloads();
         status2("正在读取选中的片段…");
         const onProgress = (p) => {
-          $("progress").value = p.progress * 100;
-          status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次） · ` : ""}${p.message ? p.message + " · " : ""}${isSubmission() ? "" : `已下载 ${p.downloaded}/${p.count} 片 · `}处理 ${Math.round((p.processing ?? p.progress) * 100)}% · ${formatBytes(p.bytes)}`);
+          renderExportProgress($("progress"), status2, p, isSubmission());
+          if (isSubmission() && p.estimatedBytes !== null) $("estimatedSize").textContent = `预计成品约 ${formatBytes(p.estimatedBytes)}`;
         };
         const outputs = isSubmission() ? [{ blob: await exportSubmission(api.request, record, selection, { signal, precise: true, onProgress }), ...selection }] : await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress });
         for (const [i, output] of outputs.entries()) {

@@ -1,16 +1,17 @@
 import { CustomSource, Input, MP4 } from 'mediabunny';
 import { requestWithRetry } from '../services/retry-request.js';
+import { createFragmentIndex } from './mp4-index.js';
 
 const CHUNK_SIZE = 1024 * 1024;
 
 // Each source owns its transport lifetime; the library owns its bounded cache.
-export function remoteMp4Source(request, descriptor, { signal, referer, onRead = () => {}, onRetry = () => {} } = {}) {
+export function remoteMp4Source(request, descriptor, { signal, referer, onRead = () => {}, onRetry = () => {}, onIndex = () => {} } = {}) {
   const api = typeof request === 'function' ? { request } : request;
   const controller = new AbortController();
   const abort = () => controller.abort(signal.reason);
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
-  let sizePromise, size;
+  let sizePromise, size, prefix, trailer;
   async function readRange(start, end) {
     controller.signal.throwIfAborted();
     const range = { offset: start, length: end - start };
@@ -33,16 +34,39 @@ export function remoteMp4Source(request, descriptor, { signal, referer, onRead =
     signal?.removeEventListener('abort', abort);
     controller.abort();
   };
+  async function initialize() {
+    await readRange(0, 1);
+    if (descriptor.indexRange) {
+      const end = descriptor.indexRange.offset + descriptor.indexRange.length;
+      if (end > size) throw new Error('视频分段索引超出文件范围。');
+      prefix = new Uint8Array(end);
+      for (let start = 0; start < end; start += CHUNK_SIZE) {
+        prefix.set(await readRange(start, Math.min(end, start + CHUNK_SIZE)), start);
+      }
+      const index = await createFragmentIndex(prefix, descriptor.indexRange, size);
+      controller.signal.throwIfAborted();
+      trailer = index.trailer;
+      onIndex(index.segments, descriptor);
+    }
+    return size + (trailer?.length ?? 0);
+  }
   return new CustomSource({
     maxCacheSize: 8 * CHUNK_SIZE,
     prefetchProfile: 'network',
-    getSize() { return sizePromise ??= readRange(0, 1).then(() => size); },
+    getSize() { return sizePromise ??= initialize(); },
     read(start, end) {
       return new ReadableStream({
         async pull(stream) {
           try {
-            const next = Math.min(end, start + CHUNK_SIZE);
-            stream.enqueue(await readRange(start, next));
+            let next = Math.min(end, start + CHUNK_SIZE), bytes;
+            if (prefix && start < prefix.length) {
+              next = Math.min(next, prefix.length); bytes = prefix.subarray(start, next);
+            } else if (start >= size) {
+              bytes = trailer.subarray(start - size, next - size);
+            } else {
+              next = Math.min(next, size); bytes = await readRange(start, next);
+            }
+            stream.enqueue(bytes);
             start = next;
             if (start === end) stream.close();
           } catch (error) { stream.error(error); }

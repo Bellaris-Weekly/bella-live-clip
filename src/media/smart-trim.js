@@ -229,7 +229,7 @@ export async function trimPreciseTracks(tracks, { start = 0, end, signal, onProg
 
 // Copy complete GOPs so B-frame references remain decodable at both boundaries.
 // Audio uses the same origin, preserving offsets across separate DASH inputs.
-export async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {} }) {
+export async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {}, onProcessingStart = () => {} }) {
   signal?.throwIfAborted();
   const track = tracks.find(item => item.type === 'video');
   const sink = new EncodedPacketSink(track);
@@ -266,6 +266,7 @@ export async function trimCopyTracks(tracks, { start, end, signal, onProgress = 
     output.addAudioTrack(source, await trackMetadata(audio));
     streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
   }
+  onProcessingStart();
   return muxPackets(output, streams, { start: origin, end: limit, signal, onProgress,
     stats: { strategy: 'copy', message: '原画导出保留完整关键帧组，起止位置可能略有扩展' } });
 }
