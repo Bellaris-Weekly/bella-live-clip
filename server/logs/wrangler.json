@@ -1,0 +1,18 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "diagnostic-logs-local",
+  "main": "../../src/server/logs-worker.js",
+  "compatibility_date": "2026-10-17",
+  "workers_dev": false,
+  "preview_urls": false,
+  "send_metrics": false,
+  "keep_vars": true,
+  "d1_databases": [
+    {
+      "binding": "LOGS_DB",
+      "database_name": "diagnostic-logs-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
