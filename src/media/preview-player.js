@@ -16,14 +16,14 @@ export function makeHlsLoader(request) {
  };
 }
 
-export function createPlayer({video,loading,api,status,onTime}) {
+export function createPlayer({video,loading,api,status,onTime,onError=()=>{}}) {
  let hls,record,streams=[],index=0,generation=0,target=null;
  const offset=()=>streams[index] ? streams[index].start_time-record.start : 0;
  function attach(part,time=0){
   const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;
   target=time;loading.hidden=false;
   hls=new Hls({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:20,maxMaxBufferLength:40,backBufferLength:15,startPosition:time});
-  hls.on(Hls.Events.ERROR,(_,data)=>{if(token===generation&&data.fatal){loading.textContent='预览暂不可用，请刷新重试';status('录像预览失败，请刷新重试。',true);}});
+  hls.on(Hls.Events.ERROR,(_,data)=>{if(token===generation&&data.fatal){onError(new Error(`录像预览失败：${data.type} / ${data.details}`));loading.textContent='预览暂不可用，请刷新重试';status('录像预览失败，请刷新重试。',true);}});
   hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
   hls.loadSource(streams[index].stream);hls.attachMedia(video);
  }

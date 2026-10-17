@@ -1,4 +1,4 @@
-import {redactContext, redactText} from './log-redaction.js';
+import {redactContext, redactText} from '../shared/log-redaction.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 const fields = ['id', 'source', 'event', 'level', 'version', 'message', 'context'];

@@ -10,6 +10,7 @@ import {createTimeline} from '../ui/timeline.js';
 import {DEFAULT_SHORTCUT,normalizeShortcut,formatShortcut,matchesShortcut,isEditing} from '../ui/shortcuts.js';
 import {constrainRect,resizeRect} from '../ui/panel-geometry.js';
 import {ScheduleService} from '../services/schedule.js';
+import {createDiagnosticReporter} from '../services/diagnostics.js';
 import {createLibraryLoader} from './library-loader.js';
 import {createSubmissionService} from '../services/submission.js';
 import {createSubmissionStoryboard} from '../services/submission-storyboard.js';
@@ -31,7 +32,7 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,directoryPicker=typeof window.showDirectoryPicker==='function'?window.showDirectoryPicker.bind(window):null,storage=globalThis.navigator?.storage}){
+export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,directoryPicker=typeof window.showDirectoryPicker==='function'?window.showDirectoryPicker.bind(window):null,storage=globalThis.navigator?.storage}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');
  const readPageUrl=typeof pageUrl==='function'?pageUrl:()=>pageUrl;
@@ -46,7 +47,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  $('launcher').innerHTML=icon('scissors')+'<span>片段</span>';
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
- let page='library',record=null,initialized=false,controller=null,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,recordingController=null,recordingPlan=null,estimateState='loading',clipSelection=null;
+ let page='library',record=null,initialized=false,controller=null,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,recordingController=null,recordingPlan=null,estimateState='loading',clipSelection=null,previewDiagnostic=null;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules});let scheduleController=null,exportMode='copy';
  let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
@@ -66,7 +67,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  function usePlayer(kind){
   if(playerKind===kind)return;
   player?.destroy();playerKind=kind;
-  const options={video,loading:$('videoLoading'),api,request:api.request,status,onTime:t=>{timeline.setCurrent(t);updateClock(t);}};
+  const options={video,loading:$('videoLoading'),api,request:api.request,status,onError:error=>previewDiagnostic?.fail(error,recordingController?.signal),onTime:t=>{timeline.setCurrent(t);updateClock(t);}};
   video.hidden=kind==='submission';$('pageMirror').hidden=kind!=='submission';
   player=kind==='submission'?createSubmissionPlayer({...options,canvas:$('pageMirror'),
    getVideo:()=>document.querySelector('.bpx-player-container video, .bilibili-player-video video')??document.querySelector('video'),
@@ -93,11 +94,11 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,submission:isSubmission(),stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action,kind='load'){if(controller)return;const own=new AbortController();controller=own;jobKind=kind;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
+ async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
  function clearDownloads(){$('downloads').replaceChildren();}
  function leavePage(){
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
-  recordingController?.abort();recordingController=null;recordingPlan=null;
+  recordingController?.abort();recordingController=null;recordingPlan=null;previewDiagnostic=null;
   activePlayback()?.cancel();submissionThumbnails=false;
   estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;
   $('wholeRecording').checked=false;timeline.stop();player?.clear();thumbnails.clear();clearDownloads();updateClock(0);
@@ -122,7 +123,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   await job(async signal=>{status(refresh?'正在刷新直播场次…':'正在获取直播场次…');const result=await libraries.load(selected,{refresh,signal});
    if(signal.aborted||member!==selected)return;
    renderCards();showScheduleResult(result);status('选择想剪辑的那场直播。');
-  });
+  },'load',{action:'library_load',record:{room:selected.room}});
  }
  function renderRecordMeta(){$('recordMeta').textContent=(isSubmission()?[record.uploader,record.partTitle?`P${record.part} · ${record.partTitle}`:'','画面与 B 站同步',`导出 ${record.qualityLabel}`]:[record.member,formatDate(record.start),record.schedule?.type]).filter(Boolean).join(' · ');}
  function enrichRecordType(){
@@ -134,7 +135,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   }).catch(()=>{});
  }
  async function loadRecord(next,signal){
-  usePlayer('live');record=next;loadedRoute=null;showPage('edit');setTitle($('recordTitle'),record.title);renderRecordMeta();enrichRecordType();
+  usePlayer('live');record=next;previewDiagnostic=diagnostics.begin('preview',{pageUrl:readPageUrl(),record:next});loadedRoute=null;showPage('edit');setTitle($('recordTitle'),record.title);renderRecordMeta();enrichRecordType();
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
   recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
@@ -142,11 +143,11 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
   status('按住时间轴预览；松开选区边界后自动适配视野。');
  }
- async function enterRecord(next){await job(signal=>{leavePage();return loadRecord(next,signal);});}
- async function currentRoom(){await job(async signal=>{leavePage();$('offlineTitle').textContent='暂时无法打开本场直播';showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal);await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}});}
+ async function enterRecord(next){await job(signal=>{leavePage();return loadRecord(next,signal);},'load',{action:'record_load',record:next});}
+ async function currentRoom(){await job(async (signal,diagnostic)=>{leavePage();$('offlineTitle').textContent='暂时无法打开本场直播';showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal,{allowOffline:true});if(!next){$('offlineReason').textContent='当前没有直播。可以切换到历史回放，选择已结束的场次。';status('可重新检查直播，或浏览历史场次。');return;}await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;diagnostic.fail(e,signal);showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}},'load',{action:'room_load',record:{room}});}
  async function currentVideo(){
   const url=readPageUrl(),route=parseSubmissionUrl(url);if(!route||controller)return;
-  await job(async signal=>{
+  await job(async (signal,diagnostic)=>{
    leavePage();loadedRoute=null;$('offlineTitle').textContent='暂时无法打开当前视频';showPage('offline');$('offlineReason').textContent='正在读取当前视频…';
    try{
     const next=await submissions.load(url,{signal});signal.throwIfAborted();
@@ -155,8 +156,8 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
     playbackTotal=total;thumbnails.load(record,[]);timeline.reset(total);ready=true;timeline.setCurrent(player.position());updateClock(player.position());
     if($('panel').hidden)player.suspend();
     $('editPage').focus({preventScroll:true});status('设置开始和结束位置后，即可导出当前视频片段。');
-   }catch(error){if(signal.aborted)throw error;loadedRoute=null;ready=false;player?.clear();showPage('offline');$('offlineReason').textContent=error.message;status(error.message,true);}
-  });
+   }catch(error){if(signal.aborted)throw error;diagnostic.fail(error,signal);loadedRoute=null;ready=false;player?.clear();showPage('offline');$('offlineReason').textContent=error.message;status(error.message,true);}
+  },'load',{action:'video_load',record:null});
  }
  function checkCurrentVideo(){
   const route=parseSubmissionUrl(readPageUrl()),key=route?.key;
@@ -168,16 +169,18 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  async function download(){
   if(controller||!ready)return;
   const submission=isSubmission();
-  if(submission?!saveFilePicker:!directoryPicker||!storage?.getDirectory){status('当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。',true);return;}
-  await job(async signal=>{
-   const selection=timeline.getSelection();
+  const selection=timeline.getSelection();
+  await job(async (signal,diagnostic)=>{
+   diagnostic.stage('select_destination');
+   if(submission?!saveFilePicker:!directoryPicker||!storage?.getDirectory)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。');
    // Pick the destination before the first network await, while click activation
    // is still live. A directory also covers an unknown number of discontinuities.
    const destination=submission
     ?await saveFilePicker({suggestedName:fileName(record,selection.start,selection.end),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]})
     :await directoryPicker({mode:'readwrite'});
    signal.throwIfAborted();if(submission)player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');
-   const onProgress=p=>{renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
+   diagnostic.stage('preparing');
+   const onProgress=p=>{diagnostic.progress(p);renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
    const showSaved=output=>{const line=document.createElement('p');line.textContent=`已保存 ${output.name} · ${formatBytes(output.bytes)}`;$('downloads').append(line);};
    if(submission){
     const output=await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress,fileHandle:destination});
@@ -190,18 +193,20 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
     });
    }
    status('导出完成，MP4 已保存到所选位置。');
-  },'export');
+  },'export',{selection,mode:submission?'precise':exportMode,estimatedBytes:submission?(record.media.video.bandwidth+(record.media.audio?.bandwidth||0))*(selection.end-selection.start)/8:estimate?estimateSelectionBytes(estimate,record.start,selection):undefined});
  }
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
   if(controller||!ready)return;
-  if(!saveFilePicker){status('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。',true);return;}
-  await job(async signal=>{
+  await job(async (signal,diagnostic)=>{
+   diagnostic.stage('select_destination');
+   if(!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
    const handle=await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   const groups=await recordingPlan.load(signal);signal.throwIfAborted();
+   diagnostic.stage('preparing');const groups=await recordingPlan.load(signal);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
    const result=await saveRecording(api,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
+    diagnostic.progress(p);
     if(p.progress!==undefined)$('progress').value=p.progress*100;
     if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
     else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
@@ -209,7 +214,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
    if(!result.saved){status('已停止。');return;}
    status(result.stopped?'已停止。':'整场下载完成。');
    const message=document.createElement('p');message.textContent=`${result.stopped?'已完成部分':'整场'}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
-  },'export');
+  },'export',{action:'recording_download',selection:{start:0,end:playbackTotal},mode:'whole'});
  }
  async function open(){$('panel').hidden=false;if(playerKind==='submission')player.resume();void versionControl.refresh();const route=parseSubmissionUrl(readPageUrl());observedRoute=route?.key;if(route&&(!initialized||loadedRoute!==route.key)){initialized=true;await currentVideo();return;}if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
    renderCards();const selected=member;void libraries.load(selected).then(result=>{

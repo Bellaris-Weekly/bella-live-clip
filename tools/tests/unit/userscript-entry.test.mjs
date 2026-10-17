@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 import {build} from 'esbuild';
 
 // Exercise the real entry point, replacing only application startup and network setup.
-const {outputFiles}=await build({entryPoints:['src/main.js'],bundle:true,write:false,format:'iife',plugins:[{
+const {outputFiles}=await build({entryPoints:['src/main.js'],bundle:true,write:false,format:'iife',loader:{'.txt':'text'},plugins:[{
   name:'entry-dependencies',setup(build){
     build.onResolve({filter:/^\.\/(app\/application|services\/bilibili)\.js$/},args=>({path:args.path,namespace:'stub'}));
     build.onLoad({filter:/.*/,namespace:'stub'},args=>({contents:args.path.includes('application')
@@ -16,7 +16,7 @@ const {outputFiles}=await build({entryPoints:['src/main.js'],bundle:true,write:f
 
 function start(pageWindow,sandboxWindow={}){
   pageWindow.fetch ??= () => { throw new Error("Unexpected page fetch"); };
-  const context={URL,AbortController,setTimeout,clearTimeout,unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
+  const context={navigator:{userAgent:'test'},URL,AbortController,setTimeout,clearTimeout,unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
     GM_xmlhttpRequest(){},GM_getValue(){},GM_setValue(){},GM_registerMenuCommand(){}};
   runInNewContext(outputFiles[0].text,context);
   return context.appOptions;

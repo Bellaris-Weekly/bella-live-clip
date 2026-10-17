@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.10
+// @version      2.11.11
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.10\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.11\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -46,8 +46,8 @@
     }
     return false;
   }
-  function readScriptMetadata(text) {
-    const block = text.match(/^\/\/ ==UserScript==\r?\n([\s\S]*?)^\/\/ ==\/UserScript==/m)?.[1];
+  function readScriptMetadata(text2) {
+    const block = text2.match(/^\/\/ ==UserScript==\r?\n([\s\S]*?)^\/\/ ==\/UserScript==/m)?.[1];
     if (!block) throw new Error("未收到有效的脚本元数据");
     const value = (key) => block.match(new RegExp(`^// @${key}\\s+(\\S+)`, "m"))?.[1];
     const version2 = value("version");
@@ -78,14 +78,227 @@
     };
   }
 
+  // src/shared/log-redaction.js
+  var REDACTED = "[REDACTED]";
+  var secretNames = /* @__PURE__ */ new Set([
+    "cookie",
+    "setcookie",
+    "authorization",
+    "proxyauthorization",
+    "password",
+    "passwd",
+    "token",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "authtoken",
+    "bearertoken",
+    "apikey",
+    "secret",
+    "clientsecret",
+    "apisecret",
+    "secretkey",
+    "privatekey",
+    "accesskeyid",
+    "secretaccesskey",
+    "signature",
+    "sign",
+    "authkey",
+    "auth",
+    "sessdata",
+    "bilijct",
+    "wrid",
+    "wssecret",
+    "upsig",
+    "hdnts",
+    "hdnea"
+  ]);
+  function secretName(name) {
+    const normalized = name.toLowerCase().replace(/[-_\s]/g, "");
+    return secretNames.has(normalized) || /(?:token|cookie|password|secret|signature|apikey)$/.test(normalized) || /^(?:xamz|xgoog)(?:credential|signature|securitytoken)$/.test(normalized) || /^(?:xapi|xauth)(?:key|token)$/.test(normalized);
+  }
+  function redactUrl(raw) {
+    try {
+      const url2 = new URL(raw);
+      if (url2.username || url2.password) {
+        url2.username = REDACTED;
+        url2.password = "";
+      }
+      for (const key of new Set(url2.searchParams.keys())) {
+        if (secretName(key)) url2.searchParams.set(key, REDACTED);
+      }
+      if (url2.hash.includes("=")) {
+        const fragment = new URLSearchParams(url2.hash.slice(1));
+        for (const key of new Set(fragment.keys())) {
+          if (secretName(key)) fragment.set(key, REDACTED);
+        }
+        url2.hash = fragment.toString();
+      }
+      return url2.href;
+    } catch {
+      return raw;
+    }
+  }
+  function redactText(value) {
+    return value.replace(/https?:\/\/[^\s<>"']+/gi, redactUrl).replace(/\b((?:set-cookie|cookie|proxy-authorization|authorization)\s*[:=])\s*[^\r\n]*/gi, (_, prefix) => `${prefix} ${REDACTED}`).replace(/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, REDACTED).replace(
+      /(["']?)([A-Za-z][A-Za-z0-9_-]*)\1\s*([=:])\s*(\[REDACTED\]|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;&}\]]+)/g,
+      (match, quote, key, separator) => secretName(key) ? `${quote}${key}${quote}${separator}${REDACTED}` : match
+    );
+  }
+
+  // src/services/diagnostics.js
+  var idle = Object.freeze({ stage() {
+  }, progress() {
+  }, fail() {
+  } });
+  function text(value, limit) {
+    if (typeof value !== "string") return void 0;
+    return redactText(value.slice(0, 65536)).replace(/https?:\/\/[^\s<>"']+/gi, (raw) => {
+      try {
+        const url2 = new URL(raw);
+        return `${url2.origin}${url2.pathname}`;
+      } catch {
+        return raw.split(/[?#]/, 1)[0];
+      }
+    }).slice(0, limit);
+  }
+  var number = (value) => typeof value === "number" && Number.isFinite(value) ? value : void 0;
+  function pageIdentity(value) {
+    try {
+      const url2 = new URL(value);
+      if (!["www.bilibili.com", "bilibili.com", "live.bilibili.com", "m.bilibili.com"].includes(url2.hostname)) return void 0;
+      const part = url2.searchParams.get("p");
+      return `${url2.origin}${url2.pathname}${part && /^\d+$/.test(part) ? `?p=${part}` : ""}`.slice(0, 1024);
+    } catch {
+      return void 0;
+    }
+  }
+  function snapshot(details) {
+    const record = details.record || {}, selection = details.selection || {};
+    return {
+      page: pageIdentity(details.pageUrl),
+      mode: text(details.mode, 32),
+      record: {
+        kind: text(record.kind || "recording", 32),
+        key: text(record.key, 128),
+        room: number(record.room),
+        bvid: text(record.bvid, 64),
+        aid: number(record.aid),
+        cid: number(record.cid),
+        part: number(record.part),
+        start: number(record.start),
+        end: number(record.end),
+        live: typeof record.live === "boolean" ? record.live : void 0
+      },
+      selection: { start: number(selection.start), end: number(selection.end) },
+      estimatedBytes: number(details.estimatedBytes)
+    };
+  }
+  function transfer(request, endpoint, body) {
+    return new Promise((resolve) => {
+      try {
+        request({
+          method: "POST",
+          url: endpoint,
+          anonymous: true,
+          timeout: 8e3,
+          headers: { "Content-Type": "application/json" },
+          data: body,
+          onload: (result) => resolve(result.status === 429 || result.status >= 500),
+          onerror: () => resolve(true),
+          ontimeout: () => resolve(true),
+          onabort: () => resolve(false)
+        });
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+  function createDiagnosticReporter({
+    endpoint = "",
+    request,
+    version: version2 = "0.0.0",
+    userAgent = "",
+    online = () => globalThis.navigator?.onLine !== false,
+    id = () => crypto.randomUUID(),
+    wait: wait2 = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  } = {}) {
+    let pending = 0;
+    async function send(body) {
+      try {
+        if (await transfer(request, endpoint, body)) {
+          await wait2(1e3);
+          if (online()) await transfer(request, endpoint, body);
+        }
+      } catch {
+      } finally {
+        pending--;
+      }
+    }
+    return {
+      begin(action, details = {}) {
+        if (!endpoint || typeof request !== "function") return idle;
+        const context = { ...snapshot(details), stage: "starting" };
+        let reported = false;
+        return {
+          stage(value) {
+            context.stage = text(value, 64);
+          },
+          progress(value) {
+            context.stage = text(value.phase, 64) || context.stage;
+            context.progress = {
+              fraction: number(value.progress),
+              bytes: number(value.bytes),
+              written: number(value.written),
+              estimatedBytes: number(value.estimatedBytes),
+              attempt: number(value.attempt)
+            };
+          },
+          fail(error, signal) {
+            if (reported || signal?.aborted || error?.name === "AbortError") return;
+            reported = true;
+            try {
+              if (!online() || pending >= 2) return;
+              const payload = {
+                id: id(),
+                source: "bella-live-clip",
+                event: `${action}_failed`,
+                level: "error",
+                version: version2,
+                message: text(error?.message || String(error), 4096) || "Unknown error",
+                context: {
+                  ...context,
+                  browser: text(userAgent, 512),
+                  errorName: text(error?.name, 128),
+                  stack: text(error?.stack, 8192)
+                }
+              };
+              let body = JSON.stringify(payload);
+              if (new TextEncoder().encode(body).byteLength > 65536) {
+                payload.context.stack = void 0;
+                payload.context.truncated = true;
+                payload.message = payload.message.slice(0, 1024);
+                body = JSON.stringify(payload);
+              }
+              if (new TextEncoder().encode(body).byteLength > 65536) return;
+              pending++;
+              void send(body);
+            } catch {
+            }
+          }
+        };
+      }
+    };
+  }
+
   // src/ui/version.js
   function createVersionControl({ root, metadata, check }) {
     const version2 = root.getElementById("version");
     let available = null, checking = false;
     version2.textContent = `v${metadata.version}`;
-    function describe(text) {
-      version2.title = text;
-      version2.setAttribute("aria-label", `当前版本 ${metadata.version}，${text}`);
+    function describe(text2) {
+      version2.title = text2;
+      version2.setAttribute("aria-label", `当前版本 ${metadata.version}，${text2}`);
     }
     function render() {
       version2.dataset.update = String(Boolean(available));
@@ -395,7 +608,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     };
   }
   function roomFromHtml(html) {
-    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text));
+    const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]).find((text2) => /^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=/.test(text2));
     if (!script) throw new Error("未找到直播场次信息，请刷新直播间后重试。");
     const raw = script.replace(/^\s*window\.__NEPTUNE_IS_MY_WAIFU__\s*=\s*/, "").trim().replace(/;\s*$/, "");
     const info = JSON.parse(raw).roomInfoRes;
@@ -898,8 +1111,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     if (!SCHEDULE_MEMBERS.some((member) => member.room === room)) return null;
     return { uid: fields.UID?.value || null, start, room, type, participants };
   }
-  function parseCalendar(text) {
-    const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+  function parseCalendar(text2) {
+    const lines = text2.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
     if (!lines.includes("BEGIN:VCALENDAR") || !lines.includes("END:VCALENDAR")) {
       throw new Error("日程没有返回有效的日历数据。");
     }
@@ -1244,8 +1457,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   // src/services/submission.js
   var API = "https://api.bilibili.com";
   var MIXIN = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13];
-  function md5(text) {
-    const bytes2 = new TextEncoder().encode(text);
+  function md5(text2) {
+    const bytes2 = new TextEncoder().encode(text2);
     const buffer = new Uint8Array(Math.ceil((bytes2.length + 9) / 64) * 64);
     buffer.set(bytes2);
     buffer[bytes2.length] = 128;
@@ -1282,11 +1495,11 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   }
   function createSubmissionService(request) {
     async function get(path, params, options, allowGuestKeys = false) {
-      const { data: text } = await requestWithRetry({ request }, `${API}${path}?${params}`, options, { onRetry: options.onRetry });
+      const { data: text2 } = await requestWithRetry({ request }, `${API}${path}?${params}`, options, { onRetry: options.onRetry });
       options.signal?.throwIfAborted();
       let result;
       try {
-        result = JSON.parse(text);
+        result = JSON.parse(text2);
       } catch {
         throw new Error("B 站未返回视频接口数据，请刷新页面后重试。");
       }
@@ -1424,7 +1637,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   // src/ui/page-progress.js
   function bindPageProgress({ document: document2, getPlayer, isActive }) {
     let drag = null, frame = null, finishFrame = null;
-    const timeFromLabel = (text) => text.trim().split(":").reduce((sum, part) => sum * 60 + Number(part), 0);
+    const timeFromLabel = (text2) => text2.trim().split(":").reduce((sum, part) => sum * 60 + Number(part), 0);
     function paint() {
       frame = null;
       if (!drag || !isActive()) return;
@@ -9004,16 +9217,16 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     getNumber() {
       const demuxer = this.internalTrack.demuxer;
       const trackType = this.internalTrack.trackBacking.getType();
-      let number = 0;
+      let number2 = 0;
       for (const track of demuxer.tracks) {
         if (track.trackBacking.getType() === trackType) {
-          number++;
+          number2++;
         }
         if (track === this.internalTrack) {
           break;
         }
       }
-      return number;
+      return number2;
     }
     getCodec() {
       throw new Error("Not implemented on base class.");
@@ -10671,17 +10884,17 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     getNumber() {
       const demuxer = this.elementaryStream.demuxer;
       const trackType = this.elementaryStream.info.type;
-      let number = 0;
+      let number2 = 0;
       for (const backing of demuxer.trackBackingEntries) {
         if (backing.getType() === trackType) {
-          number++;
+          number2++;
         }
         assert(backing instanceof _MpegTsTrackBacking);
         if (backing.elementaryStream === this.elementaryStream) {
           break;
         }
       }
-      return number;
+      return number2;
     }
     getCodec() {
       throw new Error("Not implemented on base class.");
@@ -15611,37 +15824,37 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   var toUlaw = (s16) => {
     const MULAW_MAX = 8191;
     const MULAW_BIAS = 33;
-    let number = s16;
+    let number2 = s16;
     let mask = 4096;
     let sign = 0;
     let position = 12;
     let lsb = 0;
-    if (number < 0) {
-      number = -number;
+    if (number2 < 0) {
+      number2 = -number2;
       sign = 128;
     }
-    number += MULAW_BIAS;
-    if (number > MULAW_MAX) {
-      number = MULAW_MAX;
+    number2 += MULAW_BIAS;
+    if (number2 > MULAW_MAX) {
+      number2 = MULAW_MAX;
     }
-    while ((number & mask) !== mask && position >= 5) {
+    while ((number2 & mask) !== mask && position >= 5) {
       mask >>= 1;
       position--;
     }
-    lsb = number >> position - 4 & 15;
+    lsb = number2 >> position - 4 & 15;
     return ~(sign | position - 5 << 4 | lsb) & 255;
   };
   var fromUlaw = (u82) => {
     const MULAW_BIAS = 33;
     let sign = 0;
     let position = 0;
-    let number = ~u82;
-    if (number & 128) {
-      number &= ~(1 << 7);
+    let number2 = ~u82;
+    if (number2 & 128) {
+      number2 &= ~(1 << 7);
       sign = -1;
     }
-    position = ((number & 240) >> 4) + 5;
-    const decoded = (1 << position | (number & 15) << position - 4 | 1 << position - 5) - MULAW_BIAS;
+    position = ((number2 & 240) >> 4) + 5;
+    const decoded = (1 << position | (number2 & 15) << position - 4 | 1 << position - 5) - MULAW_BIAS;
     return sign === 0 ? decoded : -decoded;
   };
   var toAlaw = (s16) => {
@@ -15650,35 +15863,35 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     let sign = 0;
     let position = 11;
     let lsb = 0;
-    let number = s16;
-    if (number < 0) {
-      number = -number;
+    let number2 = s16;
+    if (number2 < 0) {
+      number2 = -number2;
       sign = 128;
     }
-    if (number > ALAW_MAX) {
-      number = ALAW_MAX;
+    if (number2 > ALAW_MAX) {
+      number2 = ALAW_MAX;
     }
-    while ((number & mask) !== mask && position >= 5) {
+    while ((number2 & mask) !== mask && position >= 5) {
       mask >>= 1;
       position--;
     }
-    lsb = number >> (position === 4 ? 1 : position - 4) & 15;
+    lsb = number2 >> (position === 4 ? 1 : position - 4) & 15;
     return (sign | position - 4 << 4 | lsb) ^ 85;
   };
   var fromAlaw = (u82) => {
     let sign = 0;
     let position = 0;
-    let number = u82 ^ 85;
-    if (number & 128) {
-      number &= ~(1 << 7);
+    let number2 = u82 ^ 85;
+    if (number2 & 128) {
+      number2 &= ~(1 << 7);
       sign = -1;
     }
-    position = ((number & 240) >> 4) + 4;
+    position = ((number2 & 240) >> 4) + 4;
     let decoded = 0;
     if (position !== 4) {
-      decoded = 1 << position | (number & 15) << position - 4 | 1 << position - 5;
+      decoded = 1 << position | (number2 & 15) << position - 4 | 1 << position - 5;
     } else {
-      decoded = number << 1 | 1;
+      decoded = number2 << 1 | 1;
     }
     return sign === 0 ? decoded : -decoded;
   };
@@ -18965,14 +19178,14 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       this.helperView.setUint32(4, value, false);
       this.writer.write(this.helper.subarray(0, 8));
     }
-    writeAscii(text) {
-      for (let i = 0; i < text.length; i++) {
-        this.helperView.setUint8(i % 8, text.charCodeAt(i));
+    writeAscii(text2) {
+      for (let i = 0; i < text2.length; i++) {
+        this.helperView.setUint8(i % 8, text2.charCodeAt(i));
         if (i % 8 === 7)
           this.writer.write(this.helper);
       }
-      if (text.length % 8 !== 0) {
-        this.writer.write(this.helper.subarray(0, text.length % 8));
+      if (text2.length % 8 !== 0) {
+        this.writer.write(this.helper.subarray(0, text2.length % 8));
       }
     }
     writeBox(box2) {
@@ -19094,8 +19307,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     } while (remaining > 0 || byteLength);
     return bytes2.reverse();
   };
-  var ascii = (text, nullTerminated = false) => {
-    const bytes2 = Array(text.length).fill(null).map((_, i) => text.charCodeAt(i));
+  var ascii = (text2, nullTerminated = false) => {
+    const bytes2 = Array(text2.length).fill(null).map((_, i) => text2.charCodeAt(i));
     if (nullTerminated)
       bytes2.push(0);
     return bytes2;
@@ -27635,8 +27848,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   }
 
   // src/media/playlist.js
-  function attributes(text) {
-    return Object.fromEntries([...text.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
+  function attributes(text2) {
+    return Object.fromEntries([...text2.matchAll(/([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map((match) => [match[1], match[2] ?? match[3]]));
   }
   function byteRange(value, previousEnd) {
     const match = String(value).match(/^(\d+)(?:@(\d+))?$/);
@@ -27645,8 +27858,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     if (!Number.isSafeInteger(offset)) throw new Error("视频分片缺少字节起始位置。");
     return { offset, length: Number(match[1]) };
   }
-  function parsePlaylist(text, baseUrl) {
-    const lines = text.trim().split(/\r?\n/).map((line) => line.trim());
+  function parsePlaylist(text2, baseUrl) {
+    const lines = text2.trim().split(/\r?\n/).map((line) => line.trim());
     if (lines[0] !== "#EXTM3U") throw new Error("B 站未返回有效的视频分片清单，请重新载入。");
     const groups = [];
     let segments = [], duration = null, map = null, rangeText = null, previous = null, total = 0;
@@ -37372,11 +37585,11 @@ ${newDetails.m3u8}`);
         data: value
       };
     }
-    const text = utf8ArrayToStr(frame.data.subarray(1));
+    const text2 = utf8ArrayToStr(frame.data.subarray(1));
     return {
       key: frame.type,
       info: "",
-      data: text
+      data: text2
     };
   }
   function decodeId3UrlFrame(frame) {
@@ -41494,7 +41707,7 @@ ${newDetails.m3u8}`);
       let video;
       let audio;
       let initSegment;
-      let text;
+      let text2;
       let id3;
       let independent;
       let audioTimeOffset = timeOffset;
@@ -41573,7 +41786,7 @@ ${newDetails.m3u8}`);
           id3 = flushTextTrackMetadataCueSamples(id3Track, timeOffset, this._initPTS, this._initDTS);
         }
         if (textTrack.samples.length) {
-          text = flushTextTrackUserdataCueSamples(textTrack, timeOffset, this._initPTS);
+          text2 = flushTextTrackUserdataCueSamples(textTrack, timeOffset, this._initPTS);
         }
       }
       return {
@@ -41581,7 +41794,7 @@ ${newDetails.m3u8}`);
         video,
         initSegment,
         independent,
-        text,
+        text: text2,
         id3
       };
     }
@@ -43715,7 +43928,7 @@ ${newDetails.m3u8}`);
       } = level;
       const {
         audio,
-        text,
+        text: text2,
         id3,
         initSegment
       } = remuxResult;
@@ -43765,12 +43978,12 @@ ${newDetails.m3u8}`);
         }, id3);
         hls.trigger(Events.FRAG_PARSING_METADATA, emittedID3);
       }
-      if (text) {
+      if (text2) {
         const emittedText = _extends({
           id,
           frag,
           details
-        }, text);
+        }, text2);
         hls.trigger(Events.FRAG_PARSING_USERDATA, emittedText);
       }
     }
@@ -49177,11 +49390,11 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       }
     }
   }
-  function hash(text) {
+  function hash(text2) {
     let hash2 = 5381;
-    let i = text.length;
+    let i = text2.length;
     while (i) {
-      hash2 = hash2 * 33 ^ text.charCodeAt(--i);
+      hash2 = hash2 * 33 ^ text2.charCodeAt(--i);
     }
     return (hash2 >>> 0).toString();
   }
@@ -53192,7 +53405,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     getDisplayText(asOneRow) {
       asOneRow = asOneRow || false;
       const displayText = [];
-      let text = "";
+      let text2 = "";
       let rowNr = -1;
       for (let i = 0; i < NR_ROWS; i++) {
         const rowText = this.rows[i].getTextString();
@@ -53207,12 +53420,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
       if (displayText.length > 0) {
         if (asOneRow) {
-          text = "[" + displayText.join(" | ") + "]";
+          text2 = "[" + displayText.join(" | ") + "]";
         } else {
-          text = displayText.join("\n");
+          text2 = displayText.join("\n");
         }
       }
-      return text;
+      return text2;
     }
     getTextAndFormat() {
       return this.rows;
@@ -53756,7 +53969,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
       return obj;
     }
-    function VTTCue2(startTime, endTime, text) {
+    function VTTCue2(startTime, endTime, text2) {
       const cue = this;
       const baseObj = {
         enumerable: true
@@ -53766,7 +53979,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       let _pauseOnExit = false;
       let _startTime = startTime;
       let _endTime = endTime;
-      let _text = text;
+      let _text = text2;
       let _region = null;
       let _vertical = "";
       let _snapToLines = true;
@@ -54297,8 +54510,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     ts += 60 * 60 * 1e3 * hours;
     return ts;
   };
-  function generateCueId(startTime, endTime, text) {
-    return hash(startTime.toString()) + hash(endTime.toString()) + hash(text);
+  function generateCueId(startTime, endTime, text2) {
+    return hash(startTime.toString()) + hash(endTime.toString()) + hash(text2);
   }
   var calculateOffset = function calculateOffset2(vttCCs, cc, presentationTime) {
     let currCC = vttCCs[cc];
@@ -54349,10 +54562,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const startTime = normalizePts((cue.startTime + cueOffset - timestampMapLOCAL) * 9e4, timeOffset * 9e4) / 9e4;
       cue.startTime = Math.max(startTime, 0);
       cue.endTime = Math.max(startTime + duration, 0);
-      const text = cue.text.trim();
-      cue.text = decodeURIComponent(encodeURIComponent(text));
+      const text2 = cue.text.trim();
+      cue.text = decodeURIComponent(encodeURIComponent(text2));
       if (!cue.id) {
-        cue.id = generateCueId(cue.startTime, cue.endTime, text);
+        cue.id = generateCueId(cue.startTime, cue.endTime, text2);
       }
       if (cue.endTime > 0) {
         cues.push(cue);
@@ -55240,20 +55453,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       let cue;
       let indenting;
       let indent;
-      let text;
+      let text2;
       const Cue = self.VTTCue || self.TextTrackCue;
       for (let r = 0; r < captionScreen.rows.length; r++) {
         row = captionScreen.rows[r];
         indenting = true;
         indent = 0;
-        text = "";
+        text2 = "";
         if (!row.isEmpty()) {
           var _track$cues;
           for (let c = 0; c < row.chars.length; c++) {
             if (WHITESPACE_CHAR.test(row.chars[c].uchar) && indenting) {
               indent++;
             } else {
-              text += row.chars[c].uchar;
+              text2 += row.chars[c].uchar;
               indenting = false;
             }
           }
@@ -55266,7 +55479,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           } else {
             indent++;
           }
-          const cueText = fixLineBreaks(text.trim());
+          const cueText = fixLineBreaks(text2.trim());
           const id = generateCueId(startTime, endTime, cueText);
           if (!(track != null && (_track$cues = track.cues) != null && _track$cues.getCueById(id))) {
             cue = new Cue(startTime, endTime, cueText);
@@ -55429,10 +55642,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           return;
         }
         const code = !error ? 0 : error.code || 0;
-        const text = !error ? null : error.message;
+        const text2 = !error ? null : error.message;
         (_this$callbacks5 = this.callbacks) == null || _this$callbacks5.onError({
           code,
-          text
+          text: text2
         }, context, error ? error.details : null, stats);
       });
     }
@@ -58688,7 +58901,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       } = context;
       const {
         video,
-        text,
+        text: text2,
         id3,
         initSegment
       } = remuxResult;
@@ -58813,12 +59026,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         };
         hls.trigger(Events.FRAG_PARSING_METADATA, emittedID3);
       }
-      if (details && text) {
+      if (details && text2) {
         const emittedText = {
           id,
           frag,
           details,
-          samples: text.samples
+          samples: text2.samples
         };
         hls.trigger(Events.FRAG_PARSING_USERDATA, emittedText);
       }
@@ -60802,7 +61015,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
     };
   }
-  function createPlayer({ video, loading, api, status: status2, onTime }) {
+  function createPlayer({ video, loading, api, status: status2, onTime, onError = () => {
+  } }) {
     let hls, record, streams = [], index = 0, generation = 0, target = null;
     const offset = () => streams[index] ? streams[index].start_time - record.start : 0;
     function attach(part, time = 0) {
@@ -60817,6 +61031,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       hls = new Hls({ loader: makeHlsLoader(api.request), enableWorker: false, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 15, startPosition: time });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (token === generation && data.fatal) {
+          onError(new Error(`录像预览失败：${data.type} / ${data.details}`));
           loading.textContent = "预览暂不可用，请刷新重试";
           status2("录像预览失败，请刷新重试。", true);
         }
@@ -61706,7 +61921,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   var cleanName = (label) => label.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "").slice(0, 180) + ".mp4";
 
   // src/app/application.js
-  function createApp({ api, submissionRequest = api.request, get = (_, fallback) => fallback, set = () => {
+  function createApp({ api, diagnostics = createDiagnosticReporter(), submissionRequest = api.request, get = (_, fallback) => fallback, set = () => {
   }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null, directoryPicker = typeof window.showDirectoryPicker === "function" ? window.showDirectoryPicker.bind(window) : null, storage = globalThis.navigator?.storage }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
@@ -61733,18 +61948,18 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       $("members").append(button);
     }
     let member = MEMBERS.find((m) => m.room === room) || MEMBERS.find((m) => m.id === get("member", "bella")) || MEMBERS[0];
-    let page = "library", record = null, initialized = false, controller = null, ready = false, libraryScroll = 0, playbackTotal = 0, estimate = null, recordingController = null, recordingPlan = null, estimateState = "loading", clipSelection = null;
-    function setTitle(element, text) {
-      element.textContent = text;
-      element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text));
+    let page = "library", record = null, initialized = false, controller = null, ready = false, libraryScroll = 0, playbackTotal = 0, estimate = null, recordingController = null, recordingPlan = null, estimateState = "loading", clipSelection = null, previewDiagnostic = null;
+    function setTitle(element, text2) {
+      element.textContent = text2;
+      element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text2));
     }
     const schedules = new ScheduleService(api.request);
     const libraries = createLibraryLoader({ api, schedules });
     let scheduleController = null, exportMode = "copy";
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     let fullStopController = null, fullFinishing = false;
-    const status2 = (text, error = false) => {
-      $("status").textContent = text;
+    const status2 = (text2, error = false) => {
+      $("status").textContent = text2;
       $("status").dataset.error = error;
       updateFeedback();
     };
@@ -61787,7 +62002,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       if (playerKind === kind) return;
       player?.destroy();
       playerKind = kind;
-      const options = { video, loading: $("videoLoading"), api, request: api.request, status: status2, onTime: (t) => {
+      const options = { video, loading: $("videoLoading"), api, request: api.request, status: status2, onError: (error) => previewDiagnostic?.fail(error, recordingController?.signal), onTime: (t) => {
         timeline.setCurrent(t);
         updateClock(t);
       } };
@@ -61854,15 +62069,17 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       $("body").scrollTop = next === "library" ? libraryScroll : 0;
       controls();
     }
-    async function job(action, kind = "load") {
+    async function job(action, kind = "load", details = {}) {
       if (controller) return;
       const own = new AbortController();
+      const diagnostic = diagnostics.begin(details.action || kind, { pageUrl: readPageUrl(), record, ...details });
       controller = own;
       jobKind = kind;
       controls();
       try {
-        await action(own.signal);
+        await action(own.signal, diagnostic);
       } catch (e) {
+        diagnostic.fail(e, own.signal);
         own.abort();
         status2(e.name === "AbortError" ? "已停止。" : e.message, e.name !== "AbortError");
       } finally {
@@ -61887,6 +62104,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       recordingController?.abort();
       recordingController = null;
       recordingPlan = null;
+      previewDiagnostic = null;
       activePlayback()?.cancel();
       submissionThumbnails = false;
       estimate = null;
@@ -61937,7 +62155,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         renderCards();
         showScheduleResult(result);
         status2("选择想剪辑的那场直播。");
-      });
+      }, "load", { action: "library_load", record: { room: selected.room } });
     }
     function renderRecordMeta() {
       $("recordMeta").textContent = (isSubmission() ? [record.uploader, record.partTitle ? `P${record.part} · ${record.partTitle}` : "", "画面与 B 站同步", `导出 ${record.qualityLabel}`] : [record.member, formatDate(record.start), record.schedule?.type]).filter(Boolean).join(" · ");
@@ -61958,6 +62176,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     async function loadRecord(next, signal) {
       usePlayer("live");
       record = next;
+      previewDiagnostic = diagnostics.begin("preview", { pageUrl: readPageUrl(), record: next });
       loadedRoute = null;
       showPage("edit");
       setTitle($("recordTitle"), record.title);
@@ -61981,30 +62200,36 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       await job((signal) => {
         leavePage();
         return loadRecord(next, signal);
-      });
+      }, "load", { action: "record_load", record: next });
     }
     async function currentRoom() {
-      await job(async (signal) => {
+      await job(async (signal, diagnostic) => {
         leavePage();
         $("offlineTitle").textContent = "暂时无法打开本场直播";
         showPage("offline");
         $("offlineReason").textContent = "正在获取当前直播间…";
         try {
           const source = MEMBERS.find((m) => m.room === room) || { room, name: "当前直播间" };
-          const next = await api.current(source, signal);
+          const next = await api.current(source, signal, { allowOffline: true });
+          if (!next) {
+            $("offlineReason").textContent = "当前没有直播。可以切换到历史回放，选择已结束的场次。";
+            status2("可重新检查直播，或浏览历史场次。");
+            return;
+          }
           await loadRecord(next, signal);
         } catch (e) {
           if (e.name === "AbortError") throw e;
+          diagnostic.fail(e, signal);
           showPage("offline");
           $("offlineReason").textContent = e.message;
           status2("可重新检查直播，或浏览历史场次。");
         }
-      });
+      }, "load", { action: "room_load", record: { room } });
     }
     async function currentVideo() {
       const url2 = readPageUrl(), route = parseSubmissionUrl(url2);
       if (!route || controller) return;
-      await job(async (signal) => {
+      await job(async (signal, diagnostic) => {
         leavePage();
         loadedRoute = null;
         $("offlineTitle").textContent = "暂时无法打开当前视频";
@@ -62032,6 +62257,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           status2("设置开始和结束位置后，即可导出当前视频片段。");
         } catch (error) {
           if (signal.aborted) throw error;
+          diagnostic.fail(error, signal);
           loadedRoute = null;
           ready = false;
           player?.clear();
@@ -62039,7 +62265,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           $("offlineReason").textContent = error.message;
           status2(error.message, true);
         }
-      });
+      }, "load", { action: "video_load", record: null });
     }
     function checkCurrentVideo() {
       const route = parseSubmissionUrl(readPageUrl()), key = route?.key;
@@ -62062,19 +62288,19 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     async function download() {
       if (controller || !ready) return;
       const submission = isSubmission();
-      if (submission ? !saveFilePicker : !directoryPicker || !storage?.getDirectory) {
-        status2("当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。", true);
-        return;
-      }
-      await job(async (signal) => {
-        const selection = timeline.getSelection();
+      const selection = timeline.getSelection();
+      await job(async (signal, diagnostic) => {
+        diagnostic.stage("select_destination");
+        if (submission ? !saveFilePicker : !directoryPicker || !storage?.getDirectory) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。");
         const destination = submission ? await saveFilePicker({ suggestedName: fileName(record, selection.start, selection.end), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] }) : await directoryPicker({ mode: "readwrite" });
         signal.throwIfAborted();
         if (submission) player.cancel();
         else player.pause();
         clearDownloads();
         status2("正在读取选中的片段…");
+        diagnostic.stage("preparing");
         const onProgress = (p) => {
+          diagnostic.progress(p);
           renderExportProgress($("progress"), status2, p, submission);
           if (submission && p.estimatedBytes !== null) $("estimatedSize").textContent = `预计成品约 ${formatBytes(p.estimatedBytes)}`;
         };
@@ -62097,25 +62323,25 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           });
         }
         status2("导出完成，MP4 已保存到所选位置。");
-      }, "export");
+      }, "export", { selection, mode: submission ? "precise" : exportMode, estimatedBytes: submission ? (record.media.video.bandwidth + (record.media.audio?.bandwidth || 0)) * (selection.end - selection.start) / 8 : estimate ? estimateSelectionBytes(estimate, record.start, selection) : void 0 });
     }
     async function downloadFull() {
       if (controller || !ready) return;
-      if (!saveFilePicker) {
-        status2("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。", true);
-        return;
-      }
-      await job(async (signal) => {
+      await job(async (signal, diagnostic) => {
+        diagnostic.stage("select_destination");
+        if (!saveFilePicker) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。");
         const handle = await saveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
         signal.throwIfAborted();
         player.pause();
         clearDownloads();
         status2("正在下载整场并写入文件…");
+        diagnostic.stage("preparing");
         const groups = await recordingPlan.load(signal);
         signal.throwIfAborted();
         fullStopController = new AbortController();
         controls();
         const result = await saveRecording(api, groups, handle, { signal, stopSignal: fullStopController.signal, onProgress: (p) => {
+          diagnostic.progress(p);
           if (p.progress !== void 0) $("progress").value = p.progress * 100;
           if (p.phase === "stopping" || p.phase === "finalizing") {
             fullFinishing = true;
@@ -62131,7 +62357,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         const message = document.createElement("p");
         message.textContent = `${result.stopped ? "已完成部分" : "整场"}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
         $("downloads").append(message);
-      }, "export");
+      }, "export", { action: "recording_download", selection: { start: 0, end: playbackTotal }, mode: "whole" });
     }
     async function open() {
       $("panel").hidden = false;
@@ -62397,10 +62623,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       this.request = request;
     }
     async get(path, params, signal) {
-      const { data: text } = await this.request(`${API2}${path}?${new URLSearchParams(params)}`, { auth: true, signal });
+      const { data: text2 } = await this.request(`${API2}${path}?${new URLSearchParams(params)}`, { auth: true, signal });
       let response;
       try {
-        response = JSON.parse(text);
+        response = JSON.parse(text2);
       } catch {
         throw new Error("B 站没有返回接口数据，请刷新页面后重试。");
       }
@@ -62481,7 +62707,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
 
   // src/main.js
   if (!document.getElementById("bella-live-clip-host")) {
+    const diagnostics = createDiagnosticReporter({
+      endpoint: true ? "" : "",
+      request: GM_xmlhttpRequest,
+      version: readScriptMetadata(header_default).version,
+      userAgent: navigator.userAgent
+    });
     const app = createApp({
+      diagnostics,
       api: new BiliApi(createRequest(GM_xmlhttpRequest)),
       submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
       // Native Window methods need the page window, not the userscript sandbox receiver.

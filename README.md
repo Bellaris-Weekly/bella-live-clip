@@ -1,15 +1,15 @@
 # 贝报切片助手（bella-live-clip）
 
-当前版本为 `2.11.10`。B 站投稿视频与直播片段剪辑、下载油猴脚本。
+当前版本为 `2.11.11`。B 站投稿视频与直播片段剪辑、下载油猴脚本。
 
-本版移除日志服务发布对域名检查的依赖，只更新已有 Worker 和数据库表结构。实际部署配置统一来自结构化 Secret；插件尚未接入自动上报。
+本版接入插件错误上报：加载、剪辑和下载失败时静默发送必要诊断信息，取消操作不上报，上报失败不影响原有操作。
 
 支持普通投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺的本场直播回看与近 14 天历史回放。
 
 ## 安装
 
 1. 安装 Tampermonkey。
-2. 打开 [GitHub 安装文件](https://raw.githubusercontent.com/Bellaris-Weekly/bella-live-clip/main/bella-live-clip.user.js)，或点击 [立即安装](https://share.bellaris.fans/bella-live-clip.user.js)。
+2. 点击 [立即安装](https://share.bellaris.fans/bella-live-clip.user.js)，使用发布构建。
 3. 在同一个浏览器登录 B 站，刷新 B 站页面，点击右下角剪辑图标。
 
 默认快捷键为 **Alt＋Shift＋C**。点击入口或使用快捷键均可收起面板。
@@ -66,4 +66,4 @@
 
 仓库包含可供多个项目使用的 Cloudflare Worker + D1 日志服务，支持匿名写入、按来源去重和通过 Cloudflare 控制台查询。发布方式见 [日志服务说明](server/logs/README.md)。
 
-生产部署只读取 GitHub Actions Secret `LOG_SERVICE_CONFIG`，不在仓库中保存实际账户、Worker、数据库、域名或令牌配置。资源及域名绑定由维护者预先完成；部署流程只检查并更新已有 Worker 和数据库，不读取、验证或修改域名，也不自动创建替代资源。当前用户脚本尚未发送日志。
+生产部署只读取 GitHub Actions Secret `LOG_SERVICE_CONFIG`，不在仓库中保存实际账户、Worker、数据库、域名或令牌配置。资源及域名绑定由维护者预先完成；部署流程只检查并更新已有 Worker 和数据库，不读取、验证或修改域名，也不自动创建替代资源。发布构建从同一个 Secret 注入公开接收地址和对应网络权限，仓库中的构建不含实际地址；管理凭据不会进入插件。
