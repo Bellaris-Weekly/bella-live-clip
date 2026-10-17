@@ -1,7 +1,7 @@
 import { Input, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
   Output, StreamTarget, Mp4OutputFormat, EncodedPacketSink, EncodedVideoPacketSource, EncodedAudioPacketSource } from 'mediabunny';
 import {createRecordingDownload} from './recording-download.js';
-import {RecordingTimeline} from './recording-timeline.js';
+import {RecordingTimeline,recordingTime} from './recording-timeline.js';
 export async function estimateRecordingRate(api, groups, signal) {
   // Sample each uninterrupted part so quality changes are reflected in its estimate.
   const rates=[];
@@ -60,7 +60,7 @@ export function recordingSource(groups,read) {
   });
 }
 
-export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,onProgress=()=>{}}={}) {
+export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,onProgress=()=>{},onSegment=()=>{},concurrency=6}={}) {
   let file,input,output,bytes=0,written=0,processed=0,reconnecting=0,attempt=0,phase='downloading';
   const requests=new AbortController();
   const abort=()=>requests.abort(signal.reason),stop=()=>{phase='stopping';requests.abort(stopSignal.reason);};
@@ -73,7 +73,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
     const speed=(bytes-samples[0].bytes)/Math.max(1,(now-Math.max(started,samples[0].at))/1000);
     onProgress({bytes,written,progress:complete?processed:Math.min(.99,processed),speed,reconnecting,attempt,phase});
   }
-  const download=createRecordingDownload(api,groups,{signal:requests.signal,
+  const download=createRecordingDownload(api,groups,{signal:requests.signal,concurrency,
     onRead:size=>{bytes+=size;samples.push({at:performance.now(),bytes});report();},
     onRetry:state=>{reconnecting=state.count;attempt=state.attempt;report();}});
   const timeline=new RecordingTimeline(),tracks=new Map();
@@ -99,6 +99,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
       if(map){data.set(map);data.set(item.data,map.byteLength);}
       input=new Input({source:new BufferSource(data),formats:[MP4,MPEG_TS]});
       const segmentTracks=[];
+      let sourceStart=Infinity,sourceEnd=-Infinity;
       for(const track of await input.getTracks()){
         const key=`${track.type}:${track.number}`,codec=await track.getCodec();
         if(!['video','audio'].includes(track.type)||!output.format.getSupportedCodecs().includes(codec))throw new Error('本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。');
@@ -115,6 +116,8 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
         const packets=[];
         for await(const original of new EncodedPacketSink(track).packets()){
           download.signal.throwIfAborted();
+          sourceStart=Math.min(sourceStart,original.timestamp);
+          sourceEnd=Math.max(sourceEnd,original.timestamp+original.duration);
           // Container sync flags may be wrong in either direction, including
           // AAC marked as dependent. Inspect every packet, not just sync flags.
           const type=await track.determinePacketType(original)??original.type;
@@ -131,6 +134,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
         input.dispose();input=null;processed=(item.index+1)/item.count;report();continue;
       }
       const offset=timeline.append(segmentTracks,pendingDiscontinuity);pendingDiscontinuity=false;
+      onSegment({segment:item.segment,start:recordingTime(sourceStart+offset),end:recordingTime(sourceEnd+offset)});
       if(output.state==='pending')await output.start();
       // Interleave tracks in small batches without changing each track's decode order.
       const cursors=segmentTracks.map(()=>0);
@@ -141,7 +145,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
             // the middle of a batch could leave audio/video at different ends.
             signal?.throwIfAborted();
             const packet=track.packets[cursors[i]++];
-            await track.target.source.add(packet.clone({timestamp:Math.round((packet.timestamp+offset)*1e6)/1e6}),{decoderConfig:track.config});
+            await track.target.source.add(packet.clone({timestamp:recordingTime(packet.timestamp+offset)}),{decoderConfig:track.config});
             track.target.written=true;
           }
         }

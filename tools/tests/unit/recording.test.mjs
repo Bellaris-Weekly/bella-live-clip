@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Output,BufferTarget,Mp4OutputFormat,EncodedVideoPacketSource,EncodedPacket,EncodedPacketSink,Input,BufferSource,MP4} from 'mediabunny';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
-import {exportSelection} from '../../../src/media/export.js';
+import {exportSelection} from '../support/clip-export.mjs';
 import {config,frame} from '../support/synthetic-frame.mjs';
 import {formatCompactTime,formatDuration} from '../../../src/shared/format.js';
 import {saveRecording,estimateRecordingRate,estimateSelectionBytes} from '../../../src/media/recording.js';

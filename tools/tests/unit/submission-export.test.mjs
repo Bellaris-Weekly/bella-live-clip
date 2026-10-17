@@ -219,3 +219,17 @@ test('preview ranges read only the low source; precise exports still read only t
  await exportSubmission(request,record,{start:2,end:6},{precise:true});
  assert.ok(urls.length>0&&urls.every(url=>!url.includes('/low-')));
 });
+
+for (const precise of [false, true]) test(`投稿 ${precise ? '精确' : '原画'} 输出直接提交文件事务`, async () => {
+  const { memoryFile } = await import('../support/memory-file.mjs');
+  const fileHandle = memoryFile(), data = await fixture('combined'), events = [];
+  const result = await exportSubmission(transport({ video: data }), submission(true), { start: 2, end: 6 }, {
+    precise, fileHandle, onProgress: event => events.push(event),
+  });
+  assert.ok(result.bytes > 0); assert.equal(result instanceof Blob, false);
+  assert.equal(fileHandle.stats.closed, 1); assert.equal(fileHandle.stats.aborted, 0);
+  assert.equal(events.at(-1).phase, 'complete');
+  const file = await fileHandle.getFile(), input = new Input({ source: new BufferSource(await file.arrayBuffer()), formats: [MP4] });
+  try { assert.equal(await input.computeDuration(), 4); assert.ok(await input.getPrimaryAudioTrack()); assert.ok(await input.getPrimaryVideoTrack()); }
+  finally { input.dispose(); }
+});

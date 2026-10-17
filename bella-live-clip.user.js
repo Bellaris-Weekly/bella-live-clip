@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.7
+// @version      2.11.8
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.7\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.8\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -506,9 +506,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const dateInfo = document.createElement("span");
     const month = document.createElement("span");
     month.textContent = `${part("month")}月 · ${part("weekday")}`;
-    const time2 = document.createElement("span");
-    time2.textContent = `${part("hour")}:${part("minute")}`;
-    dateInfo.append(month, time2);
+    const time = document.createElement("span");
+    time.textContent = `${part("hour")}:${part("minute")}`;
+    dateInfo.append(month, time);
     date.append(day, dateInfo);
     heading.append(date);
     if (record.schedule?.type) {
@@ -618,9 +618,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const delta = (x - session.x) / width * (session.view.end - session.view.start);
     return moveBoundary(selection, session.type, session.anchor + delta, total);
   }
-  function moveBoundary(selection, type, time2, total) {
+  function moveBoundary(selection, type, time, total) {
     const gap = Math.min(1e-3, total / 2);
-    const target = clamp(time2, 0, total);
+    const target = clamp(time, 0, total);
     const next = { ...selection };
     if (type === "start") next.start = Math.min(target, selection.end - gap);
     else next.end = Math.max(target, selection.start + gap);
@@ -875,9 +875,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const utc = Boolean(match[7]);
     if (!utc && !/(?:^|;)TZID="?Asia\/Shanghai"?(?:;|$)/i.test(property)) return null;
     const [, year, month, day, hour, minute, second] = match;
-    const time2 = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
-    if (new Date(time2).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
-    return time2 / 1e3 - (utc ? 0 : 8 * 3600);
+    const time = Date.UTC(+year, +month - 1, +day, +hour, +minute, +second);
+    if (new Date(time).toISOString().replace(/[-:]/g, "").slice(0, 15) !== value.slice(0, 15)) return null;
+    return time / 1e3 - (utc ? 0 : 8 * 3600);
   }
   function parseEvent(fields) {
     if (fields.STATUS?.value === "CANCELLED") return null;
@@ -1321,14 +1321,14 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   }
 
   // src/services/submission-storyboard.js
-  function storyboardCell(data, time2) {
+  function storyboardCell(data, time) {
     const { img_x_len: columns, img_y_len: rows, img_x_size: width, img_y_size: height, image, index } = data;
     if (![columns, rows, width, height].every((value) => Number.isInteger(value) && value > 0) || !Array.isArray(index) || !index.length || !Array.isArray(image) || !image.length) throw new Error("这个视频暂无进度预览图。");
     const offset = index[0] === 0 && index[1] === 0 ? 1 : 0;
     let low = offset, high = index.length;
     while (low < high) {
       const middle = low + high >> 1;
-      if (index[middle] <= time2) low = middle + 1;
+      if (index[middle] <= time) low = middle + 1;
       else high = middle;
     }
     const position = Math.max(0, low - 1 - offset), sheet = Math.floor(position / (columns * rows));
@@ -1405,10 +1405,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       return entry.pending;
     }
     return {
-      async read(time2, signal) {
+      async read(time, signal) {
         signal.throwIfAborted();
         lifetime.signal.throwIfAborted();
-        const cell = storyboardCell(await wait2(getMetadata(), signal), time2);
+        const cell = storyboardCell(await wait2(getMetadata(), signal), time);
         const image = await wait2(getSheet(cell.url), signal);
         const width = image.width / cell.columns, height = image.height / cell.rows;
         return { image, x: cell.x / cell.width * width, y: cell.y / cell.height * height, width, height };
@@ -1430,8 +1430,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       if (!drag || !isActive()) return;
       const image = document2.querySelector(".bpx-player-progress-preview-image");
       const label = document2.querySelector(".bpx-player-progress-preview-time")?.textContent ?? "";
-      const time2 = /^\d+(?::\d{2}){1,2}$/.test(label.trim()) ? timeFromLabel(label) : drag.time;
-      if (image?.complete && image.naturalWidth) drag.player.previewImage(image, time2);
+      const time = /^\d+(?::\d{2}){1,2}$/.test(label.trim()) ? timeFromLabel(label) : drag.time;
+      if (image?.complete && image.naturalWidth) drag.player.previewImage(image, time);
       else drag.player.seek(drag.time);
     }
     function move(event) {
@@ -1613,19 +1613,19 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       if (!scrubbing) loading.textContent = "等待 B 站播放器画面…";
       update();
     }
-    function showPreview(frame, time2) {
+    function showPreview(frame, time) {
       if (!scrubbing || !visible) return;
-      previewTime = time2;
-      onTime(time2);
+      previewTime = time;
+      onTime(time);
       canvas.width = Math.min(640, frame.width);
       canvas.height = Math.round(canvas.width * frame.height / frame.width);
       context.drawImage(frame.image, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
       loading.hidden = true;
     }
-    const seek = async (time2) => {
+    const seek = async (time) => {
       refresh();
       if (!submission || !visible) return;
-      const target = clamp(time2, 0, Math.max(0, submission.duration - 1e-3));
+      const target = clamp(time, 0, Math.max(0, submission.duration - 1e-3));
       if (!scrubbing) {
         if (source) source.currentTime = target;
         return;
@@ -1709,9 +1709,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         scrubbing = true;
         previewTime = source?.currentTime ?? 0;
       },
-      previewImage(image, time2) {
+      previewImage(image, time) {
         clearPreview();
-        showPreview({ image, x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight }, time2);
+        showPreview({ image, x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight }, time);
       },
       end({ commit = true } = {}) {
         const target = previewTime, wasScrubbing = scrubbing;
@@ -1745,6 +1745,25 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         canvas.removeEventListener("dblclick", fullscreen);
       }
     };
+  }
+
+  // src/media/temporary-media.js
+  async function createTemporaryMedia({ storage = globalThis.navigator?.storage, signal } = {}) {
+    signal?.throwIfAborted();
+    if (!storage?.getDirectory) throw new Error("当前浏览器不支持临时文件存储，请使用 Chrome 或 Edge 导出直播片段。");
+    const root = await storage.getDirectory();
+    signal?.throwIfAborted();
+    const name = `bella-clip-${crypto.randomUUID()}.mp4`;
+    const handle = await root.getFileHandle(name, { create: true });
+    return { handle, async remove() {
+      await root.removeEntry(name);
+    } };
+  }
+  function mediaStorageError(error) {
+    if (error.name === "QuotaExceededError") {
+      return new Error("存储空间不足，无法完成导出。请检查浏览器临时存储配额及保存位置的可用空间，或缩短选区后重试。", { cause: error });
+    }
+    return error;
   }
 
   // node_modules/mediabunny/dist/modules/src/misc.js
@@ -2161,14 +2180,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       yield { key, value };
     }
   };
-  var base64ToBytes = (base64) => {
-    const decoded = atob(base64);
-    const bytes2 = new Uint8Array(decoded.length);
-    for (let i = 0; i < decoded.length; i++) {
-      bytes2[i] = decoded.charCodeAt(i);
-    }
-    return bytes2;
-  };
   var uint8ArraysAreEqual = (a, b) => {
     if (a.length !== b.length) {
       return false;
@@ -2185,57 +2196,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   };
   var isNumber = (x) => {
     return typeof x === "number" && !Number.isNaN(x);
-  };
-  var joinPaths = (basePath, relativePath) => {
-    if (relativePath.includes("://")) {
-      return relativePath;
-    }
-    if (basePath.includes("://")) {
-      const queryIndex = basePath.indexOf("?");
-      if (queryIndex !== -1) {
-        basePath = basePath.slice(0, queryIndex);
-      }
-    }
-    let result;
-    if (relativePath.startsWith("/")) {
-      const protocolIndex2 = basePath.indexOf("://");
-      if (protocolIndex2 === -1) {
-        result = relativePath;
-      } else {
-        const pathStart = basePath.indexOf("/", protocolIndex2 + 3);
-        if (pathStart === -1) {
-          result = basePath + relativePath;
-        } else {
-          result = basePath.slice(0, pathStart) + relativePath;
-        }
-      }
-    } else {
-      const lastSlash = basePath.lastIndexOf("/");
-      if (lastSlash === -1) {
-        result = relativePath;
-      } else {
-        result = basePath.slice(0, lastSlash + 1) + relativePath;
-      }
-    }
-    let prefix = "";
-    const protocolIndex = result.indexOf("://");
-    if (protocolIndex !== -1) {
-      const pathStart = result.indexOf("/", protocolIndex + 3);
-      if (pathStart !== -1) {
-        prefix = result.slice(0, pathStart);
-        result = result.slice(pathStart);
-      }
-    }
-    const segments = result.split("/");
-    const normalized = [];
-    for (const segment of segments) {
-      if (segment === "..") {
-        normalized.pop();
-      } else if (segment !== ".") {
-        normalized.push(segment);
-      }
-    }
-    return prefix + normalized.join("/");
   };
   var arrayCount = (array, predicate) => {
     let count = 0;
@@ -6863,56 +6823,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       this.iv[3] = temp3;
     }
   };
-  var createAes128CbcDecryptStream = (reader, getInit, close) => {
-    let initted = false;
-    let pos = 0;
-    const CHUNK_SIZE3 = 2 ** 16;
-    const BLOCK_SIZE = 16;
-    const aesContext = new Aes128CbcContext();
-    return new ReadableStream({
-      pull: async (controller) => {
-        if (!initted) {
-          aesContext.init(await getInit());
-          initted = true;
-        }
-        const requestedLength = CHUNK_SIZE3 + BLOCK_SIZE;
-        let nextSlice = reader.requestSliceRange(pos, 0, requestedLength);
-        if (isThenable(nextSlice))
-          nextSlice = await nextSlice;
-        if (!nextSlice || nextSlice.length === 0) {
-          throw new Error("Invalid ciphertext.");
-        }
-        const sliceLength = nextSlice.length;
-        if (sliceLength % 16 !== 0) {
-          throw new Error("Invalid ciphertext.");
-        }
-        const bytesToRead = sliceLength === requestedLength ? sliceLength - BLOCK_SIZE : sliceLength;
-        const input = readBytes(nextSlice, bytesToRead);
-        const output = new Uint8Array(bytesToRead);
-        for (let i = 0; i < bytesToRead; i += 16) {
-          aesContext.in.set(input.subarray(i, i + 16));
-          aesContext.decrypt();
-          output.set(aesContext.out, i);
-        }
-        if (bytesToRead < sliceLength) {
-          controller.enqueue(output);
-          pos += bytesToRead;
-        } else {
-          const paddingLength = output[bytesToRead - 1];
-          if (paddingLength === 0 || paddingLength > 16) {
-            throw new Error("Invalid PKCS#7 padding. Incorrect key or corrupted data.");
-          }
-          const trimmedOutput = output.subarray(0, bytesToRead - paddingLength);
-          controller.enqueue(trimmedOutput);
-          controller.close();
-          close();
-        }
-      },
-      cancel: () => {
-        close();
-      }
-    });
-  };
 
   // node_modules/mediabunny/dist/modules/src/isobmff/isobmff-demuxer.js
   /*!
@@ -8393,13 +8303,13 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
             const readSampleNum = functions[lengthSizeOfSampleNum];
             const numberOfEntries = readU32Be(slice);
             for (let i = 0; i < numberOfEntries; i++) {
-              const time2 = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
+              const time = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
               const moofOffset = version2 === 1 ? readU64Be(slice) : readU32Be(slice);
               readTrafNum(slice);
               readTrunNum(slice);
               readSampleNum(slice);
               track.fragmentLookupTable.push({
-                timestamp: time2,
+                timestamp: time,
                 moofOffset
               });
             }
@@ -11814,458 +11724,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/hls/hls-misc.js
-  /*!
-   * Copyright (c) 2026-present, Vanilagy and contributors
-   *
-   * This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at https://mozilla.org/MPL/2.0/.
-   */
-  var HLS_MIME_TYPE = "application/vnd.apple.mpegurl";
-  var TAG_STREAM_INF = "#EXT-X-STREAM-INF:";
-  var TAG_I_FRAME_STREAM_INF = "#EXT-X-I-FRAME-STREAM-INF:";
-  var TAG_MEDIA = "#EXT-X-MEDIA:";
-  var TAG_EXTINF = "#EXTINF:";
-  var TAG_MAP = "#EXT-X-MAP:";
-  var TAG_KEY = "#EXT-X-KEY:";
-  var TAG_MEDIA_SEQUENCE = "#EXT-X-MEDIA-SEQUENCE:";
-  var TAG_BYTERANGE = "#EXT-X-BYTERANGE:";
-  var TAG_PROGRAM_DATE_TIME = "#EXT-X-PROGRAM-DATE-TIME:";
-  var TAG_DISCONTINUITY = "#EXT-X-DISCONTINUITY";
-  var TAG_TARGETDURATION = "#EXT-X-TARGETDURATION:";
-  var TAG_ENDLIST = "#EXT-X-ENDLIST";
-  var TAG_PLAYLIST_TYPE = "#EXT-X-PLAYLIST-TYPE:";
-  var TAG_I_FRAMES_ONLY = "#EXT-X-I-FRAMES-ONLY";
-  var canIgnoreLine = (line) => line.length === 0 || line.startsWith("#") && !line.startsWith("#EXT");
-  var AttributeList = class {
-    constructor(str) {
-      this._attributes = {};
-      let key = "";
-      let value = "";
-      let inValue = false;
-      let inQuotes = false;
-      for (let i = 0; i < str.length; i++) {
-        const char = str[i];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === "=" && !inValue && !inQuotes) {
-          inValue = true;
-        } else if (char === "," && !inQuotes) {
-          if (key) {
-            this._attributes[key.trim().toLowerCase()] = value;
-          }
-          key = "";
-          value = "";
-          inValue = false;
-        } else if (inValue) {
-          value += char;
-        } else {
-          key += char;
-        }
-      }
-      if (key) {
-        this._attributes[key.trim().toLowerCase()] = value;
-      }
-    }
-    get(name) {
-      return this._attributes[name.toLowerCase()] ?? null;
-    }
-    getAsNumber(name) {
-      const value = this.get(name);
-      if (value === null) {
-        return null;
-      }
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    }
-    merge(other) {
-      Object.assign(this._attributes, other._attributes);
-    }
-  };
-
-  // node_modules/mediabunny/dist/modules/src/segmented-input.js
-  /*!
-   * Copyright (c) 2026-present, Vanilagy and contributors
-   *
-   * This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at https://mozilla.org/MPL/2.0/.
-   */
-  var SegmentedInput = class {
-    constructor(input, path, trackDeclarations) {
-      this.nextInputCacheAge = 0;
-      this.inputCache = [];
-      this.trackBackingsPromise = null;
-      this.firstSegment = null;
-      this.firstSegmentFirstTimestamps = /* @__PURE__ */ new WeakMap();
-      this.firstTimestampCache = /* @__PURE__ */ new WeakMap();
-      this.input = input;
-      this.path = path;
-      this.trackDeclarations = trackDeclarations;
-    }
-    async getDurationFromMetadata(options) {
-      const lastSegment = await this.getSegmentAt(Infinity, {
-        skipLiveWait: options.skipLiveWait
-      });
-      if (!lastSegment) {
-        return null;
-      }
-      return lastSegment.timestamp + lastSegment.duration;
-    }
-    async getUnixTimeForTimestamp(timestamp) {
-      let segment = await this.getSegmentAt(timestamp, {});
-      segment ??= await this.getFirstSegment({});
-      if (!segment || segment.unixEpochTimestamp === null) {
-        return null;
-      }
-      const elapsed = timestamp - segment.timestamp;
-      return segment.unixEpochTimestamp + elapsed;
-    }
-    async getTrackBackings() {
-      return this.trackBackingsPromise ??= (async () => {
-        const backings = [];
-        if (this.trackDeclarations) {
-          for (const decl of this.trackDeclarations) {
-            if (decl.type === "video") {
-              const number = arrayCount(backings, (x) => x.getType() === "video") + 1;
-              backings.push(new SegmentedInputInputVideoTrackBacking(this, decl, number));
-            } else if (decl.type === "audio") {
-              const number = arrayCount(backings, (x) => x.getType() === "audio") + 1;
-              backings.push(new SegmentedInputInputAudioTrackBacking(this, decl, number));
-            }
-          }
-        } else {
-          this.firstSegment = await this.getFirstSegment({});
-          if (!this.firstSegment) {
-            return [];
-          }
-          const input = this.getInputForSegment(this.firstSegment);
-          const inputTracks = await input.getTracks();
-          for (const track of inputTracks) {
-            if (track.type === "video") {
-              const number = arrayCount(backings, (x) => x.getType() === "video") + 1;
-              backings.push(new SegmentedInputInputVideoTrackBacking(this, {
-                id: backings.length + 1,
-                type: "video"
-              }, number));
-            } else if (track.type === "audio") {
-              const number = arrayCount(backings, (x) => x.getType() === "audio") + 1;
-              backings.push(new SegmentedInputInputAudioTrackBacking(this, {
-                id: backings.length + 1,
-                type: "audio"
-              }, number));
-            }
-          }
-        }
-        return backings;
-      })();
-    }
-    // This operation is done a lot and can be semi-expensive, so it's good to have a cache for it
-    async getFirstTimestampForInput(input) {
-      const existing = this.firstTimestampCache.get(input);
-      if (existing !== void 0) {
-        return existing;
-      }
-      const firstTimestamp = await input.getFirstTimestamp();
-      this.firstTimestampCache.set(input, firstTimestamp);
-      return firstTimestamp;
-    }
-    async getMediaOffset(segment, input) {
-      const firstSegment = segment.firstSegment ?? segment;
-      let firstSegmentFirstTimestamp;
-      if (this.firstSegmentFirstTimestamps.has(firstSegment)) {
-        firstSegmentFirstTimestamp = this.firstSegmentFirstTimestamps.get(firstSegment);
-      } else {
-        const firstInput = this.getInputForSegment(firstSegment);
-        firstSegmentFirstTimestamp = await this.getFirstTimestampForInput(firstInput);
-        this.firstSegmentFirstTimestamps.set(firstSegment, firstSegmentFirstTimestamp);
-      }
-      if (firstSegment === segment) {
-        return firstSegment.timestamp - firstSegmentFirstTimestamp;
-      }
-      const segmentFirstTimestamp = await this.getFirstTimestampForInput(input);
-      const segmentElapsed = segment.timestamp - firstSegment.timestamp;
-      const inputElapsed = segmentFirstTimestamp - firstSegmentFirstTimestamp;
-      const difference = inputElapsed - segmentElapsed;
-      if (Math.abs(difference) <= Math.min(0.25, segmentElapsed)) {
-        return firstSegment.timestamp - firstSegmentFirstTimestamp;
-      } else {
-        return segment.timestamp - segmentFirstTimestamp;
-      }
-    }
-    dispose() {
-      for (const entry of this.inputCache) {
-        entry.input.dispose();
-      }
-      this.inputCache.length = 0;
-    }
-  };
-  var SegmentedInputInputTrackBacking = class {
-    constructor(segmentedInput, decl, number) {
-      this.packetInfos = /* @__PURE__ */ new WeakMap();
-      this.hydrationPromise = null;
-      this.firstInputTrack = null;
-      this.firstSegment = null;
-      this.segmentedInput = segmentedInput;
-      this.decl = decl;
-      this.number = number;
-    }
-    hydrate() {
-      return this.hydrationPromise ??= (async () => {
-        this.segmentedInput.firstSegment ??= await this.segmentedInput.getFirstSegment({});
-        if (!this.segmentedInput.firstSegment) {
-          throw new Error("Missing first segment, can't retrieve track.");
-        }
-        let currentSegment = this.segmentedInput.firstSegment;
-        let track = null;
-        while (currentSegment) {
-          const input = this.segmentedInput.getInputForSegment(currentSegment);
-          const inputTracks = await input.getTracks();
-          track = inputTracks.find((x) => x.type === this.decl.type && x.number === this.number) ?? null;
-          if (track) {
-            break;
-          }
-          currentSegment = await this.segmentedInput.getNextSegment(currentSegment, {});
-        }
-        if (!track) {
-          throw new Error("No matching track found in underlying media data.");
-        }
-        this.firstInputTrack = track;
-        this.firstSegment = currentSegment;
-      })();
-    }
-    getId() {
-      return this.decl.id;
-    }
-    getType() {
-      return this.decl.type;
-    }
-    getNumber() {
-      return this.number;
-    }
-    /** If the backing track is already present, delegate synchronously; otherwise, hydrate first. */
-    delegate(fn) {
-      if (this.firstInputTrack) {
-        return fn();
-      }
-      return this.hydrate().then(fn);
-    }
-    async getDecoderConfig() {
-      return this.delegate(() => this.firstInputTrack._backing.getDecoderConfig());
-    }
-    getHasOnlyKeyPackets() {
-      return this.delegate(() => this.firstInputTrack._backing.getHasOnlyKeyPackets?.() ?? null);
-    }
-    getPairingMask() {
-      return 1n;
-    }
-    getCodec() {
-      return this.delegate(() => this.firstInputTrack._backing.getCodec());
-    }
-    getInternalCodecId() {
-      return this.delegate(() => this.firstInputTrack._backing.getInternalCodecId());
-    }
-    getDisposition() {
-      return this.delegate(() => this.firstInputTrack._backing.getDisposition());
-    }
-    getLanguageCode() {
-      return this.delegate(() => this.firstInputTrack._backing.getLanguageCode());
-    }
-    getName() {
-      return this.delegate(() => this.firstInputTrack._backing.getName());
-    }
-    getTimeResolution() {
-      return this.delegate(() => this.firstInputTrack._backing.getTimeResolution());
-    }
-    async isRelativeToUnixEpoch() {
-      await this.hydrate();
-      assert(this.segmentedInput.firstSegment);
-      return this.segmentedInput.firstSegment.unixEpochTimestamp === this.segmentedInput.firstSegment.timestamp;
-    }
-    getUnixTimeForTimestamp(timestamp) {
-      return this.segmentedInput.getUnixTimeForTimestamp(timestamp);
-    }
-    getBitrate() {
-      return this.delegate(() => this.firstInputTrack._backing.getBitrate());
-    }
-    getAverageBitrate() {
-      return this.delegate(() => this.firstInputTrack._backing.getAverageBitrate());
-    }
-    getDurationFromMetadata(options) {
-      return this.segmentedInput.getDurationFromMetadata(options);
-    }
-    getLiveRefreshInterval() {
-      return this.segmentedInput.getLiveRefreshInterval();
-    }
-    async createAdjustedPacket(packet, segment, track) {
-      assert(packet.sequenceNumber >= 0);
-      assert(this.segmentedInput.firstSegment);
-      const mediaOffset = await this.segmentedInput.getMediaOffset(segment, track.input);
-      const segmentTimestampRelativeToFirst = segment.timestamp - this.segmentedInput.firstSegment.timestamp;
-      const modified = packet.clone({
-        timestamp: roundToDivisor(packet.timestamp + mediaOffset, await track.getTimeResolution()),
-        // The 1e8 assumes a max of 100 MB per second, highly unlikely to be hit, so this should guarantee
-        // monotonically increasing sequence numbers across segments.
-        sequenceNumber: Math.floor(1e8 * segmentTimestampRelativeToFirst) + packet.sequenceNumber
-      });
-      this.packetInfos.set(modified, {
-        segment,
-        track,
-        sourcePacket: packet
-      });
-      return modified;
-    }
-    async getFirstPacket(options) {
-      await this.hydrate();
-      assert(this.firstInputTrack);
-      assert(this.firstSegment);
-      let currentTrack = this.firstInputTrack;
-      let currentSegment = this.firstSegment;
-      while (true) {
-        if (currentTrack) {
-          const packet = await currentTrack._backing.getFirstPacket(options);
-          if (packet) {
-            return this.createAdjustedPacket(packet, currentSegment, currentTrack);
-          }
-        }
-        currentSegment = await this.segmentedInput.getNextSegment(currentSegment, {
-          skipLiveWait: options.skipLiveWait
-        });
-        if (!currentSegment) {
-          break;
-        }
-        const nextInput = this.segmentedInput.getInputForSegment(currentSegment);
-        const nextTracks = await nextInput.getTracks();
-        currentTrack = nextTracks.find((t) => t.type === this.firstInputTrack.type && t.number === this.firstInputTrack.number) ?? null;
-      }
-      return null;
-    }
-    getNextPacket(packet, options) {
-      return this._getNextInternal(packet, options, false);
-    }
-    getNextKeyPacket(packet, options) {
-      return this._getNextInternal(packet, options, true);
-    }
-    async _getNextInternal(packet, options, keyframesOnly) {
-      const info = this.packetInfos.get(packet);
-      if (!info) {
-        throw new Error("Packet was not created from this track.");
-      }
-      const nextPacket = keyframesOnly ? await info.track._backing.getNextKeyPacket(info.sourcePacket, options) : await info.track._backing.getNextPacket(info.sourcePacket, options);
-      if (nextPacket) {
-        return this.createAdjustedPacket(nextPacket, info.segment, info.track);
-      }
-      let currentSegment = info.segment;
-      while (true) {
-        const nextSegment = await this.segmentedInput.getNextSegment(currentSegment, {
-          skipLiveWait: options.skipLiveWait
-        });
-        if (!nextSegment) {
-          return null;
-        }
-        const nextInput = this.segmentedInput.getInputForSegment(nextSegment);
-        const nextTracks = await nextInput.getTracks();
-        const nextTrack = nextTracks.find((t) => t.type === info.track.type && t.number === info.track.number);
-        if (!nextTrack) {
-          currentSegment = nextSegment;
-          continue;
-        }
-        const firstPacket = await nextTrack._backing.getFirstPacket(options);
-        if (!firstPacket) {
-          return null;
-        }
-        return this.createAdjustedPacket(firstPacket, nextSegment, nextTrack);
-      }
-    }
-    getPacket(timestamp, options) {
-      return this._getPacketInternal(timestamp, options, false);
-    }
-    getKeyPacket(timestamp, options) {
-      return this._getPacketInternal(timestamp, options, true);
-    }
-    async _getPacketInternal(timestamp, options, keyframesOnly) {
-      let currentSegment = await this.segmentedInput.getSegmentAt(timestamp, {
-        skipLiveWait: options.skipLiveWait
-      });
-      if (!currentSegment) {
-        return null;
-      }
-      await this.hydrate();
-      while (currentSegment) {
-        const input = this.segmentedInput.getInputForSegment(currentSegment);
-        const tracks = await input.getTracks();
-        const track = tracks.find((t) => t.type === this.firstInputTrack.type && t.number === this.firstInputTrack.number);
-        if (!track) {
-          currentSegment = await this.segmentedInput.getPreviousSegment(currentSegment, {
-            skipLiveWait: options.skipLiveWait
-          });
-          continue;
-        }
-        const mediaOffset = await this.segmentedInput.getMediaOffset(currentSegment, input);
-        const offsetTimestamp = timestamp - mediaOffset;
-        const packet = keyframesOnly ? await track._backing.getKeyPacket(offsetTimestamp, options) : await track._backing.getPacket(offsetTimestamp, options);
-        if (!packet) {
-          currentSegment = await this.segmentedInput.getPreviousSegment(currentSegment, {
-            skipLiveWait: options.skipLiveWait
-          });
-          continue;
-        }
-        return this.createAdjustedPacket(packet, currentSegment, track);
-      }
-      return null;
-    }
-  };
-  var SegmentedInputInputVideoTrackBacking = class extends SegmentedInputInputTrackBacking {
-    getType() {
-      return "video";
-    }
-    getCodec() {
-      return this.delegate(() => this.firstInputTrack._backing.getCodec());
-    }
-    getCodedWidth() {
-      return this.delegate(() => this.firstInputTrack._backing.getCodedWidth());
-    }
-    getCodedHeight() {
-      return this.delegate(() => this.firstInputTrack._backing.getCodedHeight());
-    }
-    getSquarePixelWidth() {
-      return this.delegate(() => this.firstInputTrack._backing.getSquarePixelWidth());
-    }
-    getSquarePixelHeight() {
-      return this.delegate(() => this.firstInputTrack._backing.getSquarePixelHeight());
-    }
-    getRotation() {
-      return this.delegate(() => this.firstInputTrack._backing.getRotation());
-    }
-    async getColorSpace() {
-      return this.delegate(() => this.firstInputTrack._backing.getColorSpace());
-    }
-    async canBeTransparent() {
-      return this.delegate(() => this.firstInputTrack._backing.canBeTransparent());
-    }
-    async getDecoderConfig() {
-      return this.delegate(() => this.firstInputTrack._backing.getDecoderConfig());
-    }
-  };
-  var SegmentedInputInputAudioTrackBacking = class extends SegmentedInputInputTrackBacking {
-    getType() {
-      return "audio";
-    }
-    getCodec() {
-      return this.delegate(() => this.firstInputTrack._backing.getCodec());
-    }
-    getNumberOfChannels() {
-      return this.delegate(() => this.firstInputTrack._backing.getNumberOfChannels());
-    }
-    getSampleRate() {
-      return this.delegate(() => this.firstInputTrack._backing.getSampleRate());
-    }
-    async getDecoderConfig() {
-      return this.delegate(() => this.firstInputTrack._backing.getDecoderConfig());
-    }
-  };
-
   // node_modules/mediabunny/dist/modules/src/source.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
@@ -12454,52 +11912,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   var sourceRequestsAreEqual = (a, b) => {
     return a.path === b.path;
   };
-  var CustomPathedSource = class extends PathedSource {
-    constructor() {
-      super(...arguments);
-      this._root = null;
-      this._rootRequest = null;
-    }
-    /** @internal */
-    _read(start, end, minReadPosition, maxReadPosition) {
-      if (!this._root) {
-        if (!this._rootRequest) {
-          const result = this._resolveRequest({ path: this.rootPath, isRoot: true });
-          const handle = (result2) => {
-            const ref = result2 instanceof Source ? result2.ref() : result2;
-            this._root = ref;
-            this._rootRequest = null;
-            return ref;
-          };
-          if (isThenable(result)) {
-            this._rootRequest = result.then(handle);
-          } else {
-            handle(result);
-            assert(this._root);
-          }
-        }
-        if (this._rootRequest) {
-          return this._rootRequest.then((ref) => ref.source._read(start, end, minReadPosition, maxReadPosition));
-        }
-      }
-      return this._root.source._read(start, end, minReadPosition, maxReadPosition);
-    }
-    /** @internal */
-    _getFileSize() {
-      if (this._root) {
-        return this._root.source._getFileSize();
-      }
-      return void 0;
-    }
-    /** @internal */
-    _dispose() {
-      if (this._root) {
-        this._root.free();
-      } else if (this._rootRequest) {
-        void this._rootRequest.then((ref) => ref.free());
-      }
-    }
-  };
   var BufferSource = class extends Source {
     /**
      * Creates a new {@link BufferSource} backed by the specified `ArrayBuffer`, `SharedArrayBuffer`,
@@ -12538,6 +11950,102 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     void reader.cancel().catch(() => {
     });
   }) : null;
+  var BlobSource = class extends Source {
+    /**
+     * Creates a new {@link BlobSource} backed by the specified
+     * [`Blob`](https://developer.mozilla.org/en-US/docs/Web/API/Blob).
+     */
+    constructor(blob, options = {}) {
+      if (!(blob instanceof Blob)) {
+        throw new TypeError("blob must be a Blob.");
+      }
+      if (!options || typeof options !== "object") {
+        throw new TypeError("options must be an object.");
+      }
+      if (options.maxCacheSize !== void 0 && (!isNumber(options.maxCacheSize) || options.maxCacheSize < 0)) {
+        throw new TypeError("options.maxCacheSize, when provided, must be a non-negative number.");
+      }
+      if (options.useStreamReader !== void 0 && typeof options.useStreamReader !== "boolean") {
+        throw new TypeError("options.useStreamReader, when provided, must be a boolean.");
+      }
+      if (options.handleUnhandledError !== void 0 && typeof options.handleUnhandledError !== "function") {
+        throw new TypeError("options.handleUnhandledError, when provided, must be a function.");
+      }
+      super();
+      this._readers = /* @__PURE__ */ new WeakMap();
+      this._blob = blob;
+      this._options = options;
+      this._orchestrator = new ReadOrchestrator({
+        maxCacheSize: options.maxCacheSize ?? 8 * 2 ** 20,
+        maxWorkerCount: 4,
+        runWorker: this._runWorker.bind(this),
+        onIdleWorkerRemoved: (worker) => {
+          const reader = this._readers.get(worker);
+          if (reader) {
+            this._readers.delete(worker);
+            blobReaderRegistry?.unregister(worker);
+            void reader.cancel().catch(() => {
+            });
+          }
+        },
+        prefetchProfile: PREFETCH_PROFILES.fileSystem,
+        handleUnhandledError: options.handleUnhandledError
+      });
+      this._orchestrator.fileSize = blob.size;
+    }
+    /** @internal */
+    _getFileSize() {
+      return this._orchestrator.fileSize;
+    }
+    /** @internal */
+    _read(start, end, minReadPosition, maxReadPosition) {
+      return this._orchestrator.read(start, end, minReadPosition, maxReadPosition);
+    }
+    /** @internal */
+    async _runWorker(worker) {
+      assert(worker.strictTarget);
+      let reader = this._readers.get(worker);
+      if (reader === void 0) {
+        if ("stream" in this._blob && !isWebKit() && this._options.useStreamReader !== false) {
+          const slice = this._blob.slice(worker.currentPos);
+          reader = slice.stream().getReader();
+          blobReaderRegistry?.register(worker, reader, worker);
+        } else {
+          reader = null;
+        }
+        this._readers.set(worker, reader);
+      }
+      while (worker.currentPos < worker.targetPos && !worker.aborted) {
+        if (reader) {
+          const { done, value } = await reader.read();
+          if (done) {
+            this._orchestrator.onWorkerFinished(worker);
+            throw new Error("Blob reader stopped unexpectedly before all requested data was read.");
+          }
+          if (worker.aborted) {
+            break;
+          }
+          this._dispatchRead(worker.currentPos, worker.currentPos + value.length);
+          this._orchestrator.supplyWorkerData(worker, value);
+        } else {
+          const data = await this._blob.slice(worker.currentPos, worker.targetPos).arrayBuffer();
+          if (worker.aborted) {
+            break;
+          }
+          this._dispatchRead(worker.currentPos, worker.currentPos + data.byteLength);
+          this._orchestrator.supplyWorkerData(worker, new Uint8Array(data));
+        }
+      }
+      this._orchestrator.signalWorkerStoppedRunning(worker);
+      if (worker.aborted) {
+        await reader?.cancel();
+      }
+    }
+    /** @internal */
+    _dispose() {
+      this._orchestrator.dispose();
+    }
+  };
   var URL_SOURCE_MIN_LOAD_AMOUNT = 0.5 * 2 ** 20;
   var CustomSource = class extends Source {
     /** Creates a new {@link CustomSource} whose behavior is specified by `options`.  */
@@ -12648,175 +12156,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     _dispose() {
       this._orchestrator.dispose();
       this._options.dispose?.();
-    }
-  };
-  var ReadableStreamSource = class extends Source {
-    /** Creates a new {@link ReadableStreamSource} backed by the specified `ReadableStream<Uint8Array>`. */
-    constructor(stream, options = {}) {
-      if (!(stream instanceof ReadableStream)) {
-        throw new TypeError("stream must be a ReadableStream.");
-      }
-      if (!options || typeof options !== "object") {
-        throw new TypeError("options must be an object.");
-      }
-      if (options.handleUnhandledError !== void 0 && typeof options.handleUnhandledError !== "function") {
-        throw new TypeError("options.handleUnhandledError, when provided, must be a function.");
-      }
-      if (options.maxCacheSize !== void 0 && (!isNumber(options.maxCacheSize) || options.maxCacheSize < 0)) {
-        throw new TypeError("options.maxCacheSize, when provided, must be a non-negative number.");
-      }
-      super();
-      this._reader = null;
-      this._cache = [];
-      this._pendingSlices = [];
-      this._currentIndex = 0;
-      this._targetIndex = 0;
-      this._maxRequestedIndex = 0;
-      this._endIndex = null;
-      this._pulling = false;
-      this._cacheMissErrorMessage = "Attempted to read data from an already-evicted part of the cache. With ReadableStreamSource, you must access the data more sequentially or increase the size of its cache.";
-      this._stream = stream;
-      this._maxCacheSize = options.maxCacheSize ?? 32 * 2 ** 20;
-      this._handleUnhandledError = options.handleUnhandledError;
-    }
-    /** @internal */
-    _getFileSize() {
-      return this._endIndex;
-    }
-    /** @internal */
-    _read(start, end) {
-      if (this._endIndex !== null && end > this._endIndex) {
-        return null;
-      }
-      this._maxRequestedIndex = Math.max(this._maxRequestedIndex, end);
-      const cacheStartIndex = binarySearchLessOrEqual(this._cache, start, (x) => x.start);
-      const cacheStartEntry = cacheStartIndex !== -1 ? this._cache[cacheStartIndex] : null;
-      if (cacheStartEntry && cacheStartEntry.start <= start && end <= cacheStartEntry.end) {
-        return {
-          bytes: cacheStartEntry.bytes,
-          view: cacheStartEntry.view,
-          offset: cacheStartEntry.start
-        };
-      }
-      let lastEnd = start;
-      const bytes2 = new Uint8Array(end - start);
-      if (cacheStartIndex !== -1) {
-        for (let i = cacheStartIndex; i < this._cache.length; i++) {
-          const cacheEntry = this._cache[i];
-          if (cacheEntry.start >= end) {
-            break;
-          }
-          const cappedStart = Math.max(start, cacheEntry.start);
-          if (cappedStart > lastEnd) {
-            this._throwDueToCacheMiss();
-          }
-          const cappedEnd = Math.min(end, cacheEntry.end);
-          if (cappedStart < cappedEnd) {
-            bytes2.set(cacheEntry.bytes.subarray(cappedStart - cacheEntry.start, cappedEnd - cacheEntry.start), cappedStart - start);
-            lastEnd = cappedEnd;
-          }
-        }
-      }
-      if (lastEnd === end) {
-        return {
-          bytes: bytes2,
-          view: toDataView(bytes2),
-          offset: start
-        };
-      }
-      if (this._currentIndex > lastEnd) {
-        this._throwDueToCacheMiss();
-      }
-      const { promise, resolve, reject } = promiseWithResolvers();
-      this._pendingSlices.push({
-        start,
-        end,
-        bytes: bytes2,
-        resolve,
-        reject
-      });
-      this._targetIndex = Math.max(this._targetIndex, end);
-      if (!this._pulling) {
-        this._pulling = true;
-        void this._pull().catch((error) => {
-          this._pulling = false;
-          if (this._pendingSlices.length > 0) {
-            this._pendingSlices.forEach((x) => x.reject(error));
-            this._pendingSlices.length = 0;
-          } else if (this._handleUnhandledError) {
-            this._handleUnhandledError(error);
-          } else {
-            throw error;
-          }
-        });
-      }
-      return promise;
-    }
-    /** @internal */
-    _throwDueToCacheMiss() {
-      throw new Error(this._cacheMissErrorMessage);
-    }
-    /** @internal */
-    async _pull() {
-      this._reader ??= this._stream.getReader();
-      while (this._currentIndex < this._targetIndex && !this._disposed) {
-        const { done, value } = await this._reader.read();
-        if (done) {
-          for (const pendingSlice of this._pendingSlices) {
-            pendingSlice.resolve(null);
-          }
-          this._pendingSlices.length = 0;
-          this._endIndex = this._currentIndex;
-          break;
-        }
-        const startIndex = this._currentIndex;
-        const endIndex = this._currentIndex + value.byteLength;
-        this._dispatchRead(startIndex, endIndex);
-        for (let i = 0; i < this._pendingSlices.length; i++) {
-          const pendingSlice = this._pendingSlices[i];
-          const cappedStart = Math.max(startIndex, pendingSlice.start);
-          const cappedEnd = Math.min(endIndex, pendingSlice.end);
-          if (cappedStart < cappedEnd) {
-            pendingSlice.bytes.set(value.subarray(cappedStart - startIndex, cappedEnd - startIndex), cappedStart - pendingSlice.start);
-            if (cappedEnd === pendingSlice.end) {
-              pendingSlice.resolve({
-                bytes: pendingSlice.bytes,
-                view: toDataView(pendingSlice.bytes),
-                offset: pendingSlice.start
-              });
-              this._pendingSlices.splice(i, 1);
-              i--;
-            }
-          }
-        }
-        this._cache.push({
-          start: startIndex,
-          end: endIndex,
-          bytes: value,
-          view: toDataView(value),
-          age: 0
-          // Unused
-        });
-        while (this._cache.length > 0) {
-          const firstEntry = this._cache[0];
-          const distance = this._maxRequestedIndex - firstEntry.end;
-          if (distance <= this._maxCacheSize) {
-            break;
-          }
-          this._cache.shift();
-        }
-        this._currentIndex += value.byteLength;
-      }
-      this._pulling = false;
-    }
-    /** @internal */
-    _dispose() {
-      for (const pendingSlice of this._pendingSlices) {
-        pendingSlice.reject(new InputDisposedError());
-      }
-      this._pendingSlices.length = 0;
-      this._cache.length = 0;
-      void this._reader?.cancel();
     }
   };
   var PREFETCH_PROFILES = {
@@ -13379,1255 +12718,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
   };
 
-  // node_modules/mediabunny/dist/modules/src/hls/hls-segmented-input.js
-  /*!
-   * Copyright (c) 2026-present, Vanilagy and contributors
-   *
-   * This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at https://mozilla.org/MPL/2.0/.
-   */
-  var __addDisposableResource = function(env, value, async) {
-    if (value !== null && value !== void 0) {
-      if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
-      var dispose, inner;
-      if (async) {
-        if (!Symbol.asyncDispose) throw new TypeError("Symbol.asyncDispose is not defined.");
-        dispose = value[Symbol.asyncDispose];
-      }
-      if (dispose === void 0) {
-        if (!Symbol.dispose) throw new TypeError("Symbol.dispose is not defined.");
-        dispose = value[Symbol.dispose];
-        if (async) inner = dispose;
-      }
-      if (typeof dispose !== "function") throw new TypeError("Object not disposable.");
-      if (inner) dispose = function() {
-        try {
-          inner.call(this);
-        } catch (e) {
-          return Promise.reject(e);
-        }
-      };
-      env.stack.push({ value, dispose, async });
-    } else if (async) {
-      env.stack.push({ async: true });
-    }
-    return value;
-  };
-  var __disposeResources = /* @__PURE__ */ (function(SuppressedError2) {
-    return function(env) {
-      function fail(e) {
-        env.error = env.hasError ? new SuppressedError2(e, env.error, "An error was suppressed during disposal.") : e;
-        env.hasError = true;
-      }
-      var r, s = 0;
-      function next() {
-        while (r = env.stack.pop()) {
-          try {
-            if (!r.async && s === 1) return s = 0, env.stack.push(r), Promise.resolve().then(next);
-            if (r.dispose) {
-              var result = r.dispose.call(r.value);
-              if (r.async) return s |= 2, Promise.resolve(result).then(next, function(e) {
-                fail(e);
-                return next();
-              });
-            } else s |= 1;
-          } catch (e) {
-            fail(e);
-          }
-        }
-        if (s === 1) return env.hasError ? Promise.reject(env.error) : Promise.resolve();
-        if (env.hasError) throw env.error;
-      }
-      return next();
-    };
-  })(typeof SuppressedError === "function" ? SuppressedError : function(error, suppressed, message) {
-    var e = new Error(message);
-    return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
-  });
-  var IV_STRING_REGEX = /^0[xX][0-9a-fA-F]+$/;
-  var BASE64_DATA_URI_REGEX = /^data:.*;base64,/i;
-  var HlsSegmentedInput = class extends SegmentedInput {
-    constructor(demuxer, path, trackDeclarations, lines) {
-      super(demuxer.input, path, trackDeclarations);
-      this.segments = [];
-      this.nextLines = null;
-      this.currentUpdateSegmentsPromise = null;
-      this.streamHasEnded = false;
-      this.lastSegmentUpdateTime = -Infinity;
-      this.refreshInterval = 5;
-      this.rootPath = path;
-      this.demuxer = demuxer;
-      this.nextLines = lines;
-    }
-    runUpdateSegments() {
-      return this.currentUpdateSegmentsPromise ??= (async () => {
-        try {
-          const remainingWaitTimeMs = this.getRemainingWaitTimeMs();
-          if (remainingWaitTimeMs > 0) {
-            await wait(remainingWaitTimeMs);
-          }
-          this.lastSegmentUpdateTime = performance.now();
-          await this.updateSegments();
-        } finally {
-          this.currentUpdateSegmentsPromise = null;
-        }
-      })();
-    }
-    getRemainingWaitTimeMs() {
-      const elapsed = performance.now() - this.lastSegmentUpdateTime;
-      const result = Math.max(0, 1e3 * this.refreshInterval - elapsed);
-      if (result <= 50) {
-        return 0;
-      }
-      return result;
-    }
-    /**
-     * Reads and parses the segment info from the playlist file. When called more than one, it updates the existing
-     * segments by appending the new ones. Existing segments are never removed.
-     */
-    async updateSegments() {
-      let lines = this.nextLines;
-      this.nextLines = null;
-      if (!lines) {
-        const env_1 = { stack: [], error: void 0, hasError: false };
-        try {
-          const ref = __addDisposableResource(env_1, await this.demuxer.input._getSourceUncached({ path: this.rootPath, isRoot: false }), false);
-          const reader = new Reader(ref.source);
-          const slice = await reader.requestEntireFile();
-          assert(slice);
-          lines = readAllLines(slice, slice.length, { ignore: canIgnoreLine });
-          if (ref.source instanceof PathedSource) {
-            this.rootPath = ref.source.rootPath;
-          }
-        } catch (e_1) {
-          env_1.error = e_1;
-          env_1.hasError = true;
-        } finally {
-          __disposeResources(env_1);
-        }
-      }
-      const offsetTimestampsByDateTime = this.input._formatOptions.hls?.offsetTimestampsByDateTime !== false;
-      let headerRead = false;
-      let accumulatedTime = 0;
-      let accumulatedUnixTime = null;
-      let nextSegmentDuration = null;
-      let currentKey = null;
-      let nextSequenceNumber = 0;
-      let currentFirstSegment = null;
-      let currentInitSegment = null;
-      let lastByteRangeEnd = null;
-      let nextByteRange = null;
-      let lastProgramDateTimeSeconds = null;
-      let targetDuration = null;
-      let segmentSeen = false;
-      let prevLastSegment = last(this.segments) ?? null;
-      const parseByteRange = (content) => {
-        const atIndex = content.indexOf("@");
-        const length = Number(atIndex === -1 ? content : content.slice(0, atIndex));
-        if (!Number.isInteger(length) || length < 0) {
-          throw new Error(`Invalid #EXT-X-BYTERANGE length '${content}'.`);
-        }
-        let offset = null;
-        if (atIndex !== -1) {
-          offset = Number(content.slice(atIndex + 1));
-          if (!Number.isInteger(offset) || offset < 0) {
-            throw new Error(`Invalid #EXT-X-BYTERANGE offset '${content}'.`);
-          }
-        }
-        return { length, offset };
-      };
-      const setNextSequenceNumber = (number) => {
-        nextSequenceNumber = number;
-        if (prevLastSegment) {
-          assert(prevLastSegment.sequenceNumber !== null);
-          if (prevLastSegment.sequenceNumber < number) {
-            accumulatedTime = prevLastSegment.timestamp + prevLastSegment.duration;
-            currentFirstSegment = prevLastSegment.firstSegment;
-            currentInitSegment = prevLastSegment.initSegment;
-            lastProgramDateTimeSeconds = prevLastSegment.lastProgramDateTimeSeconds;
-            accumulatedUnixTime = prevLastSegment.unixEpochTimestamp !== null ? prevLastSegment.unixEpochTimestamp + prevLastSegment.duration : null;
-            prevLastSegment = null;
-          }
-        }
-      };
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (!headerRead) {
-          if (line !== "#EXTM3U") {
-            throw new Error("Invalid M3U8 file; expected first line to be #EXTM3U.");
-          }
-          headerRead = true;
-          continue;
-        }
-        if (!line.startsWith("#")) {
-          if (!prevLastSegment) {
-            if (nextSegmentDuration === null) {
-              throw new Error("Invalid M3U8 file; a segment must be preceded by an #EXTINF tag.");
-            }
-            let key = currentKey;
-            if (key && key.method === "AES-128" && !key.iv) {
-              const iv = new Uint8Array(AES_128_BLOCK_SIZE);
-              const view3 = toDataView(iv);
-              view3.setUint32(8, Math.floor(nextSequenceNumber / 2 ** 32));
-              view3.setUint32(12, nextSequenceNumber);
-              key = { ...key, iv };
-            }
-            const fullPath = joinPaths(this.rootPath, line);
-            const location2 = {
-              path: fullPath,
-              offset: nextByteRange?.offset ?? 0,
-              length: nextByteRange?.length ?? null
-            };
-            const segment = {
-              timestamp: accumulatedTime,
-              unixEpochTimestamp: accumulatedUnixTime,
-              firstSegment: currentFirstSegment,
-              sequenceNumber: nextSequenceNumber,
-              location: location2,
-              duration: nextSegmentDuration,
-              encryption: key,
-              initSegment: currentInitSegment,
-              lastProgramDateTimeSeconds
-            };
-            currentFirstSegment ??= segment;
-            accumulatedTime += nextSegmentDuration;
-            if (accumulatedUnixTime !== null) {
-              accumulatedUnixTime += nextSegmentDuration;
-            }
-            this.segments.push(segment);
-          } else {
-          }
-          nextSegmentDuration = null;
-          if (nextByteRange === null) {
-            lastByteRangeEnd = null;
-          } else {
-            nextByteRange = null;
-          }
-          setNextSequenceNumber(nextSequenceNumber + 1);
-        }
-        if (line.startsWith(TAG_EXTINF)) {
-          if (prevLastSegment) {
-            segmentSeen = true;
-            continue;
-          }
-          if (!segmentSeen) {
-            if (lastProgramDateTimeSeconds === null && nextSequenceNumber > 0 && targetDuration !== null) {
-              accumulatedTime = nextSequenceNumber * targetDuration;
-            }
-            segmentSeen = true;
-          }
-          const extinfContent = line.slice(TAG_EXTINF.length);
-          const commaIndex = extinfContent.indexOf(",");
-          const durationStr = commaIndex === -1 ? extinfContent : extinfContent.slice(0, commaIndex);
-          const duration = Number(durationStr);
-          if (!Number.isFinite(duration) || duration < 0) {
-            throw new Error(`Invalid #EXTINF tag duration '${durationStr}'.`);
-          }
-          nextSegmentDuration = duration;
-        } else if (line.startsWith(TAG_MAP)) {
-          const attributes2 = new AttributeList(line.slice(TAG_MAP.length));
-          const uri = attributes2.get("uri");
-          if (!uri) {
-            throw new Error("Invalid #EXT-X-MAP tag; missing URI attribute.");
-          }
-          const byteRange2 = attributes2.get("byterange");
-          let parsedByteRange = null;
-          if (byteRange2 !== null) {
-            parsedByteRange = parseByteRange(byteRange2);
-          }
-          if (parsedByteRange && parsedByteRange.offset === null) {
-            throw new Error("Invalid #EXT-X-MAP tag; BYTERANGE attribute must have a specified offset.");
-          }
-          if (!prevLastSegment) {
-            const fullPath = joinPaths(this.rootPath, uri);
-            const location2 = {
-              path: fullPath,
-              offset: parsedByteRange?.offset ?? 0,
-              length: parsedByteRange?.length ?? null
-            };
-            if (currentKey?.method === "AES-128" && !currentKey.iv) {
-              throw new Error("IV attribute must be set on #EXT-X-KEY tag preceding the #EXT-X-MAP tag.");
-            }
-            const segment = {
-              timestamp: accumulatedTime,
-              unixEpochTimestamp: accumulatedUnixTime,
-              firstSegment: null,
-              sequenceNumber: null,
-              location: location2,
-              duration: 0,
-              encryption: currentKey,
-              initSegment: null,
-              lastProgramDateTimeSeconds
-            };
-            currentInitSegment = segment;
-          } else {
-          }
-          nextSegmentDuration = null;
-          if (nextByteRange === null) {
-            lastByteRangeEnd = null;
-          } else {
-            nextByteRange = null;
-          }
-        } else if (line.startsWith(TAG_KEY)) {
-          const attributes2 = new AttributeList(line.slice(TAG_KEY.length));
-          const method = attributes2.get("method");
-          if (method === "NONE") {
-            currentKey = null;
-          } else if (method === "AES-128") {
-            const uri = attributes2.get("uri");
-            if (!uri) {
-              throw new Error("Invalid #EXT-X-KEY: AES-128 requires a URI attribute.");
-            }
-            let iv = null;
-            const ivString = attributes2.get("iv");
-            if (ivString) {
-              if (!IV_STRING_REGEX.test(ivString)) {
-                throw new Error(`Unsupported IV format '${ivString}'.`);
-              }
-              let hex = ivString.slice(2);
-              hex = hex.padStart(AES_128_BLOCK_SIZE * 2, "0");
-              iv = new Uint8Array(AES_128_BLOCK_SIZE);
-              for (let i2 = 0; i2 < AES_128_BLOCK_SIZE; i2++) {
-                const startIndex = -AES_128_BLOCK_SIZE * 2 + i2;
-                iv[i2] = parseInt(hex.slice(startIndex, startIndex + 2), 16);
-              }
-            }
-            const keyFormat = attributes2.get("keyformat") ?? "identity";
-            if (keyFormat !== "identity") {
-              throw new Error("For AES-128 encryption, only the 'identity' KEYFORMAT is currently supported. If you think other formats should be supported, please raise an issue.");
-            }
-            currentKey = {
-              method: "AES-128",
-              keyUri: joinPaths(this.rootPath, uri),
-              iv,
-              keyFormat
-            };
-          } else if (method === "SAMPLE-AES" || method === "SAMPLE-AES-CTR") {
-            const uri = attributes2.get("uri");
-            if (!uri) {
-              throw new Error(`Invalid #EXT-X-KEY: ${method} requires a URI attribute.`);
-            }
-            const keyFormat = attributes2.get("keyformat") ?? "identity";
-            if (keyFormat === "identity") {
-              throw new Error("For SAMPLE-AES and SAMPLE-AES-CTR encryption, the 'identity' KEYFORMAT is not supported. If you think this format should be supported, please raise an issue.");
-            }
-            let psshBox = null;
-            if (BASE64_DATA_URI_REGEX.test(uri)) {
-              const commaIndex = uri.indexOf(",");
-              const bytes2 = base64ToBytes(uri.slice(commaIndex + 1));
-              if (bytes2.length >= 8 && bytes2[4] === 112 && bytes2[5] === 115 && bytes2[6] === 115 && bytes2[7] === 104) {
-                const size = toDataView(bytes2).getUint32(0);
-                psshBox = parsePsshBoxContents(bytes2.subarray(8, Math.min(size, bytes2.length)));
-              }
-            }
-            currentKey = {
-              method,
-              psshBox
-            };
-          } else {
-            throw new Error(`Unsupported encryption method '${method}'. If you think this method should be supported, please raise an issue.`);
-          }
-        } else if (line.startsWith(TAG_MEDIA_SEQUENCE)) {
-          const value = line.slice(TAG_MEDIA_SEQUENCE.length);
-          const number = Number(value);
-          if (!Number.isInteger(number) || number < 0) {
-            throw new Error(`Invalid EXT-X-MEDIA-SEQUENCE value '${value}'.`);
-          }
-          setNextSequenceNumber(number);
-        } else if (line.startsWith(TAG_BYTERANGE)) {
-          const parsed = parseByteRange(line.slice(TAG_BYTERANGE.length));
-          if (parsed.offset === null) {
-            if (lastByteRangeEnd === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-BYTERANGE without offset requires a previous byte range.");
-            }
-            parsed.offset = lastByteRangeEnd;
-          }
-          nextByteRange = parsed;
-          lastByteRangeEnd = parsed.offset + parsed.length;
-        } else if (line.startsWith(TAG_PROGRAM_DATE_TIME)) {
-          if (prevLastSegment) {
-            continue;
-          }
-          const dateTime = line.slice(TAG_PROGRAM_DATE_TIME.length);
-          const dateTimeMs = Date.parse(dateTime);
-          if (!Number.isFinite(dateTimeMs)) {
-            continue;
-          }
-          const dateTimeSeconds = dateTimeMs / 1e3;
-          if (lastProgramDateTimeSeconds === dateTimeSeconds) {
-            continue;
-          }
-          if (lastProgramDateTimeSeconds === null && this.segments.length > 0) {
-            const lastSegment = last(this.segments);
-            const lastSegmentEnd = lastSegment.timestamp + lastSegment.duration;
-            const offset = dateTimeSeconds - lastSegmentEnd;
-            for (const segment of this.segments) {
-              segment.unixEpochTimestamp = segment.timestamp + offset;
-              if (offsetTimestampsByDateTime) {
-                segment.timestamp = segment.unixEpochTimestamp;
-              }
-            }
-          }
-          lastProgramDateTimeSeconds = dateTimeSeconds;
-          accumulatedUnixTime = dateTimeSeconds;
-          if (offsetTimestampsByDateTime) {
-            accumulatedTime = dateTimeSeconds;
-          }
-        } else if (line === TAG_DISCONTINUITY) {
-          currentFirstSegment = null;
-        } else if (line.startsWith(TAG_TARGETDURATION)) {
-          const value = line.slice(TAG_TARGETDURATION.length);
-          const duration = Number(value);
-          if (!Number.isFinite(duration) || duration < 0) {
-            throw new Error(`Invalid EXT-X-TARGETDURATION value '${value}'.`);
-          }
-          this.refreshInterval = duration;
-          targetDuration = duration;
-        } else if (line === TAG_ENDLIST) {
-          this.streamHasEnded = true;
-          break;
-        } else if (line.startsWith(TAG_PLAYLIST_TYPE)) {
-          const type = line.slice(TAG_PLAYLIST_TYPE.length);
-          if (type.toLowerCase() === "vod") {
-            this.streamHasEnded = true;
-          }
-        }
-      }
-      if (!headerRead) {
-        throw new Error("Invalid M3U8 file; no #EXTM3U header.");
-      }
-    }
-    async getFirstSegment() {
-      if (this.segments.length === 0) {
-        await this.runUpdateSegments();
-      }
-      return this.segments[0] ?? null;
-    }
-    async getSegmentAt(timestamp, options) {
-      if (this.segments.length === 0) {
-        await this.runUpdateSegments();
-      }
-      let isLazy = !!options.skipLiveWait && this.getRemainingWaitTimeMs() > 0;
-      while (true) {
-        const index = binarySearchLessOrEqual(this.segments, timestamp, (x) => x.timestamp);
-        if (index === -1) {
-          return null;
-        }
-        if (index < this.segments.length - 1 || this.streamHasEnded || isLazy) {
-          return this.segments[index];
-        }
-        const segment = this.segments[index];
-        if (timestamp < segment.timestamp + segment.duration) {
-          return segment;
-        }
-        await this.runUpdateSegments();
-        if (options.skipLiveWait) {
-          isLazy = true;
-        }
-      }
-    }
-    async getNextSegment(segment, options) {
-      const index = this.segments.indexOf(segment);
-      assert(index !== -1);
-      const nextIndex = index + 1;
-      let isLazy = !!options.skipLiveWait && this.getRemainingWaitTimeMs() > 0;
-      while (true) {
-        if (nextIndex < this.segments.length) {
-          return this.segments[nextIndex];
-        }
-        if (this.streamHasEnded || isLazy) {
-          return null;
-        }
-        await this.runUpdateSegments();
-        if (options.skipLiveWait) {
-          isLazy = true;
-        }
-      }
-    }
-    async getPreviousSegment(segment) {
-      const index = this.segments.indexOf(segment);
-      assert(index !== -1);
-      return this.segments[index - 1] ?? null;
-    }
-    getInputForSegment(segment) {
-      const hlsSegment = segment;
-      const cacheEntry = this.inputCache.find((x) => x.segment === hlsSegment);
-      if (cacheEntry) {
-        cacheEntry.age = this.nextInputCacheAge++;
-        return cacheEntry.input;
-      }
-      let initInput = null;
-      if (hlsSegment.initSegment || hlsSegment.firstSegment) {
-        initInput = this.getInputForSegment(hlsSegment.initSegment ?? hlsSegment.firstSegment);
-      }
-      const formatOptions = {
-        ...this.input._formatOptions,
-        isobmff: {
-          ...this.input._formatOptions.isobmff,
-          // Intercept calls to resolveKeyId to inject our psshBox knowledge into it
-          resolveKeyId: this.input._formatOptions.isobmff?.resolveKeyId && ((options) => {
-            if (!hlsSegment.encryption || !(hlsSegment.encryption.method === "SAMPLE-AES" || hlsSegment.encryption.method === "SAMPLE-AES-CTR") || !hlsSegment.encryption.psshBox) {
-              return this.input._formatOptions.isobmff.resolveKeyId(options);
-            }
-            let psshBoxes = options.psshBoxes;
-            const { psshBox } = hlsSegment.encryption;
-            if ((psshBox.keyIds === null || psshBox.keyIds.includes(options.keyId)) && !psshBoxes.some((x) => psshBoxesAreEqual(x, psshBox))) {
-              psshBoxes = [...psshBoxes, psshBox];
-            }
-            return this.input._formatOptions.isobmff.resolveKeyId({ ...options, psshBoxes });
-          })
-        }
-      };
-      const input = new Input({
-        source: new CustomPathedSource(hlsSegment.location.path, async (request) => {
-          assert(request.isRoot);
-          const proxiedRequest = {
-            ...request,
-            isRoot: false
-          };
-          let ref;
-          const needsSlice = hlsSegment.location.offset > 0 || hlsSegment.location.length !== null;
-          if (!hlsSegment.encryption || hlsSegment.encryption.method === "SAMPLE-AES" || hlsSegment.encryption.method === "SAMPLE-AES-CTR") {
-            ref = await this.input._getSourceCached(proxiedRequest);
-            if (needsSlice) {
-              const slice = ref.source.slice(hlsSegment.location.offset, hlsSegment.location.length ?? void 0);
-              const sliceRef = slice.ref();
-              ref.free();
-              ref = sliceRef;
-            }
-          } else if (hlsSegment.encryption.method === "AES-128") {
-            const encryption = hlsSegment.encryption;
-            assert(encryption.iv);
-            let ciphertextRef = await this.input._getSourceCached(proxiedRequest);
-            if (needsSlice) {
-              const slice = ciphertextRef.source.slice(hlsSegment.location.offset, hlsSegment.location.length ?? void 0);
-              const sliceRef = slice.ref();
-              ciphertextRef.free();
-              ciphertextRef = sliceRef;
-            }
-            const ciphertextReader = new Reader(ciphertextRef.source);
-            const stream = createAes128CbcDecryptStream(ciphertextReader, async () => {
-              const env_2 = { stack: [], error: void 0, hasError: false };
-              try {
-                const keyRef = __addDisposableResource(env_2, await this.input._getSourceCached({ path: encryption.keyUri, isRoot: false }, ENCRYPTION_KEY_CACHE_GROUP), false);
-                const keyReader = new Reader(keyRef.source);
-                const keySlice = await keyReader.requestSlice(0, AES_128_BLOCK_SIZE);
-                if (!keySlice) {
-                  throw new Error("Invalid AES-128 key; expected at least 16 bytes of data.");
-                }
-                const key = readBytes(keySlice, AES_128_BLOCK_SIZE);
-                return { key, iv: encryption.iv };
-              } catch (e_2) {
-                env_2.error = e_2;
-                env_2.hasError = true;
-              } finally {
-                __disposeResources(env_2);
-              }
-            }, () => {
-              ciphertextRef.free();
-            });
-            ref = new ReadableStreamSource(stream).ref();
-          } else {
-            assert(false);
-          }
-          return ref;
-        }),
-        // Do not allow recursive HLS. Cool on paper, but allows for nasty infinite-depth request trees.
-        formats: this.input._formats.filter((x) => !(x instanceof HlsInputFormat)),
-        initInput: initInput ?? void 0,
-        formatOptions
-      });
-      input._onFormatDetermined = (format2) => {
-        if ((hlsSegment.encryption?.method === "SAMPLE-AES" || hlsSegment.encryption?.method === "SAMPLE-AES-CTR") && !format2._isIsobmff) {
-          throw new Error("The SAMPLE-AES and SAMPLE-AES-CTR encryption methods are currently only supported for ISOBMFF files.");
-        }
-      };
-      this.inputCache.push({
-        segment: hlsSegment,
-        input,
-        age: this.nextInputCacheAge++
-      });
-      const MAX_INPUT_CACHE_SIZE = 4;
-      if (this.inputCache.length > MAX_INPUT_CACHE_SIZE) {
-        const minAgeIndex = arrayArgmin(this.inputCache, (x) => x.age);
-        assert(minAgeIndex !== -1);
-        this.inputCache.splice(minAgeIndex, 1);
-      }
-      return input;
-    }
-    async getLiveRefreshInterval() {
-      if (this.getRemainingWaitTimeMs() === 0) {
-        await this.runUpdateSegments();
-      }
-      return this.streamHasEnded ? null : this.refreshInterval;
-    }
-  };
-
-  // node_modules/mediabunny/dist/modules/src/hls/hls-demuxer.js
-  /*!
-   * Copyright (c) 2026-present, Vanilagy and contributors
-   *
-   * This Source Code Form is subject to the terms of the Mozilla Public
-   * License, v. 2.0. If a copy of the MPL was not distributed with this
-   * file, You can obtain one at https://mozilla.org/MPL/2.0/.
-   */
-  var HlsDemuxer = class extends Demuxer {
-    constructor(input) {
-      super(input);
-      this.metadataPromise = null;
-      this.trackBackings = null;
-      this.internalTracks = null;
-      this.segmentedInputs = [];
-      this.hasMasterPlaylist = true;
-    }
-    readMetadata() {
-      return this.metadataPromise ??= (async () => {
-        assert(this.input._rootSource instanceof PathedSource);
-        const slice = await this.input._reader.requestEntireFile();
-        assert(slice);
-        const lines = readAllLines(slice, slice.length, { ignore: canIgnoreLine });
-        const { rootPath } = this.input._rootSource;
-        const variantStreams = [];
-        const mediaTags = [];
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i];
-          if (line.startsWith(TAG_STREAM_INF)) {
-            const streamInfLineNumber = i;
-            const playlistPath = lines[++i];
-            if (playlistPath === void 0) {
-              throw new Error("Incorrect M3U8 file; a line must follow the #EXT-X-STREAM-INF tag.");
-            }
-            const fullPath = joinPaths(rootPath, playlistPath);
-            const attributes2 = new AttributeList(line.slice(TAG_STREAM_INF.length));
-            const bandwidth = attributes2.getAsNumber("bandwidth");
-            if (bandwidth === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-STREAM-INF tag requires a BANDWIDTH attribute with a valid numerical value.");
-            }
-            variantStreams.push({
-              fullPath,
-              attributes: attributes2,
-              lineNumber: streamInfLineNumber,
-              hasOnlyKeyPackets: false
-            });
-          } else if (line.startsWith(TAG_I_FRAME_STREAM_INF)) {
-            const attributes2 = new AttributeList(line.slice(TAG_I_FRAME_STREAM_INF.length));
-            const playlistPath = attributes2.get("uri");
-            if (playlistPath === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-I-FRAME-STREAM-INF tag requires a URI attribute.");
-            }
-            const bandwidth = attributes2.getAsNumber("bandwidth");
-            if (bandwidth === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-I-FRAME-STREAM-INF tag requires a BANDWIDTH attribute with a valid numerical value.");
-            }
-            const fullPath = joinPaths(rootPath, playlistPath);
-            variantStreams.push({
-              fullPath,
-              attributes: attributes2,
-              lineNumber: i,
-              hasOnlyKeyPackets: true
-            });
-          } else if (line.startsWith(TAG_MEDIA)) {
-            const attributes2 = new AttributeList(line.slice(TAG_MEDIA.length));
-            const type = attributes2.get("type");
-            if (type === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-MEDIA tag requires a TYPE attribute.");
-            }
-            const groupId = attributes2.get("group-id");
-            if (groupId === null) {
-              throw new Error("Invalid M3U8 file; #EXT-X-MEDIA tag requires a GROUP-ID attribute.");
-            }
-            let fullPath = null;
-            const uri = attributes2.get("uri");
-            if (uri !== null) {
-              fullPath = joinPaths(rootPath, uri);
-            }
-            mediaTags.push({ fullPath, attributes: attributes2, lineNumber: i });
-          } else if (line === TAG_I_FRAMES_ONLY) {
-          } else if (line.startsWith(TAG_EXTINF)) {
-            const segmentedInput = new HlsSegmentedInput(this, rootPath, null, lines);
-            this.segmentedInputs = [segmentedInput];
-            this.hasMasterPlaylist = false;
-            this.trackBackings = await segmentedInput.getTrackBackings();
-            return;
-          }
-        }
-        const videoGroupIds = [
-          ...new Set(mediaTags.filter((tag) => tag.attributes.get("type").toLowerCase() === "video").map((tag) => tag.attributes.get("group-id")))
-        ];
-        const audioGroupIds = [
-          ...new Set(mediaTags.filter((tag) => tag.attributes.get("type").toLowerCase() === "audio").map((tag) => tag.attributes.get("group-id")))
-        ];
-        const internalTracksByVariant = await Promise.all(variantStreams.map(async (variantStream, i) => {
-          const result = [];
-          const codecsList = variantStream.attributes.get("codecs");
-          let codecStrings;
-          if (codecsList) {
-            codecStrings = codecsList.split(",").map((x) => x.trim());
-          } else {
-            const segmentedInput = this.getSegmentedInputForPath(variantStream.fullPath);
-            const trackBackings = await segmentedInput.getTrackBackings();
-            const tracksWithCodec = await Promise.all(trackBackings.map(async (t) => ({ track: t, codec: await t.getCodec() })));
-            codecStrings = await Promise.all(tracksWithCodec.filter((x) => x.codec !== null).map((x) => x.track.getDecoderConfig().then((x2) => x2.codec)));
-          }
-          const videoGroupId = variantStream.attributes.get("video");
-          const audioGroupId = variantStream.attributes.get("audio");
-          const containsVideoCodecs = codecStrings.some((x) => VIDEO_CODECS.includes(inferCodecFromCodecString(x)));
-          const containsAudioCodecs = codecStrings.some((x) => AUDIO_CODECS.includes(inferCodecFromCodecString(x)));
-          if (videoGroupId !== null && !containsVideoCodecs) {
-            if (!videoGroupIds.includes(videoGroupId)) {
-              throw new Error(`Invalid M3U8 file; variant stream references video group "${videoGroupId}" which is not defined in any #EXT-X-MEDIA tags.`);
-            }
-            const matchingVideoMediaTag = mediaTags.find((mediaTag) => {
-              const groupId = mediaTag.attributes.get("group-id");
-              const type = mediaTag.attributes.get("type");
-              return groupId === videoGroupId && type.toLowerCase() === "video";
-            });
-            outer: if (matchingVideoMediaTag) {
-              const uri = matchingVideoMediaTag.attributes.get("uri");
-              if (uri === null) {
-                break outer;
-              }
-              const fullPath = joinPaths(rootPath, uri);
-              const segmentedInput = this.getSegmentedInputForPath(fullPath);
-              const trackBackings = await segmentedInput.getTrackBackings();
-              const videoTrack = trackBackings.find((x) => x.getType() === "video");
-              if (!videoTrack || await videoTrack.getCodec() === null) {
-                break outer;
-              }
-              const additionalCodecString = await videoTrack.getDecoderConfig().then((x) => x?.codec ?? null);
-              assert(additionalCodecString !== null);
-              codecStrings.push(additionalCodecString);
-            }
-          }
-          if (audioGroupId !== null && !containsAudioCodecs) {
-            if (!audioGroupIds.includes(audioGroupId)) {
-              throw new Error(`Invalid M3U8 file; variant stream references audio group "${audioGroupId}" which is not defined in any #EXT-X-MEDIA tags.`);
-            }
-            const matchingAudioMediaTag = mediaTags.find((tag) => {
-              const groupId = tag.attributes.get("group-id");
-              const type = tag.attributes.get("type");
-              return groupId === audioGroupId && type.toLowerCase() === "audio";
-            });
-            outer: if (matchingAudioMediaTag) {
-              const uri = matchingAudioMediaTag.attributes.get("uri");
-              if (uri === null) {
-                break outer;
-              }
-              const fullPath = joinPaths(rootPath, uri);
-              const segmentedInput = this.getSegmentedInputForPath(fullPath);
-              const trackBackings = await segmentedInput.getTrackBackings();
-              const audioTrack = trackBackings.find((x) => x.getType() === "audio");
-              if (!audioTrack || await audioTrack.getCodec() === null) {
-                break outer;
-              }
-              const additionalCodecString = await audioTrack.getDecoderConfig().then((x) => x?.codec ?? null);
-              assert(additionalCodecString !== null);
-              codecStrings.push(additionalCodecString);
-            }
-          }
-          codecStrings = [...new Set(codecStrings)];
-          let videoCodecString = null;
-          let audioCodecString = null;
-          const bandwidth = variantStream.attributes.getAsNumber("bandwidth");
-          assert(bandwidth !== null);
-          const averageBandwidth = variantStream.attributes.getAsNumber("average-bandwidth");
-          const name = variantStream.attributes.get("name");
-          for (const codecString of codecStrings) {
-            const inferredCodec = inferCodecFromCodecString(codecString);
-            if (inferredCodec === null) {
-              continue;
-            }
-            if (VIDEO_CODECS.includes(inferredCodec)) {
-              if (videoCodecString !== null) {
-                throw new Error("Unsupported M3U8 file; multiple video codecs found in the CODECS attribute of a variant stream.");
-              }
-              videoCodecString = codecString;
-              const videoGroupId2 = variantStream.attributes.get("video");
-              if (videoGroupId2 === null) {
-                const resolution = variantStream.attributes.get("resolution");
-                let width = null;
-                let height = null;
-                if (resolution) {
-                  const match = resolution.match(/^(\d+)x(\d+)$/);
-                  if (match) {
-                    width = Number(match[1]);
-                    height = Number(match[2]);
-                  }
-                }
-                result.push({
-                  id: -1,
-                  demuxer: this,
-                  backingTrack: null,
-                  default: true,
-                  autoselect: true,
-                  languageCode: UNDETERMINED_LANGUAGE,
-                  lineNumber: variantStream.lineNumber,
-                  fullPath: variantStream.fullPath,
-                  fullCodecString: videoCodecString,
-                  pairingMask: 1n << BigInt(i),
-                  peakBitrate: bandwidth,
-                  averageBitrate: averageBandwidth,
-                  name,
-                  hasOnlyKeyPackets: variantStream.hasOnlyKeyPackets,
-                  info: {
-                    type: "video",
-                    width,
-                    height
-                  }
-                });
-              } else {
-                if (!videoGroupIds.includes(videoGroupId2)) {
-                  throw new Error(`Invalid M3U8 file; variant stream references video group "${videoGroupId2}" which is not defined in any #EXT-X-MEDIA tags.`);
-                }
-                for (const mediaTag of mediaTags) {
-                  const groupId = mediaTag.attributes.get("group-id");
-                  const type = mediaTag.attributes.get("type");
-                  if (groupId !== videoGroupId2 || type.toLowerCase() !== "video") {
-                    continue;
-                  }
-                  const resolution = mediaTag.attributes.get("resolution") ?? variantStream.attributes.get("resolution");
-                  let width = null;
-                  let height = null;
-                  if (resolution) {
-                    const match = resolution.match(/^(\d+)x(\d+)$/);
-                    if (match) {
-                      width = Number(match[1]);
-                      height = Number(match[2]);
-                    }
-                  }
-                  result.push({
-                    id: -1,
-                    demuxer: this,
-                    backingTrack: null,
-                    default: getMediaTagDefault(mediaTag.attributes),
-                    // Autoselect is inferred to be true if the default is true
-                    autoselect: getMediaTagDefault(mediaTag.attributes) || getMediaTagAutoselect(mediaTag.attributes),
-                    languageCode: preprocessLanguageCode(mediaTag.attributes.get("language")),
-                    lineNumber: mediaTag.lineNumber,
-                    fullPath: mediaTag.fullPath ?? variantStream.fullPath,
-                    fullCodecString: videoCodecString,
-                    pairingMask: 1n << BigInt(i),
-                    peakBitrate: null,
-                    averageBitrate: null,
-                    name: mediaTag.attributes.get("name"),
-                    hasOnlyKeyPackets: variantStream.hasOnlyKeyPackets,
-                    info: {
-                      type: "video",
-                      width,
-                      height
-                    }
-                  });
-                }
-              }
-            } else if (AUDIO_CODECS.includes(inferredCodec)) {
-              if (audioCodecString !== null) {
-                throw new Error("Unsupported M3U8 file; multiple audio codecs found in the CODECS attribute of a variant stream.");
-              }
-              audioCodecString = codecString;
-              const audioGroupId2 = variantStream.attributes.get("audio");
-              if (audioGroupId2 === null) {
-                const channels = variantStream.attributes.get("channels");
-                const parsedChannels = channels !== null ? Number(channels.split("/")[0]) : null;
-                result.push({
-                  id: -1,
-                  demuxer: this,
-                  backingTrack: null,
-                  default: true,
-                  autoselect: true,
-                  languageCode: UNDETERMINED_LANGUAGE,
-                  lineNumber: variantStream.lineNumber,
-                  fullPath: variantStream.fullPath,
-                  fullCodecString: audioCodecString,
-                  pairingMask: 1n << BigInt(i),
-                  peakBitrate: bandwidth,
-                  averageBitrate: averageBandwidth,
-                  name,
-                  hasOnlyKeyPackets: variantStream.hasOnlyKeyPackets,
-                  info: {
-                    type: "audio",
-                    numberOfChannels: parsedChannels !== null && Number.isInteger(parsedChannels) && parsedChannels > 0 ? parsedChannels : null
-                  }
-                });
-              } else {
-                if (!audioGroupIds.includes(audioGroupId2)) {
-                  throw new Error(`Invalid M3U8 file; variant stream references audio group "${audioGroupId2}" which is not defined in any #EXT-X-MEDIA tags.`);
-                }
-                for (const mediaTag of mediaTags) {
-                  const groupId = mediaTag.attributes.get("group-id");
-                  const type = mediaTag.attributes.get("type");
-                  if (groupId !== audioGroupId2 || type.toLowerCase() !== "audio") {
-                    continue;
-                  }
-                  const channels = mediaTag.attributes.get("channels") ?? variantStream.attributes.get("channels");
-                  const parsedChannels = channels !== null ? Number(channels.split("/")[0]) : null;
-                  result.push({
-                    id: -1,
-                    demuxer: this,
-                    backingTrack: null,
-                    default: getMediaTagDefault(mediaTag.attributes),
-                    // Autoselect is inferred to be true if the default is true
-                    autoselect: getMediaTagDefault(mediaTag.attributes) || getMediaTagAutoselect(mediaTag.attributes),
-                    languageCode: preprocessLanguageCode(mediaTag.attributes.get("language")),
-                    lineNumber: mediaTag.lineNumber,
-                    fullPath: mediaTag.fullPath ?? variantStream.fullPath,
-                    fullCodecString: audioCodecString,
-                    pairingMask: 1n << BigInt(i),
-                    peakBitrate: null,
-                    averageBitrate: null,
-                    name: mediaTag.attributes.get("name"),
-                    hasOnlyKeyPackets: variantStream.hasOnlyKeyPackets,
-                    info: {
-                      type: "audio",
-                      numberOfChannels: parsedChannels !== null && Number.isInteger(parsedChannels) && parsedChannels > 0 ? parsedChannels : null
-                    }
-                  });
-                }
-              }
-            }
-          }
-          return result;
-        }));
-        const internalTracks = [];
-        const addInternalTrack = (track) => {
-          const existingTrack = internalTracks.find((x) => x.fullPath === track.fullPath && x.info.type === track.info.type);
-          if (existingTrack) {
-            existingTrack.pairingMask |= track.pairingMask;
-            existingTrack.default ||= track.default;
-            existingTrack.autoselect ||= track.autoselect;
-            existingTrack.lineNumber = Math.min(existingTrack.lineNumber, track.lineNumber);
-            if (track.peakBitrate !== null) {
-              existingTrack.peakBitrate = Math.max(existingTrack.peakBitrate ?? -Infinity, track.peakBitrate);
-            }
-            if (track.averageBitrate !== null) {
-              existingTrack.averageBitrate = Math.max(existingTrack.averageBitrate ?? -Infinity, track.averageBitrate);
-            }
-            if (existingTrack.languageCode === UNDETERMINED_LANGUAGE) {
-              existingTrack.languageCode = track.languageCode;
-            }
-          } else {
-            track.id = internalTracks.length + 1;
-            internalTracks.push(track);
-          }
-        };
-        for (const variantInternalTracks of internalTracksByVariant) {
-          for (const trackEntry of variantInternalTracks) {
-            addInternalTrack(trackEntry);
-          }
-        }
-        internalTracks.sort((a, b) => a.lineNumber - b.lineNumber);
-        this.trackBackings = [];
-        for (const internalTrack of internalTracks) {
-          if (internalTrack.info.type === "video") {
-            this.trackBackings.push(new HlsInputVideoTrackBacking(internalTrack));
-          } else {
-            this.trackBackings.push(new HlsInputAudioTrackBacking(internalTrack));
-          }
-        }
-        this.internalTracks = internalTracks;
-      })();
-    }
-    async getTrackBackings() {
-      await this.readMetadata();
-      assert(this.trackBackings);
-      return this.trackBackings;
-    }
-    getSegmentedInputForPath(path) {
-      let segmentedInput = this.segmentedInputs.find((x) => x.path === path);
-      if (segmentedInput) {
-        return segmentedInput;
-      }
-      let decls = null;
-      if (this.internalTracks) {
-        const tracks = this.internalTracks.filter((x) => x.fullPath === path);
-        decls = tracks.map((x) => ({
-          id: x.id,
-          type: x.info.type
-        }));
-      }
-      segmentedInput = new HlsSegmentedInput(this, path, decls, null);
-      this.segmentedInputs.push(segmentedInput);
-      return segmentedInput;
-    }
-    async getMetadataTags() {
-      return {};
-    }
-    async getMimeType() {
-      return HLS_MIME_TYPE;
-    }
-    dispose() {
-      if (this.segmentedInputs) {
-        for (const segInput of this.segmentedInputs) {
-          segInput.dispose();
-        }
-        this.segmentedInputs.length = 0;
-      }
-    }
-  };
-  var HlsInputTrackBacking = class {
-    constructor(internalTrack) {
-      this.internalTrack = internalTrack;
-      this.hydrationPromise = null;
-    }
-    hydrate() {
-      return this.hydrationPromise ??= (async () => {
-        const segmentedInput = this.internalTrack.demuxer.getSegmentedInputForPath(this.internalTrack.fullPath);
-        let trackBacking = null;
-        const trackBackings = await segmentedInput.getTrackBackings();
-        const matchingType = trackBackings.filter((x) => x.getType() === this.getType());
-        if (matchingType.length === 1) {
-          trackBacking = matchingType[0];
-        } else {
-          if (this instanceof HlsInputVideoTrackBacking) {
-            for (const backing of matchingType) {
-              if (await backing.getCodec() === this.getCodec()) {
-                trackBacking = backing;
-                break;
-              }
-            }
-          } else {
-            assert(this instanceof HlsInputAudioTrackBacking);
-            for (const backing of matchingType) {
-              if (await backing.getCodec() === this.getCodec()) {
-                trackBacking = backing;
-                break;
-              }
-            }
-          }
-        }
-        if (!trackBacking) {
-          throw new Error("Could not find matching track in underlying media data.");
-        }
-        this.internalTrack.backingTrack = trackBacking;
-      })();
-    }
-    /** If the backing track is already present, delegate synchronously; otherwise, hydrate first. */
-    delegate(fn) {
-      if (this.internalTrack.backingTrack) {
-        return fn();
-      }
-      return this.hydrate().then(fn);
-    }
-    getCodec() {
-      throw new Error("Not implemented on base class.");
-    }
-    getDisposition() {
-      return {
-        ...DEFAULT_TRACK_DISPOSITION,
-        // Meanings are swapped in HLS: "Default" means that a track is the primary track.
-        default: this.internalTrack.autoselect,
-        primary: this.internalTrack.default
-      };
-    }
-    getId() {
-      return this.internalTrack.id;
-    }
-    getPairingMask() {
-      return this.internalTrack.pairingMask;
-    }
-    getInternalCodecId() {
-      return null;
-    }
-    getLanguageCode() {
-      return this.internalTrack.languageCode;
-    }
-    getName() {
-      return this.internalTrack.name;
-    }
-    getNumber() {
-      assert(this.internalTrack.demuxer.internalTracks);
-      const trackType = this.internalTrack.info.type;
-      let number = 0;
-      for (const track of this.internalTrack.demuxer.internalTracks) {
-        if (track.info.type === trackType) {
-          number++;
-        }
-        if (track === this.internalTrack) {
-          break;
-        }
-      }
-      return number;
-    }
-    getTimeResolution() {
-      return this.delegate(() => this.internalTrack.backingTrack.getTimeResolution());
-    }
-    isRelativeToUnixEpoch() {
-      return this.delegate(() => this.internalTrack.backingTrack.isRelativeToUnixEpoch());
-    }
-    getUnixTimeForTimestamp(timestamp) {
-      return this.delegate(() => this.internalTrack.backingTrack.getUnixTimeForTimestamp(timestamp));
-    }
-    getBitrate() {
-      return this.internalTrack.peakBitrate;
-    }
-    getAverageBitrate() {
-      return this.internalTrack.averageBitrate;
-    }
-    async getDurationFromMetadata(options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getDurationFromMetadata(options);
-    }
-    async getLiveRefreshInterval() {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getLiveRefreshInterval();
-    }
-    getHasOnlyKeyPackets() {
-      return this.internalTrack.hasOnlyKeyPackets || null;
-    }
-    async getFirstPacket(options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getFirstPacket(options);
-    }
-    async getPacket(timestamp, options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getPacket(timestamp, options);
-    }
-    async getKeyPacket(timestamp, options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getKeyPacket(timestamp, options);
-    }
-    async getNextPacket(packet, options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getNextPacket(packet, options);
-    }
-    async getNextKeyPacket(packet, options) {
-      await this.hydrate();
-      return this.internalTrack.backingTrack.getNextKeyPacket(packet, options);
-    }
-  };
-  var HlsInputVideoTrackBacking = class extends HlsInputTrackBacking {
-    constructor(internalTrack) {
-      super(internalTrack);
-    }
-    get backingVideoTrack() {
-      return this.internalTrack.backingTrack;
-    }
-    getType() {
-      return "video";
-    }
-    getCodec() {
-      const inferredCodec = inferCodecFromCodecString(this.internalTrack.fullCodecString);
-      return inferredCodec;
-    }
-    getCodedWidth() {
-      return this.delegate(() => this.backingVideoTrack.getCodedWidth());
-    }
-    getCodedHeight() {
-      return this.delegate(() => this.backingVideoTrack.getCodedHeight());
-    }
-    getSquarePixelWidth() {
-      return this.delegate(() => this.backingVideoTrack.getSquarePixelWidth());
-    }
-    getSquarePixelHeight() {
-      return this.delegate(() => this.backingVideoTrack.getSquarePixelHeight());
-    }
-    getMetadataDisplayWidth() {
-      if (this.backingVideoTrack) {
-        return null;
-      }
-      return this.internalTrack.info.width;
-    }
-    getMetadataDisplayHeight() {
-      if (this.backingVideoTrack) {
-        return null;
-      }
-      return this.internalTrack.info.height;
-    }
-    getRotation() {
-      return this.delegate(() => this.backingVideoTrack.getRotation());
-    }
-    async getColorSpace() {
-      await this.hydrate();
-      return this.backingVideoTrack.getColorSpace();
-    }
-    async canBeTransparent() {
-      await this.hydrate();
-      return this.backingVideoTrack.canBeTransparent();
-    }
-    getMetadataCodecParameterString() {
-      if (this.backingVideoTrack) {
-        return null;
-      }
-      return this.internalTrack.fullCodecString;
-    }
-    async getDecoderConfig() {
-      await this.hydrate();
-      return this.backingVideoTrack.getDecoderConfig();
-    }
-  };
-  var HlsInputAudioTrackBacking = class extends HlsInputTrackBacking {
-    constructor(internalTrack) {
-      super(internalTrack);
-    }
-    get backingAudioTrack() {
-      return this.internalTrack.backingTrack;
-    }
-    getType() {
-      return "audio";
-    }
-    getCodec() {
-      const inferredCodec = inferCodecFromCodecString(this.internalTrack.fullCodecString);
-      return inferredCodec;
-    }
-    getNumberOfChannels() {
-      if (this.internalTrack.info.numberOfChannels !== null) {
-        return this.internalTrack.info.numberOfChannels;
-      }
-      return this.delegate(() => this.backingAudioTrack.getNumberOfChannels());
-    }
-    getSampleRate() {
-      return this.delegate(() => this.backingAudioTrack.getSampleRate());
-    }
-    getMetadataCodecParameterString() {
-      if (this.backingAudioTrack) {
-        return null;
-      }
-      return this.internalTrack.fullCodecString;
-    }
-    async getDecoderConfig() {
-      await this.hydrate();
-      return this.backingAudioTrack.getDecoderConfig();
-    }
-  };
-  var getMediaTagDefault = (attributes2) => {
-    const value = attributes2.get("default");
-    if (value === null) {
-      return false;
-    }
-    const normalized = value.toUpperCase();
-    if (normalized === "YES") {
-      return true;
-    }
-    if (normalized === "NO") {
-      return false;
-    }
-    throw new Error(`Invalid M3U8 file; #EXT-X-MEDIA DEFAULT attribute must be YES or NO, got "${value}".`);
-  };
-  var getMediaTagAutoselect = (attributes2) => {
-    const value = attributes2.get("autoselect");
-    if (value === null) {
-      return false;
-    }
-    const normalized = value.toUpperCase();
-    if (normalized === "YES") {
-      return true;
-    }
-    if (normalized === "NO") {
-      return false;
-    }
-    throw new Error(`Invalid M3U8 file; #EXT-X-MEDIA AUTOSELECT attribute must be YES or NO, got "${value}".`);
-  };
-  var preprocessLanguageCode = (code) => {
-    if (code === null) {
-      return UNDETERMINED_LANGUAGE;
-    }
-    const languageSubtag = code.split("-")[0];
-    if (!languageSubtag) {
-      return UNDETERMINED_LANGUAGE;
-    }
-    return languageSubtag;
-  };
-
   // node_modules/mediabunny/dist/modules/src/input-format.js
   /*!
    * Copyright (c) 2026-present, Vanilagy and contributors
@@ -14741,38 +12831,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       return "video/MP2T";
     }
   };
-  var HlsInputFormat = class extends InputFormat {
-    /** @internal */
-    async _canReadInput(input) {
-      let slice = input._reader.requestSlice(0, 7);
-      if (isThenable(slice))
-        slice = await slice;
-      if (!slice)
-        return false;
-      const isM3u8 = readAscii(slice, 7) === "#EXTM3U";
-      if (!isM3u8) {
-        return false;
-      }
-      if (!(input._rootSource instanceof PathedSource)) {
-        throw new TypeError("HLS inputs require `InputOptions.source` to be a PathedSource or a ref to one.");
-      }
-      input._rootSource._usedForHls = true;
-      return true;
-    }
-    /** @internal */
-    _createDemuxer(input) {
-      return new HlsDemuxer(input);
-    }
-    get name() {
-      return "HTTP Live Streaming (HLS)";
-    }
-    get mimeType() {
-      return HLS_MIME_TYPE;
-    }
-  };
   var MP4 = /* @__PURE__ */ new Mp4InputFormat();
   var MPEG_TS = /* @__PURE__ */ new MpegTsInputFormat();
-  var HLS = /* @__PURE__ */ new HlsInputFormat();
   var validateInputFormatOptions = (options, prefix) => {
     if (!options || typeof options !== "object") {
       throw new TypeError(`${prefix}, when provided, must be an object.`);
@@ -14803,7 +12863,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
    * License, v. 2.0. If a copy of the MPL was not distributed with this
    * file, You can obtain one at https://mozilla.org/MPL/2.0/.
    */
-  var __addDisposableResource2 = function(env, value, async) {
+  var __addDisposableResource = function(env, value, async) {
     if (value !== null && value !== void 0) {
       if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
       var dispose, inner;
@@ -14830,7 +12890,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     return value;
   };
-  var __disposeResources2 = /* @__PURE__ */ (function(SuppressedError2) {
+  var __disposeResources = /* @__PURE__ */ (function(SuppressedError2) {
     return function(env) {
       function fail(e) {
         env.error = env.hasError ? new SuppressedError2(e, env.error, "An error was suppressed during disposal.") : e;
@@ -15320,7 +13380,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         if (this._data instanceof VideoSampleResource) {
           const env_1 = { stack: [], error: void 0, hasError: false };
           try {
-            const rgbSample = __addDisposableResource2(env_1, await this._data.toRgbSample({
+            const rgbSample = __addDisposableResource(env_1, await this._data.toRgbSample({
               timestamp: this.timestamp,
               duration: this.duration,
               rotation: this.rotation
@@ -15336,7 +13396,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
             env_1.error = e_1;
             env_1.hasError = true;
           } finally {
-            __disposeResources2(env_1);
+            __disposeResources(env_1);
           }
         } else {
           if (typeof VideoFrame === "undefined") {
@@ -20259,7 +18319,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
    */
   polyfillSymbolDispose();
   var DEFAULT_SOURCE_CACHE_GROUP = 1;
-  var ENCRYPTION_KEY_CACHE_GROUP = 2;
   var Input = class _Input extends EventEmitter {
     /** True if the input has been disposed. */
     get disposed() {
@@ -20823,11 +18882,6 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       str += String.fromCharCode(slice.bytes[slice.bufferPos++]);
     }
     return str;
-  };
-  var readAllLines = (slice, length, options) => {
-    const text = textDecoder.decode(readBytes(slice, length));
-    const lines = text.split("\n").map((x) => x.trim()).filter((x) => x.length > 0 && !options?.ignore?.(x));
-    return lines;
   };
 
   // node_modules/mediabunny/dist/modules/src/muxer.js
@@ -24974,7 +23028,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
    * License, v. 2.0. If a copy of the MPL was not distributed with this
    * file, You can obtain one at https://mozilla.org/MPL/2.0/.
    */
-  var __addDisposableResource3 = function(env, value, async) {
+  var __addDisposableResource2 = function(env, value, async) {
     if (value !== null && value !== void 0) {
       if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
       var dispose, inner;
@@ -25001,7 +23055,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     return value;
   };
-  var __disposeResources3 = /* @__PURE__ */ (function(SuppressedError2) {
+  var __disposeResources2 = /* @__PURE__ */ (function(SuppressedError2) {
     return function(env) {
       function fail(e) {
         env.error = env.hasError ? new SuppressedError2(e, env.error, "An error was suppressed during disposal.") : e;
@@ -25429,7 +23483,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       for (let i = 1; i < frameDifference; i++) {
         const env_1 = { stack: [], error: void 0, hasError: false };
         try {
-          const sample = __addDisposableResource3(env_1, this.frameRateLastSample.clone(), false);
+          const sample = __addDisposableResource2(env_1, this.frameRateLastSample.clone(), false);
           sample.setTimestamp(this.frameRateLastTimestamp + i / frameRate);
           sample.setDuration(1 / frameRate);
           await this.processAndEncode(sample, encodeOptions);
@@ -25437,7 +23491,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
           env_1.error = e_1;
           env_1.hasError = true;
         } finally {
-          __disposeResources3(env_1);
+          __disposeResources2(env_1);
         }
       }
     }
@@ -27182,7 +25236,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
    * License, v. 2.0. If a copy of the MPL was not distributed with this
    * file, You can obtain one at https://mozilla.org/MPL/2.0/.
    */
-  var __addDisposableResource4 = function(env, value, async) {
+  var __addDisposableResource3 = function(env, value, async) {
     if (value !== null && value !== void 0) {
       if (typeof value !== "object" && typeof value !== "function") throw new TypeError("Object expected.");
       var dispose, inner;
@@ -27209,7 +25263,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     return value;
   };
-  var __disposeResources4 = /* @__PURE__ */ (function(SuppressedError2) {
+  var __disposeResources3 = /* @__PURE__ */ (function(SuppressedError2) {
     return function(env) {
       function fail(e) {
         env.error = env.hasError ? new SuppressedError2(e, env.error, "An error was suppressed during disposal.") : e;
@@ -28045,7 +26099,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
             tempOutput.addVideoTrack(tempSource);
             await tempOutput.start();
             const sink = new VideoSampleSink(track);
-            const firstSample = __addDisposableResource4(env_1, await sink.getSample(await track.getFirstTimestamp()), false);
+            const firstSample = __addDisposableResource3(env_1, await sink.getSample(await track.getFirstTimestamp()), false);
             if (firstSample) {
               try {
                 await tempSource.add(firstSample);
@@ -28064,7 +26118,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
             env_1.error = e_1;
             env_1.hasError = true;
           } finally {
-            __disposeResources4(env_1);
+            __disposeResources3(env_1);
           }
         }
         if (trackOptions.frameRate) {
@@ -28093,7 +26147,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
           for await (const sample_1 of sink.samples(this._startTimestamp, this._endTimestamp)) {
             const env_2 = { stack: [], error: void 0, hasError: false };
             try {
-              const sample = __addDisposableResource4(env_2, sample_1, false);
+              const sample = __addDisposableResource3(env_2, sample_1, false);
               if (this._state === "canceled") {
                 break;
               }
@@ -28117,7 +26171,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
               env_2.error = e_2;
               env_2.hasError = true;
             } finally {
-              __disposeResources4(env_2);
+              __disposeResources3(env_2);
             }
           }
           source.close();
@@ -28317,7 +26371,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
           for await (const sample_2 of sink.samples(this._startTimestamp, this._endTimestamp)) {
             const env_3 = { stack: [], error: void 0, hasError: false };
             try {
-              const sample = __addDisposableResource4(env_3, sample_2, false);
+              const sample = __addDisposableResource3(env_3, sample_2, false);
               if (this._state === "canceled") {
                 break;
               }
@@ -28345,7 +26399,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
               } else {
                 finalSampleLet = sample;
               }
-              const finalSample = __addDisposableResource4(env_3, finalSampleLet, false);
+              const finalSample = __addDisposableResource3(env_3, finalSampleLet, false);
               finalSample.setTimestamp(finalSample.timestamp + this._timestampOffset);
               if (needsPadding === null) {
                 needsPadding = finalSample.timestamp > 0 && !this.output.format.supportsTimestampedMediaData;
@@ -28360,7 +26414,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
                   if (sample.format === "u8" || sample.format === "u8-planar") {
                     data.fill(2 ** 7);
                   }
-                  const silentSample = __addDisposableResource4(env_4, new AudioSample({
+                  const silentSample = __addDisposableResource3(env_4, new AudioSample({
                     data,
                     // Use the same format the decoder is spitting out. This avoids feeding changing sample
                     // formats to the audio encoder.
@@ -28375,7 +26429,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
                   env_4.error = e_3;
                   env_4.hasError = true;
                 } finally {
-                  __disposeResources4(env_4);
+                  __disposeResources3(env_4);
                 }
               }
               await this._registerAudioSample(pump, finalSample, source, outputTrackId, () => lastSampleTimestamp);
@@ -28383,7 +26437,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
               env_3.error = e_4;
               env_3.hasError = true;
             } finally {
-              __disposeResources4(env_3);
+              __disposeResources3(env_3);
             }
           }
           source.close();
@@ -28556,7 +26610,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       if (!Number.isSafeInteger(value)) fail();
       return value;
     };
-    let time2 = word(), offset = indexRange.offset + bytes2.length + word();
+    let time = word(), offset = indexRange.offset + bytes2.length + word();
     if (!timescale || pos + 4 > bytes2.length) fail();
     const count = view3.getUint16(pos + 2);
     pos += 4;
@@ -28565,11 +26619,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     for (let i = 0; i < count; i++, pos += 12) {
       const reference = view3.getUint32(pos), duration = view3.getUint32(pos + 4), sap = view3.getUint32(pos + 8);
       if (reference >= 2147483648 || !reference || !duration || offset + reference > fileSize) fail();
-      segments.push({ start: time2 / timescale, end: (time2 + duration) / timescale, bytes: reference });
-      if (sap >>> 31 && (sap & 268435455) === 0) entries.push({ time: time2, offset });
-      time2 += duration;
+      segments.push({ start: time / timescale, end: (time + duration) / timescale, bytes: reference });
+      if (sap >>> 31 && (sap & 268435455) === 0) entries.push({ time, offset });
+      time += duration;
       offset += reference;
-      if (!Number.isSafeInteger(time2) || !Number.isSafeInteger(offset)) fail();
+      if (!Number.isSafeInteger(time) || !Number.isSafeInteger(offset)) fail();
     }
     if (!entries.length) fail();
     const input = new Input({ source: new BufferSource(prefix), formats: [MP4] });
@@ -28716,6 +26770,56 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         if (audioInput && audioInput !== videoInput) audioInput.dispose();
       }
     };
+  }
+
+  // src/media/file-output.js
+  async function createMediaOutput({ fileHandle, signal } = {}) {
+    signal?.throwIfAborted();
+    let file = fileHandle ? await fileHandle.createWritable() : null;
+    let bytes2 = 0;
+    const target = file ? new StreamTarget(new WritableStream({
+      async write(chunk) {
+        signal?.throwIfAborted();
+        await file.write(chunk);
+        bytes2 = Math.max(bytes2, chunk.position + chunk.data.byteLength);
+      }
+    }), { chunked: true, chunkSize: 1024 * 1024 }) : new BufferTarget();
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target });
+    return {
+      output,
+      async finish() {
+        if (output.state !== "finalized") await output.finalize();
+        signal?.throwIfAborted();
+        if (!fileHandle) return new Blob([target.buffer], { type: "video/mp4" });
+        await file.close();
+        file = null;
+        return { bytes: bytes2 };
+      },
+      async cancel() {
+        try {
+          if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
+        } finally {
+          if (file) {
+            const pending = file;
+            file = null;
+            await pending.abort();
+          }
+        }
+      }
+    };
+  }
+  async function createClipFile(directory, name) {
+    const stem = name.replace(/\.mp4$/i, "");
+    for (let suffix = 0; ; suffix++) {
+      const candidate = suffix ? `${stem} (${suffix}).mp4` : name;
+      try {
+        await directory.getFileHandle(candidate);
+      } catch (error) {
+        if (error.name !== "NotFoundError") throw error;
+        const handle = await directory.getFileHandle(candidate, { create: true });
+        return { handle, name: candidate, remove: () => directory.removeEntry(candidate) };
+      }
+    }
   }
 
   // src/media/encoding.js
@@ -29192,8 +27296,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
   var verified = { verifyKeyPackets: true };
   async function planVideoCut(track, { start, end, normalizer, signal }) {
     const sink = new EncodedPacketSink(track), tick = 1 / await track.getTimeResolution();
-    async function previousIdr(time2) {
-      let packet = await sink.getKeyPacket(time2, verified);
+    async function previousIdr(time) {
+      let packet = await sink.getKeyPacket(time, verified);
       while (packet && !normalizer.isIdr(packet)) {
         signal?.throwIfAborted();
         packet = await sink.getKeyPacket(packet.timestamp - tick, verified);
@@ -29289,7 +27393,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     ]);
     return { languageCode, name: name ?? void 0, disposition };
   }
-  async function smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart }) {
+  async function smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }) {
     const videos = tracks.filter((track2) => track2.type === "video"), audios = tracks.filter((track2) => track2.type === "audio");
     if (videos.length !== 1 || tracks.length !== videos.length + audios.length || await videos[0].getCodec() !== "avc" || (await Promise.all(audios.map((track2) => track2.getCodec()))).some((codec) => codec !== "aac")) {
       throw new UnsupportedAvcError("当前音视频格式不支持安全拼接");
@@ -29304,18 +27408,23 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     const stats = { strategy: "smart", encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate };
     onProgress(0, { ...stats, message: plan.first ? "仅编码头尾，中间保留原画" : "选区较短，按原码率编码" });
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
-    const video = new EncodedVideoPacketSource("avc");
-    output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-    const streams = [{ source: video, isVideo: true, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
-    for (const audio of audios) {
-      const source = new EncodedAudioPacketSource("aac");
-      output.addAudioTrack(source, await trackMetadata(audio));
-      streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
+    const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+    try {
+      const video = new EncodedVideoPacketSource("avc");
+      output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
+      const streams = [{ source: video, isVideo: true, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
+      for (const audio of audios) {
+        const source = new EncodedAudioPacketSource("aac");
+        output.addAudioTrack(source, await trackMetadata(audio));
+        streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
+      }
+      return await muxPackets(session, streams, { start, end, signal, onProgress, stats });
+    } finally {
+      await session.cancel();
     }
-    return muxPackets(output, streams, { start, end, signal, onProgress, stats });
   }
-  async function muxPackets(output, streams, { start, end, signal, onProgress, stats }) {
+  async function muxPackets(session, streams, { start, end, signal, onProgress, stats }) {
+    const { output } = session;
     let progress = 0, canceling;
     const cancel = () => {
       canceling ??= output.cancel();
@@ -29341,11 +27450,9 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         if (stream.next.done) stream.source.close();
       }
       for (const stream of streams) stream.source.close();
-      await output.finalize();
-      signal?.throwIfAborted();
-      const blob = new Blob([output.target.buffer], { type: "video/mp4" });
+      const result = await session.finish();
       onProgress(1, stats);
-      return blob;
+      return result;
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
       throw error;
@@ -29353,59 +27460,62 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       signal?.removeEventListener("abort", cancel);
       await Promise.allSettled(streams.map((stream) => stream.iterator.return()));
       if (canceling) await canceling;
-      if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
     }
   }
-  async function encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart }) {
+  async function encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }) {
     if (!tracks.some((track) => track.type === "video") || tracks.some((track) => !["video", "audio"].includes(track.type))) {
       throw new Error("当前音视频轨道无法完整编码，请使用原画下载。");
     }
     if ((await Promise.all(tracks.filter((track) => track.type === "audio").map((track) => track.getCodec()))).some((codec) => codec !== "aac")) {
       throw new Error("精确模式目前需要 AAC 音频，请使用原画下载以保留声音。");
     }
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
-    const streams = [];
-    for (const track of tracks) {
-      signal?.throwIfAborted();
-      const options = { start, end, origin: start, signal };
-      if (track.type === "video") {
-        if (!await track.canDecode()) throw new Error("当前浏览器无法解码这段录像，请使用原画下载或更新 Chrome / Edge。");
-        const source = new EncodedVideoPacketSource("avc");
-        const settings = await readVideoEncodingSettings(track, { signal });
-        output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
-        streams.push({ source, isVideo: true, iterator: encodeVideoRange(track, { ...options, settings }) });
-      } else {
-        const source = new EncodedAudioPacketSource("aac");
-        output.addAudioTrack(source, await trackMetadata(track));
-        streams.push({ source, iterator: audioPackets(track, options) });
+    const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+    try {
+      const streams = [];
+      for (const track of tracks) {
+        signal?.throwIfAborted();
+        const options = { start, end, origin: start, signal };
+        if (track.type === "video") {
+          if (!await track.canDecode()) throw new Error("当前浏览器无法解码这段录像，请使用原画下载或更新 Chrome / Edge。");
+          const source = new EncodedVideoPacketSource("avc");
+          const settings = await readVideoEncodingSettings(track, { signal });
+          output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
+          streams.push({ source, isVideo: true, iterator: encodeVideoRange(track, { ...options, settings }) });
+        } else {
+          const source = new EncodedAudioPacketSource("aac");
+          output.addAudioTrack(source, await trackMetadata(track));
+          streams.push({ source, iterator: audioPackets(track, options) });
+        }
       }
+      onProcessingStart();
+      return await muxPackets(session, streams, { start, end, signal, onProgress, stats: { strategy: "full" } });
+    } finally {
+      await session.cancel();
     }
-    onProcessingStart();
-    return muxPackets(output, streams, { start, end, signal, onProgress, stats: { strategy: "full" } });
   }
   async function trimPrecise(input, { start = 0, end, signal, onProgress = () => {
   }, onProcessingStart = () => {
-  } } = {}) {
+  }, fileHandle } = {}) {
     signal?.throwIfAborted();
     end ??= await input.computeDuration();
-    return trimPreciseTracks(await input.getTracks(), { start, end, signal, onProgress, onProcessingStart });
+    return trimPreciseTracks(await input.getTracks(), { start, end, signal, onProgress, onProcessingStart, fileHandle });
   }
   async function trimPreciseTracks(tracks, { start = 0, end, signal, onProgress = () => {
   }, onProcessingStart = () => {
-  } } = {}) {
+  }, fileHandle } = {}) {
     signal?.throwIfAborted();
     try {
-      return await smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart });
+      return await smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle });
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
       if (!(error instanceof UnsupportedAvcError)) throw error;
       onProgress(0, { strategy: "full", message: "当前素材无法安全拼接，已改为按原码率整段编码" });
-      return encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart });
+      return encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle });
     }
   }
   async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {
   }, onProcessingStart = () => {
-  } }) {
+  }, fileHandle }) {
     signal?.throwIfAborted();
     const track = tracks.find((item) => item.type === "video");
     const sink = new EncodedPacketSink(track);
@@ -29425,34 +27535,38 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     const origin = Math.min(start, first.timestamp);
     const limit = Math.max(end, last2?.timestamp ?? await track.computeDuration());
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
-    const video = new EncodedVideoPacketSource("avc");
-    output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-    async function* packets() {
-      for await (const packet of sink.packets(first, last2 ?? void 0, verified)) {
-        signal?.throwIfAborted();
-        yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - origin }), decoderConfig: normalizer.decoderConfig };
+    const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+    try {
+      const video = new EncodedVideoPacketSource("avc");
+      output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
+      async function* packets() {
+        for await (const packet of sink.packets(first, last2 ?? void 0, verified)) {
+          signal?.throwIfAborted();
+          yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - origin }), decoderConfig: normalizer.decoderConfig };
+        }
       }
+      const streams = [{ source: video, isVideo: true, iterator: packets() }];
+      for (const audio of tracks.filter((item) => item.type === "audio")) {
+        const source = new EncodedAudioPacketSource("aac");
+        output.addAudioTrack(source, await trackMetadata(audio));
+        streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
+      }
+      onProcessingStart();
+      return await muxPackets(session, streams, {
+        start: origin,
+        end: limit,
+        signal,
+        onProgress,
+        stats: { strategy: "copy", message: "原画导出保留完整关键帧组，起止位置可能略有扩展" }
+      });
+    } finally {
+      await session.cancel();
     }
-    const streams = [{ source: video, isVideo: true, iterator: packets() }];
-    for (const audio of tracks.filter((item) => item.type === "audio")) {
-      const source = new EncodedAudioPacketSource("aac");
-      output.addAudioTrack(source, await trackMetadata(audio));
-      streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
-    }
-    onProcessingStart();
-    return muxPackets(output, streams, {
-      start: origin,
-      end: limit,
-      signal,
-      onProgress,
-      stats: { strategy: "copy", message: "原画导出保留完整关键帧组，起止位置可能略有扩展" }
-    });
   }
 
   // src/media/submission-export.js
   async function exportSubmission(request, submission, selection, { signal, precise = false, onProgress = () => {
-  } } = {}) {
+  }, fileHandle } = {}) {
     signal?.throwIfAborted();
     const { start, end } = selection;
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > submission.duration + 1e-3) {
@@ -29492,10 +27606,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       report();
       const tracks = await media.getTracks();
       const trim = precise ? trimPreciseTracks : trimCopyTracks;
-      const blob = await trim(tracks, {
+      const result = await trim(tracks, {
         start,
         end,
         signal,
+        fileHandle,
         onProcessingStart() {
           phase = "processing";
           report();
@@ -29510,10 +27625,10 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
       progress = 1;
       phase = "complete";
       report();
-      return blob;
+      return result;
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
-      throw error;
+      throw mediaStorageError(error);
     } finally {
       media.dispose();
     }
@@ -33916,8 +32031,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
           this.removeFragment(fragmentEntity.body);
           return;
         }
-        esData.time.some((time2) => {
-          const isNotBuffered = !this.isTimeBuffered(time2.startPTS, time2.endPTS, timeRange);
+        esData.time.some((time) => {
+          const isNotBuffered = !this.isTimeBuffered(time.startPTS, time.endPTS, timeRange);
           if (isNotBuffered) {
             this.removeFragment(fragmentEntity.body);
           }
@@ -34031,7 +32146,7 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     /**
      * Gets the partial fragment for a certain time
      */
-    getPartialFragment(time2) {
+    getPartialFragment(time) {
       let bestFragment = null;
       let timePadding;
       let startTime;
@@ -34049,8 +32164,8 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         if (isPartial(fragmentEntity)) {
           startTime = fragmentEntity.body.start - bufferPadding;
           endTime = fragmentEntity.body.end + bufferPadding;
-          if (time2 >= startTime && time2 <= endTime) {
-            timePadding = Math.min(time2 - startTime, endTime - time2);
+          if (time >= startTime && time <= endTime) {
+            timePadding = Math.min(time - startTime, endTime - time);
             if (bestOverlap <= timePadding) {
               bestFragment = fragmentEntity.body;
               bestOverlap = timePadding;
@@ -50585,12 +48700,12 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       track.mode = mode;
     }
   }
-  function getFirstCueIndexFromTime(cues, time2) {
-    if (time2 <= cues[0].startTime) {
+  function getFirstCueIndexFromTime(cues, time) {
+    if (time <= cues[0].startTime) {
       return 0;
     }
     const len = cues.length - 1;
-    if (time2 > cues[len].endTime) {
+    if (time > cues[len].endTime) {
       return -1;
     }
     let left = 0;
@@ -50598,15 +48713,15 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     let mid;
     while (left <= right) {
       mid = Math.floor((right + left) / 2);
-      if (time2 < cues[mid].startTime) {
+      if (time < cues[mid].startTime) {
         right = mid - 1;
-      } else if (time2 > cues[mid].startTime && left < len) {
+      } else if (time > cues[mid].startTime && left < len) {
         left = mid + 1;
       } else {
         return mid;
       }
     }
-    return cues[left].startTime - time2 < time2 - cues[right].startTime ? left : right;
+    return cues[left].startTime - time < time - cues[right].startTime ? left : right;
   }
   function getCuesInRange(cues, start, end) {
     const cuesFound = [];
@@ -51271,8 +49386,8 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       return eventToString(this);
     }
   };
-  function getSnapToFragmentTime(time2, frag) {
-    return time2 - frag.start < frag.duration / 2 && !(Math.abs(time2 - (frag.start + frag.duration)) < ALIGNED_END_THRESHOLD_SECONDS) ? frag.start : frag.start + frag.duration;
+  function getSnapToFragmentTime(time, frag) {
+    return time - frag.start < frag.duration / 2 && !(Math.abs(time - (frag.start + frag.duration)) < ALIGNED_END_THRESHOLD_SECONDS) ? frag.start : frag.start + frag.duration;
   }
   function getInterstitialUrl(uri, sessionId, baseUrl) {
     const url2 = new self.URL(uri, baseUrl);
@@ -51375,10 +49490,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       const bufferedEnd = this.getAssetTime(bufferInfo.end);
       return bufferedEnd >= duration - 0.02;
     }
-    reachedPlayout(time2) {
+    reachedPlayout(time) {
       const interstitial = this.interstitial;
       const playoutLimit = interstitial.playoutLimit;
-      return this.startOffset + time2 >= playoutLimit;
+      return this.startOffset + time >= playoutLimit;
     }
     get destroyed() {
       var _this$hls2;
@@ -51452,10 +49567,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
         }
       }
     }
-    getAssetTime(time2) {
+    getAssetTime(time) {
       const timelineOffset = this.timelineOffset;
       const duration = this.duration;
-      return Math.min(Math.max(0, time2 - timelineOffset), duration);
+      return Math.min(Math.max(0, time - timelineOffset), duration);
     }
     removeMediaListeners() {
       const media = this.mediaAttached;
@@ -51585,7 +49700,7 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     hasEvent(identifier) {
       return identifier in this.eventMap;
     }
-    findItemIndex(item, time2) {
+    findItemIndex(item, time) {
       if (item.event) {
         return this.findEventIndex(item.event.identifier);
       }
@@ -51598,10 +49713,10 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
       const items = this.items;
       if (items) {
         if (!items[index]) {
-          if (time2 === void 0) {
-            time2 = item.start;
+          if (time === void 0) {
+            time = item.start;
           }
-          index = this.findItemIndexAtTime(time2);
+          index = this.findItemIndexAtTime(time);
         }
         while (index >= 0 && (_items$index = items[index]) != null && _items$index.event) {
           var _items$index;
@@ -52099,8 +50214,8 @@ transfer tracks: ${stringify(transferredTracks, (key, value) => key === "initSeg
     media == null || (_media$play = media.play()) == null || _media$play.catch(() => {
     });
   }
-  function timelineMessage(label, time2) {
-    return `[${label}] Advancing timeline position to ${time2}`;
+  function timelineMessage(label, time) {
+    return `[${label}] Advancing timeline position to ${time}`;
   }
   var InterstitialsController = class extends Logger {
     constructor(hls, HlsPlayerClass) {
@@ -52470,20 +50585,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const getAssetPlayer = (asset) => asset ? c.getAssetPlayer(asset.identifier) : asset;
       const getMappedTime = (item, timelineType, asset, controllerField, assetPlayerField) => {
         if (item) {
-          let time2 = item[timelineType].start;
+          let time = item[timelineType].start;
           const interstitial = item.event;
           if (interstitial) {
             if (timelineType === "playout" || interstitial.timelineOccupancy !== TimelineOccupancy.Point) {
               const assetPlayer = getAssetPlayer(asset);
               if ((assetPlayer == null ? void 0 : assetPlayer.interstitial) === interstitial) {
-                time2 += assetPlayer.assetItem.startOffset + assetPlayer[assetPlayerField];
+                time += assetPlayer.assetItem.startOffset + assetPlayer[assetPlayerField];
               }
             }
           } else {
             const value = controllerField === "bufferedPos" ? getBufferedEnd() : c[controllerField];
-            time2 += value - item.start;
+            time += value - item.start;
           }
-          return time2;
+          return time;
         }
         return 0;
       };
@@ -52514,15 +50629,15 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
         return ((_c$schedule2 = c.schedule) == null ? void 0 : _c$schedule2.durations[timelineType]) || 0;
       };
-      const seekTo = (time2, timelineType) => {
+      const seekTo = (time, timelineType) => {
         var _item$event, _c$schedule$items2;
         const item = c.effectivePlayingItem;
         if (item != null && (_item$event = item.event) != null && _item$event.restrictions.skip || !c.schedule) {
           return;
         }
-        c.log(`seek to ${time2} "${timelineType}"`);
+        c.log(`seek to ${time} "${timelineType}"`);
         const playingItem = c.effectivePlayingItem;
-        const targetIndex = c.schedule.findItemIndexAtTime(time2, timelineType);
+        const targetIndex = c.schedule.findItemIndexAtTime(time, timelineType);
         const targetItem = (_c$schedule$items2 = c.schedule.items) == null ? void 0 : _c$schedule$items2[targetIndex];
         const bufferingPlayer = c.getBufferingPlayer();
         const bufferingInterstitial = bufferingPlayer == null ? void 0 : bufferingPlayer.interstitial;
@@ -52533,7 +50648,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           const media = (assetPlayer == null ? void 0 : assetPlayer.media) || c.primaryMedia;
           if (media) {
             const currentTime = timelineType === "primary" ? media.currentTime : getMappedTime(playingItem, timelineType, c.playingAsset, "timelinePos", "currentTime");
-            const diff = time2 - currentTime;
+            const diff = time - currentTime;
             const seekToTime = (appendInPlace ? currentTime : media.currentTime) + diff;
             if (seekToTime >= 0 && (!assetPlayer || appendInPlace || seekToTime <= assetPlayer.duration)) {
               media.currentTime = seekToTime;
@@ -52542,10 +50657,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
         }
         if (targetItem) {
-          let seekToTime = time2;
+          let seekToTime = time;
           if (timelineType !== "primary") {
             const primarySegmentStart = targetItem[timelineType].start;
-            const diff = time2 - primarySegmentStart;
+            const diff = time - primarySegmentStart;
             seekToTime = targetItem.start + diff;
           }
           const targetIsPrimary = !c.isInterstitial(targetItem);
@@ -52569,7 +50684,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
               c.checkBuffer();
             } else {
               const assetList = targetItem.event.assetList;
-              const eventTime = time2 - (targetItem[timelineType] || targetItem).start;
+              const eventTime = time - (targetItem[timelineType] || targetItem).start;
               for (let i = assetList.length; i--; ) {
                 const asset = assetList[i];
                 if (asset.duration && eventTime >= asset.startOffset && eventTime < asset.startOffset + asset.duration) {
@@ -52611,11 +50726,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
           return 0;
         },
-        set currentTime(time2) {
+        set currentTime(time) {
           const interstitialItem = getActiveInterstitial();
           const playingItem = c.effectivePlayingItem;
           if (playingItem && playingItem === interstitialItem) {
-            seekTo(time2 + playingItem.playout.start, "playout");
+            seekTo(time + playingItem.playout.start, "playout");
           }
         },
         get duration() {
@@ -52691,8 +50806,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
             const timelinePos = c.timelinePos;
             return timelinePos > 0 ? timelinePos : 0;
           },
-          set currentTime(time2) {
-            seekTo(time2, "primary");
+          set currentTime(time) {
+            seekTo(time, "primary");
           },
           get duration() {
             return getMappedDuration("primary");
@@ -52709,8 +50824,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           get currentTime() {
             return getMappedTime(c.effectivePlayingItem, "integrated", c.effectivePlayingAsset, "timelinePos", "currentTime");
           },
-          set currentTime(time2) {
-            seekTo(time2, "integrated");
+          set currentTime(time) {
+            seekTo(time, "integrated");
           },
           get duration() {
             return getMappedDuration("integrated");
@@ -52726,8 +50841,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           if (event && !event.restrictions.skip) {
             const index = c.findItemIndex(item);
             if (event.appendInPlace) {
-              const time2 = item.playout.start + item.event.duration;
-              seekTo(time2 + 1e-3, "playout");
+              const time = item.playout.start + item.event.duration;
+              seekTo(time + 1e-3, "playout");
             } else {
               c.advanceAfterAssetEnded(event, index, Infinity);
             }
@@ -52959,7 +51074,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       }
     }
-    setScheduleToAssetAtTime(time2, playingAsset) {
+    setScheduleToAssetAtTime(time, playingAsset) {
       const schedule = this.schedule;
       if (!schedule) {
         return;
@@ -52968,7 +51083,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const interstitial = schedule.getEvent(parentIdentifier);
       if (interstitial) {
         const itemIndex = schedule.findEventIndex(parentIdentifier);
-        const assetListIndex = schedule.findAssetIndex(interstitial, time2);
+        const assetListIndex = schedule.findAssetIndex(interstitial, time);
         this.advanceAfterAssetEnded(interstitial, itemIndex, assetListIndex - 1);
       }
     }
@@ -53343,11 +51458,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         this.shouldPlay = false;
       }
     }
-    updateItem(previousItem, time2) {
+    updateItem(previousItem, time) {
       var _this$schedule6;
       const items = (_this$schedule6 = this.schedule) == null ? void 0 : _this$schedule6.items;
       if (previousItem && items) {
-        const index = this.findItemIndex(previousItem, time2);
+        const index = this.findItemIndex(previousItem, time);
         return items[index] || null;
       }
       return null;
@@ -53376,8 +51491,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       var _b$event;
       return !!b && (a === b || a.event.identifier === ((_b$event = b.event) == null ? void 0 : _b$event.identifier));
     }
-    findItemIndex(item, time2) {
-      return item && this.schedule ? this.schedule.findItemIndex(item, time2) : -1;
+    findItemIndex(item, time) {
+      return item && this.schedule ? this.schedule.findItemIndex(item, time) : -1;
     }
     updateSchedule(forceUpdate = false) {
       var _this$schedule7;
@@ -53952,10 +52067,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         }
       }
     }
-    advanceInPlace(time2) {
+    advanceInPlace(time) {
       const media = this.primaryMedia;
-      if (media && media.currentTime < time2) {
-        media.currentTime = time2;
+      if (media && media.currentTime < time) {
+        media.currentTime = time;
       }
     }
     handleAssetItemError(data, interstitial, scheduleIndex, assetListIndex, errorMessage) {
@@ -55022,8 +53137,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         const lastOutputScreen = this.lastOutputScreen;
         if (lastOutputScreen) {
           const prevLineTime = lastOutputScreen.rows[topRowIndex].cueStartTime;
-          const time2 = this.logger.time;
-          if (prevLineTime !== null && time2 !== null && prevLineTime < time2) {
+          const time = this.logger.time;
+          if (prevLineTime !== null && time !== null && prevLineTime < time) {
             for (let i = 0; i < this.nrRollUpRows; i++) {
               this.rows[newRow - this.nrRollUpRows + i + 1].copy(lastOutputScreen.rows[topRowIndex + i]);
             }
@@ -55274,20 +53389,20 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       this.writeScreen.setPen(styles);
     }
     outputDataUpdate(dispatch = false) {
-      const time2 = this.logger.time;
-      if (time2 === null) {
+      const time = this.logger.time;
+      if (time === null) {
         return;
       }
       if (this.outputFilter) {
         if (this.cueStartTime === null && !this.displayedMemory.isEmpty()) {
-          this.cueStartTime = time2;
+          this.cueStartTime = time;
         } else {
           if (!this.displayedMemory.equals(this.lastOutputScreen)) {
-            this.outputFilter.newCue(this.cueStartTime, time2, this.lastOutputScreen);
+            this.outputFilter.newCue(this.cueStartTime, time, this.lastOutputScreen);
             if (dispatch && this.outputFilter.dispatchCue) {
               this.outputFilter.dispatchCue();
             }
-            this.cueStartTime = this.displayedMemory.isEmpty() ? null : time2;
+            this.cueStartTime = this.displayedMemory.isEmpty() ? null : time;
           }
         }
         this.lastOutputScreen.copy(this.displayedMemory);
@@ -55322,8 +53437,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     /**
      * Add data for time t in forms of list of bytes (unsigned ints). The bytes are treated as pairs.
      */
-    addData(time2, byteList) {
-      this.logger.time = time2;
+    addData(time, byteList) {
+      this.logger.time = time;
       for (let i = 0; i < byteList.length; i += 2) {
         const a = byteList[i] & 127;
         const b = byteList[i + 1] & 127;
@@ -62154,12 +60269,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     recoverMediaError() {
       this.logger.log("recoverMediaError");
       const media = this._media;
-      const time2 = media == null ? void 0 : media.currentTime;
+      const time = media == null ? void 0 : media.currentTime;
       this.detachMedia();
       if (media) {
         this.attachMedia(media);
-        if (time2) {
-          this.startLoad(time2);
+        if (time) {
+          this.startLoad(time);
         }
       }
     }
@@ -62690,16 +60805,16 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   function createPlayer({ video, loading, api, status: status2, onTime }) {
     let hls, record, streams = [], index = 0, generation = 0, target = null;
     const offset = () => streams[index] ? streams[index].start_time - record.start : 0;
-    function attach(part, time2 = 0) {
+    function attach(part, time = 0) {
       const token = ++generation;
       hls?.destroy();
       video.pause();
       video.removeAttribute("src");
       video.load();
       index = part;
-      target = time2;
+      target = time;
       loading.hidden = false;
-      hls = new Hls({ loader: makeHlsLoader(api.request), enableWorker: false, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 15, startPosition: time2 });
+      hls = new Hls({ loader: makeHlsLoader(api.request), enableWorker: false, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 15, startPosition: time });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (token === generation && data.fatal) {
           loading.textContent = "预览暂不可用，请刷新重试";
@@ -62712,16 +60827,16 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       hls.loadSource(streams[index].stream);
       hls.attachMedia(video);
     }
-    function seek(time2) {
+    function seek(time) {
       video.pause();
-      const found = streams.findIndex((p) => time2 >= p.start_time - record.start && time2 <= p.end_time - record.start);
+      const found = streams.findIndex((p) => time >= p.start_time - record.start && time <= p.end_time - record.start);
       if (found < 0) {
         target = NaN;
         loading.hidden = false;
         loading.textContent = "该位置没有录像";
         return;
       }
-      const local = clamp(time2 - (streams[found].start_time - record.start), 0, Math.max(0, streams[found].end_time - streams[found].start_time - 1e-3));
+      const local = clamp(time - (streams[found].start_time - record.start), 0, Math.max(0, streams[found].end_time - streams[found].start_time - 1e-3));
       loading.textContent = "正在定位画面…";
       loading.hidden = false;
       if (found !== index) attach(found, local);
@@ -62789,14 +60904,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     function constrain(restart = false) {
       const range = getRange();
       if (!range) return true;
-      const time2 = position();
-      if (time2 >= range.end && !restart) {
+      const time = position();
+      if (time >= range.end && !restart) {
         clearTimer();
         video.pause();
-        if (time2 !== range.end) seek(range.end);
+        if (time !== range.end) seek(range.end);
         return false;
       }
-      if (time2 < range.start || time2 >= range.end) seek(range.start);
+      if (time < range.start || time >= range.end) seek(range.start);
       return true;
     }
     const play = (restart = false) => {
@@ -62863,14 +60978,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   }
 
   // src/media/submission-thumbnail.js
-  async function readSubmissionThumbnail(request, submission, time2, signal) {
+  async function readSubmissionThumbnail(request, submission, time, signal) {
     signal.throwIfAborted();
     const media = openSubmissionMedia(request, submission, { signal, preview: true });
     let sample;
     try {
       const track = await media.videoInput.getPrimaryVideoTrack();
       if (!track) throw new Error("视频轨道为空");
-      sample = await new VideoSampleSink(track).getSample(time2);
+      sample = await new VideoSampleSink(track).getSample(time);
       signal.throwIfAborted();
       if (!sample) throw new Error("该位置没有可解码的画面");
       const canvas = document.createElement("canvas");
@@ -62887,10 +61002,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   // src/media/thumbnails.js
   function thumbnailSamples(record, streams, view3, count = 6) {
     return Array.from({ length: count }, (_, i) => {
-      const time2 = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
-      if (record.kind === "submission") return { time: time2, stream: record, local: time2 };
-      const stream = streams.find((s) => time2 >= s.start_time - record.start && time2 < s.end_time - record.start);
-      return { time: time2, stream, local: stream ? time2 - (stream.start_time - record.start) : null };
+      const time = view3.start + (view3.end - view3.start) * (i + 0.5) / count;
+      if (record.kind === "submission") return { time, stream: record, local: time };
+      const stream = streams.find((s) => time >= s.start_time - record.start && time < s.end_time - record.start);
+      return { time, stream, local: stream ? time - (stream.start_time - record.start) : null };
     });
   }
   async function readThumbnail(request, sample, signal) {
@@ -63029,6 +61144,49 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }, update, clear };
   }
 
+  // src/media/recording-timeline.js
+  var recordingTime = (value) => Math.round(value * 1e6) / 1e6;
+  var RecordingTimeline = class {
+    constructor() {
+      this.offset = null;
+      this.tracks = /* @__PURE__ */ new Map();
+      this.end = 0;
+    }
+    append(tracks, discontinuity = false) {
+      const starts = tracks.map((track) => track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity));
+      const first = Math.min(...starts);
+      if (!Number.isFinite(first)) throw new Error("录像分片没有音视频数据。");
+      if (this.offset === null || discontinuity) this.offset = recordingTime(this.end - first);
+      let correction = 0;
+      for (const [index, track] of tracks.entries()) {
+        const previous = this.tracks.get(track.key);
+        if (!previous) continue;
+        let boundary = previous.boundary;
+        for (const packet of track.packets) {
+          if (packet.type === "key") boundary = previous.max;
+          if (recordingTime(packet.timestamp + this.offset) < boundary) {
+            correction = Math.max(correction, previous.end - recordingTime(starts[index] + this.offset));
+            break;
+          }
+        }
+      }
+      this.offset = recordingTime(this.offset + correction);
+      for (const track of tracks) {
+        const state = this.tracks.get(track.key) ?? { max: -Infinity, boundary: -Infinity, end: 0 };
+        for (const packet of track.packets) {
+          const timestamp = recordingTime(packet.timestamp + this.offset);
+          if (packet.type === "key") state.boundary = state.max;
+          if (timestamp < state.boundary) throw new Error("录像分片内部的关键帧时间线发生倒退，无法无损拼接。");
+          state.max = Math.max(state.max, timestamp);
+          state.end = Math.max(state.end, recordingTime(timestamp + packet.duration));
+        }
+        this.tracks.set(track.key, state);
+        this.end = Math.max(this.end, state.end);
+      }
+      return this.offset;
+    }
+  };
+
   // src/media/recording-download.js
   function createRecordingDownload(api, groups, {
     signal,
@@ -63114,49 +61272,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     };
   }
 
-  // src/media/recording-timeline.js
-  var time = (value) => Math.round(value * 1e6) / 1e6;
-  var RecordingTimeline = class {
-    constructor() {
-      this.offset = null;
-      this.tracks = /* @__PURE__ */ new Map();
-      this.end = 0;
-    }
-    append(tracks, discontinuity = false) {
-      const starts = tracks.map((track) => track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity));
-      const first = Math.min(...starts);
-      if (!Number.isFinite(first)) throw new Error("录像分片没有音视频数据。");
-      if (this.offset === null || discontinuity) this.offset = time(this.end - first);
-      let correction = 0;
-      for (const [index, track] of tracks.entries()) {
-        const previous = this.tracks.get(track.key);
-        if (!previous) continue;
-        let boundary = previous.boundary;
-        for (const packet of track.packets) {
-          if (packet.type === "key") boundary = previous.max;
-          if (time(packet.timestamp + this.offset) < boundary) {
-            correction = Math.max(correction, previous.end - time(starts[index] + this.offset));
-            break;
-          }
-        }
-      }
-      this.offset = time(this.offset + correction);
-      for (const track of tracks) {
-        const state = this.tracks.get(track.key) ?? { max: -Infinity, boundary: -Infinity, end: 0 };
-        for (const packet of track.packets) {
-          const timestamp = time(packet.timestamp + this.offset);
-          if (packet.type === "key") state.boundary = state.max;
-          if (timestamp < state.boundary) throw new Error("录像分片内部的关键帧时间线发生倒退，无法无损拼接。");
-          state.max = Math.max(state.max, timestamp);
-          state.end = Math.max(state.end, time(timestamp + packet.duration));
-        }
-        this.tracks.set(track.key, state);
-        this.end = Math.max(this.end, state.end);
-      }
-      return this.offset;
-    }
-  };
-
   // src/media/recording.js
   async function estimateRecordingRate(api, groups, signal) {
     const rates = [];
@@ -63180,51 +61295,9 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     return bytes2;
   }
-  function recordingSource(groups, read) {
-    const resources = /* @__PURE__ */ new Map();
-    let number = 0;
-    const lines = [
-      "#EXTM3U",
-      "#EXT-X-VERSION:7",
-      "#EXT-X-PLAYLIST-TYPE:VOD",
-      "#EXT-X-TARGETDURATION:" + Math.ceil(groups.reduce((max, g) => g.segments.reduce((n, s) => Math.max(n, s.duration), max), 0))
-    ];
-    for (const [i, group] of groups.entries()) {
-      if (i) lines.push("#EXT-X-DISCONTINUITY");
-      for (const segment of group.segments) {
-        const path = `https://recording.invalid/${number++}`;
-        resources.set(path, group.map ? [group.map, segment] : [segment]);
-        lines.push(`#EXTINF:${segment.duration},`, path);
-      }
-    }
-    lines.push("#EXT-X-ENDLIST");
-    const manifest = new TextEncoder().encode(lines.join("\n"));
-    return new CustomPathedSource("https://recording.invalid/index.m3u8", (request) => {
-      if (request.isRoot) return new BufferSource(manifest);
-      const parts = resources.get(String(request.path));
-      let sizes;
-      return new CustomSource({
-        maxCacheSize: 0,
-        async getSize() {
-          sizes = [];
-          for (const part of parts) sizes.push((await read(part)).byteLength);
-          return sizes.reduce((a, b) => a + b, 0);
-        },
-        async read(start, end) {
-          const result = new Uint8Array(end - start);
-          let offset = 0;
-          for (const [i, part] of parts.entries()) {
-            const left = Math.max(start, offset), right = Math.min(end, offset + sizes[i]);
-            if (right > left) result.set((await read(part)).subarray(left - offset, right - offset), left - start);
-            offset += sizes[i];
-          }
-          return result;
-        }
-      });
-    });
-  }
   async function saveRecording(api, groups, fileHandle, { signal, stopSignal, onProgress = () => {
-  } } = {}) {
+  }, onSegment = () => {
+  }, concurrency = 6 } = {}) {
     let file, input, output, bytes2 = 0, written = 0, processed = 0, reconnecting = 0, attempt = 0, phase = "downloading";
     const requests = new AbortController();
     const abort = () => requests.abort(signal.reason), stop = () => {
@@ -63244,6 +61317,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     const download = createRecordingDownload(api, groups, {
       signal: requests.signal,
+      concurrency,
       onRead: (size) => {
         bytes2 += size;
         samples.push({ at: performance.now(), bytes: bytes2 });
@@ -63284,6 +61358,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
           input = new Input({ source: new BufferSource(data), formats: [MP4, MPEG_TS] });
           const segmentTracks = [];
+          let sourceStart = Infinity, sourceEnd = -Infinity;
           for (const track of await input.getTracks()) {
             const key = `${track.type}:${track.number}`, codec = await track.getCodec();
             if (!["video", "audio"].includes(track.type) || !output.format.getSupportedCodecs().includes(codec)) throw new Error("本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。");
@@ -63301,6 +61376,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
             const packets = [];
             for await (const original of new EncodedPacketSink(track).packets()) {
               download.signal.throwIfAborted();
+              sourceStart = Math.min(sourceStart, original.timestamp);
+              sourceEnd = Math.max(sourceEnd, original.timestamp + original.duration);
               const type = await track.determinePacketType(original) ?? original.type;
               const packet = type === original.type ? original : original.clone({ type });
               if (target.needsKey) {
@@ -63320,6 +61397,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           }
           const offset = timeline.append(segmentTracks, pendingDiscontinuity);
           pendingDiscontinuity = false;
+          onSegment({ segment: item.segment, start: recordingTime(sourceStart + offset), end: recordingTime(sourceEnd + offset) });
           if (output.state === "pending") await output.start();
           const cursors = segmentTracks.map(() => 0);
           while (segmentTracks.some((track, i) => cursors[i] < track.packets.length)) {
@@ -63327,7 +61405,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
               for (let batch = 0; batch < 32 && cursors[i] < track.packets.length; batch++) {
                 signal?.throwIfAborted();
                 const packet = track.packets[cursors[i]++];
-                await track.target.source.add(packet.clone({ timestamp: Math.round((packet.timestamp + offset) * 1e6) / 1e6 }), { decoderConfig: track.config });
+                await track.target.source.add(packet.clone({ timestamp: recordingTime(packet.timestamp + offset) }), { decoderConfig: track.config });
                 track.target.written = true;
               }
             }
@@ -63373,125 +61451,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
 
   // src/media/segment-loader.js
   var segmentKey = (segment) => JSON.stringify([segment.url, segment.range ?? null]);
-  function createSegmentLoader(api, segments, { map, signal, onRead = () => {
-  }, onRetry = () => {
-  } } = {}) {
-    const controller = new AbortController();
-    const entries = /* @__PURE__ */ new Map(), demanded = [], queue = [], tasks = /* @__PURE__ */ new Set();
-    const positions = new Map(segments.map((segment, index) => [segmentKey(segment), index]));
-    const mapKey = map && segmentKey(map), firstKey = segmentKey(segments[0]), lastKey = segmentKey(segments.at(-1));
-    let lookaheadKey, frontier = -1, active = 0, closed = false;
-    const abort = () => controller.abort(signal.reason);
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) abort();
-    function prune() {
-      const keep = /* @__PURE__ */ new Set([...demanded, lookaheadKey, mapKey, firstKey, lastKey]);
-      for (const [key, entry] of entries) {
-        if (entry.settled && !keep.has(key)) entries.delete(key);
-      }
-    }
-    function pump() {
-      while (active < 2 && queue.length) {
-        const entry = queue.shift();
-        active++;
-        const task = (async () => {
-          try {
-            controller.signal.throwIfAborted();
-            const response = await requestWithRetry(api, entry.segment.url, {
-              type: "arraybuffer",
-              range: entry.segment.range,
-              signal: controller.signal
-            }, { onRetry: (state) => onRetry(state, entry.segment) });
-            controller.signal.throwIfAborted();
-            const data = new Uint8Array(response.data);
-            onRead(data.byteLength, entry.segment);
-            entry.resolve(data);
-          } catch (error) {
-            controller.abort(error);
-            entry.reject(controller.signal.reason);
-          } finally {
-            entry.settled = true;
-            active--;
-            prune();
-            pump();
-          }
-        })();
-        tasks.add(task);
-        void task.finally(() => tasks.delete(task));
-      }
-    }
-    function request(segment, speculative = false) {
-      const key = segmentKey(segment);
-      let entry = entries.get(key);
-      if (!entry) {
-        let resolve, reject;
-        const promise = new Promise((yes, no) => {
-          resolve = yes;
-          reject = no;
-        });
-        void promise.catch(() => {
-        });
-        entry = { segment, promise, resolve, reject, settled: false };
-        entries.set(key, entry);
-        if (speculative) queue.push(entry);
-        else queue.unshift(entry);
-        pump();
-      } else if (!speculative) {
-        const index = queue.indexOf(entry);
-        if (index >= 0) {
-          queue.splice(index, 1);
-          queue.unshift(entry);
-        }
-      }
-      return entry.promise;
-    }
-    async function read(segment) {
-      controller.signal.throwIfAborted();
-      const key = segmentKey(segment), index = positions.get(key);
-      if (key !== mapKey && key !== firstKey && key !== lastKey) {
-        const previous = demanded.indexOf(key);
-        if (previous >= 0) demanded.splice(previous, 1);
-        demanded.push(key);
-        if (demanded.length > 2) demanded.shift();
-      }
-      const result = request(segment);
-      if (index !== void 0 && index > frontier && index + 1 < segments.length) {
-        frontier = index;
-        const next = segments[index + 1];
-        lookaheadKey = segmentKey(next);
-        request(next, true);
-      }
-      prune();
-      const data = await result;
-      controller.signal.throwIfAborted();
-      return data;
-    }
-    return {
-      read,
-      signal: controller.signal,
-      beginProcessing() {
-        frontier = -1;
-        lookaheadKey = void 0;
-        prune();
-      },
-      async close() {
-        if (closed) return;
-        closed = true;
-        signal?.removeEventListener("abort", abort);
-        controller.abort();
-        while (tasks.size) await Promise.allSettled([...tasks]);
-        entries.clear();
-      }
-    };
-  }
 
   // src/media/export.js
   async function convertInput(input, { start, end, precise = false, signal, onProgress = () => {
   }, onProcessingStart = () => {
-  } } = {}) {
+  }, fileHandle } = {}) {
     signal?.throwIfAborted();
-    if (precise) return trimPrecise(input, { start, end, signal, onProgress, onProcessingStart });
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
+    if (precise) return trimPrecise(input, { start, end, signal, onProgress, onProcessingStart, fileHandle });
+    const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
     let conversion, canceling;
     const cancel = () => {
       if (conversion) canceling = conversion.cancel();
@@ -63509,95 +61476,205 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       onProcessingStart();
       await conversion.execute();
       signal?.throwIfAborted();
-      return new Blob([output.target.buffer], { type: "video/mp4" });
+      return await session.finish();
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
       throw error;
     } finally {
       signal?.removeEventListener("abort", cancel);
       if (canceling) await canceling;
-      if (output.state !== "finalized" && output.state !== "canceled") await output.cancel();
+      await session.cancel();
     }
   }
-  async function exportSelection(api, record, groups, selection, { signal, precise = false, onProgress = () => {
-  } } = {}) {
+  async function extendPlan(group, plan, read, signal) {
+    const first = group.segments.indexOf(plan.segments[0]);
+    const last2 = group.segments.indexOf(plan.segments.at(-1));
+    let from = first, to = last2;
+    async function keys(index) {
+      const segment = group.segments[index], parts = group.map ? [await read(group.map), await read(segment)] : [await read(segment)];
+      const input = new Input({ source: new BlobSource(new Blob(parts)), formats: [MP4, MPEG_TS] });
+      try {
+        const track = await input.getPrimaryVideoTrack();
+        if (!track) throw new Error("录像没有可读取的画面。");
+        const origin = await input.getFirstTimestamp(), result = [];
+        for await (const packet of new EncodedPacketSink(track).packets()) {
+          signal?.throwIfAborted();
+          if ((await track.determinePacketType(packet) ?? packet.type) === "key") result.push(packet.timestamp - origin);
+        }
+        return result;
+      } finally {
+        input.dispose();
+      }
+    }
+    while (from > 0) {
+      const times = await keys(from);
+      if (times.some((time) => time <= (from === first ? plan.start : Infinity))) break;
+      from--;
+    }
+    const lastStart = plan.segments.slice(0, -1).reduce((sum, segment) => sum + segment.duration, 0);
+    while (to < group.segments.length - 1) {
+      const times = await keys(to);
+      if (times.some((time) => time >= (to === last2 ? plan.end - lastStart : -Infinity))) break;
+      to++;
+    }
+    return { segments: group.segments.slice(from, to + 1), map: group.map };
+  }
+  function selectionTime(plan, entries, point, endBoundary) {
+    let cursor = 0;
+    for (const segment of plan.segments) {
+      const next = cursor + segment.duration;
+      if (point < next || endBoundary && point <= next + 1e-6) {
+        const entry = entries.get(segmentKey(segment));
+        if (!entry) {
+          return 0;
+        }
+        if (endBoundary && Math.abs(point - next) <= 1e-6) return entry.end;
+        return recordingTime(Math.min(entry.end, entry.start + point - cursor));
+      }
+      cursor = next;
+    }
+    return entries.get(segmentKey(plan.segments.at(-1)))?.end ?? 0;
+  }
+  async function exportSelection(api, record, groups, selection, {
+    signal,
+    precise = false,
+    onProgress = () => {
+    },
+    onSaved = () => {
+    },
+    createFile,
+    createTemporary = createTemporaryMedia
+  } = {}) {
     signal?.throwIfAborted();
     const parsed = { groups: groups.filter((group) => selection.start < group.streamEnd - record.start).map((group) => ({ ...group, offset: group.start - record.start })) };
-    const plans = selectPlaylistRange(parsed, selection.start, selection.end);
+    const plans = parsed.groups.flatMap((group) => selectPlaylistRange({ groups: [group] }, selection.start, selection.end).map((plan) => ({ ...plan, group })));
     if (!plans.length) throw new Error("选区中没有可用录像，请调整起止位置。");
-    const resources = new Set(plans.flatMap((plan) => plan.map ? [plan.map, ...plan.segments] : plan.segments).map(segmentKey));
-    const downloaded = /* @__PURE__ */ new Set(), outputs = [];
+    const outputs = [], downloaded = /* @__PURE__ */ new Set();
     const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
-    let bytes2 = 0, completedDuration = 0, processing = 0, progress = 0, message;
-    const reconnects = /* @__PURE__ */ new Map();
-    function report(phase = "processing") {
-      progress = phase === "complete" ? 1 : Math.max(
-        progress,
-        Math.min(0.99, 0.35 * downloaded.size / resources.size + 0.65 * processing)
-      );
+    let completedDuration = 0;
+    const resources = new Set(plans.flatMap((plan) => plan.map ? [plan.map, ...plan.segments] : plan.segments).map(segmentKey));
+    let bytes2 = 0, progress = 0, processing = 0, reconnecting = 0, attempt = 0, message;
+    function report(phase = "preparing") {
       onProgress({
         progress,
+        processing,
+        bytes: bytes2,
         downloaded: downloaded.size,
         count: resources.size,
-        bytes: bytes2,
         phase,
-        processing,
-        message,
-        reconnecting: reconnects.size,
-        attempt: Math.max(0, ...reconnects.values())
+        reconnecting,
+        attempt,
+        message
       });
     }
-    report("download");
-    for (const plan of plans) {
-      const durationWeight = plan.end - plan.start;
-      const loader = createSegmentLoader(api, plan.segments, {
-        map: plan.map,
-        signal,
-        onRead(size, segment) {
-          bytes2 += size;
-          downloaded.add(segmentKey(segment));
-          report();
-        },
-        onRetry(state, segment) {
-          if (state) reconnects.set(segmentKey(segment), state.attempt);
-          else reconnects.delete(segmentKey(segment));
-          report();
-        }
-      });
-      const input = new Input({ source: recordingSource([plan], loader.read), formats: [HLS, MP4, MPEG_TS] });
-      try {
-        const duration = await input.computeDuration();
-        loader.signal.throwIfAborted();
-        const start = Math.min(plan.start, duration), end = Math.min(plan.end, duration);
-        if (end <= start) throw new Error("选区与录像时间线不一致，请刷新后重新定位。");
-        const blob = await convertInput(input, {
-          start,
-          end,
-          precise,
-          signal: loader.signal,
-          onProcessingStart: loader.beginProcessing,
-          onProgress(value, detail) {
-            const local = typeof value === "number" ? value : value.progress;
-            const notice = typeof value === "number" ? detail : value;
-            if (notice?.message) message = notice.message;
-            processing = Math.max(processing, (completedDuration + durationWeight * local) / totalDuration);
+    report();
+    for (const [index, plan] of plans.entries()) {
+      let temporary, input, destination, saved = false;
+      const entries = /* @__PURE__ */ new Map(), cache = /* @__PURE__ */ new Map();
+      const { group } = plan, weight = plan.end - plan.start;
+      async function read(segment) {
+        const key = segmentKey(segment);
+        if (cache.has(key)) return cache.get(key);
+        resources.add(key);
+        const response = await requestWithRetry(api, segment.url, { type: "arraybuffer", range: segment.range, signal }, {
+          onRetry(state) {
+            reconnecting = state ? 1 : 0;
+            attempt = state?.attempt ?? 0;
             report();
           }
         });
-        loader.signal.throwIfAborted();
-        outputs.push({ blob, start: plan.offset + start, end: plan.offset + end });
-        completedDuration += durationWeight;
-        processing = completedDuration / totalDuration;
+        signal?.throwIfAborted();
+        const data = new Uint8Array(response.data);
+        bytes2 += data.byteLength;
+        downloaded.add(key);
         report();
+        cache.set(key, data);
+        for (const old of cache.keys()) {
+          if (cache.size <= 3) break;
+          if (old !== (group.map && segmentKey(group.map))) cache.delete(old);
+        }
+        return data;
+      }
+      try {
+        temporary = await createTemporary({ signal });
+        signal?.throwIfAborted();
+        message = "正在整理录像并写入临时文件";
+        const expanded = await extendPlan(group, plan, read, signal);
+        for (const segment of expanded.segments) resources.add(segmentKey(segment));
+        const savingApi = { async request(url2, options) {
+          const key = segmentKey({ url: url2, range: options.range });
+          let data = cache.get(key);
+          if (data) {
+            cache.delete(key);
+            return { data };
+          }
+          const response = await api.request(url2, options);
+          bytes2 += response.data.byteLength;
+          downloaded.add(key);
+          return response;
+        } };
+        await saveRecording(savingApi, [expanded], temporary.handle, {
+          signal,
+          concurrency: 2,
+          onSegment(entry) {
+            entries.set(segmentKey(entry.segment), entry);
+          },
+          onProgress(state) {
+            reconnecting = state.reconnecting;
+            attempt = state.attempt;
+            processing = Math.max(processing, (completedDuration + weight * 0.65 * state.progress) / totalDuration);
+            progress = Math.max(progress, Math.min(0.99, processing));
+            report();
+          }
+        });
+        cache.clear();
+        signal?.throwIfAborted();
+        input = new Input({ source: new BlobSource(await temporary.handle.getFile()), formats: [MP4] });
+        const duration = await input.computeDuration();
+        const start = Math.max(0, selectionTime(plan, entries, plan.start, false));
+        const end = Math.min(duration, selectionTime(plan, entries, plan.end, true));
+        if (end <= start) throw new Error("选区内没有可导出的音视频，请调整起止位置。");
+        destination = await createFile({ start: plan.offset + plan.start, end: plan.offset + plan.end, index, count: plans.length });
+        signal?.throwIfAborted();
+        message = "正在裁剪并写入文件";
+        const result = await convertInput(input, {
+          start,
+          end,
+          precise,
+          signal,
+          fileHandle: destination.handle,
+          onProgress(value, detail) {
+            if (detail?.message) message = detail.message;
+            processing = Math.max(processing, (completedDuration + weight * (0.65 + 0.35 * value)) / totalDuration);
+            progress = Math.max(progress, Math.min(0.99, processing));
+            report("processing");
+          }
+        });
+        saved = true;
+        const output = {
+          ...result,
+          name: destination.name,
+          start: plan.offset + plan.start,
+          end: plan.offset + plan.end
+        };
+        outputs.push(output);
+        completedDuration += weight;
+        onSaved(output);
       } catch (error) {
-        if (loader.signal.aborted) throw loader.signal.reason;
-        throw error;
+        if (signal?.aborted) throw signal.reason;
+        throw mediaStorageError(error);
       } finally {
-        input.dispose();
-        await loader.close();
+        input?.dispose();
+        cache.clear();
+        try {
+          if (destination && !saved) await destination.remove();
+        } finally {
+          if (temporary) await temporary.remove();
+        }
       }
     }
-    signal?.throwIfAborted();
+    progress = processing = 1;
+    message = "已保存到所选文件夹";
     report("complete");
     return outputs;
   }
@@ -63630,7 +61707,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
 
   // src/app/application.js
   function createApp({ api, submissionRequest = api.request, get = (_, fallback) => fallback, set = () => {
-  }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null }) {
+  }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null, directoryPicker = typeof window.showDirectoryPicker === "function" ? window.showDirectoryPicker.bind(window) : null, storage = globalThis.navigator?.storage }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
     const root = host.attachShadow({ mode: "open" });
@@ -63664,7 +61741,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     const schedules = new ScheduleService(api.request);
     const libraries = createLibraryLoader({ api, schedules });
     let scheduleController = null, exportMode = "copy";
-    const urls = [];
     let shortcut = normalizeShortcut(get("shortcut", DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
     let fullStopController = null, fullFinishing = false;
     const status2 = (text, error = false) => {
@@ -63802,8 +61878,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
     }
     function clearDownloads() {
-      urls.forEach(URL.revokeObjectURL);
-      urls.length = 0;
       $("downloads").replaceChildren();
     }
     function leavePage() {
@@ -63986,27 +62060,43 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       void currentVideo();
     }
     async function download() {
+      if (controller || !ready) return;
+      const submission = isSubmission();
+      if (submission ? !saveFilePicker : !directoryPicker || !storage?.getDirectory) {
+        status2("当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。", true);
+        return;
+      }
       await job(async (signal) => {
         const selection = timeline.getSelection();
-        if (isSubmission()) player.cancel();
+        const destination = submission ? await saveFilePicker({ suggestedName: fileName(record, selection.start, selection.end), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] }) : await directoryPicker({ mode: "readwrite" });
+        signal.throwIfAborted();
+        if (submission) player.cancel();
         else player.pause();
         clearDownloads();
         status2("正在读取选中的片段…");
         const onProgress = (p) => {
-          renderExportProgress($("progress"), status2, p, isSubmission());
-          if (isSubmission() && p.estimatedBytes !== null) $("estimatedSize").textContent = `预计成品约 ${formatBytes(p.estimatedBytes)}`;
+          renderExportProgress($("progress"), status2, p, submission);
+          if (submission && p.estimatedBytes !== null) $("estimatedSize").textContent = `预计成品约 ${formatBytes(p.estimatedBytes)}`;
         };
-        const outputs = isSubmission() ? [{ blob: await exportSubmission(api.request, record, selection, { signal, precise: true, onProgress }), ...selection }] : await exportSelection(api, record, await recordingPlan.load(signal), selection, { signal, precise: exportMode === "precise", onProgress });
-        for (const [i, output] of outputs.entries()) {
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(output.blob);
-          urls.push(a.href);
-          a.download = fileName(record, output.start, output.end, outputs.length > 1 ? `_第${i + 1}段` : "");
-          a.textContent = `保存${outputs.length > 1 ? "第 " + (i + 1) + " 段" : ""} MP4 · ${formatBytes(output.blob.size)}`;
-          $("downloads").append(a);
+        const showSaved = (output) => {
+          const line = document.createElement("p");
+          line.textContent = `已保存 ${output.name} · ${formatBytes(output.bytes)}`;
+          $("downloads").append(line);
+        };
+        if (submission) {
+          const output = await exportSubmission(api.request, record, selection, { signal, precise: true, onProgress, fileHandle: destination });
+          showSaved({ ...output, name: destination.name });
+        } else {
+          await exportSelection(api, record, await recordingPlan.load(signal), selection, {
+            signal,
+            precise: exportMode === "precise",
+            onProgress,
+            createTemporary: (options) => createTemporaryMedia({ ...options, storage }),
+            createFile: ({ start, end, index, count }) => createClipFile(destination, fileName(record, start, end, count > 1 ? `_第${index + 1}段` : "")),
+            onSaved: showSaved
+          });
         }
-        if (outputs.length === 1) $("downloads").firstElementChild.click();
-        status2(outputs.length === 1 ? "MP4 已生成，可点击下方链接再次保存。" : `选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
+        status2("导出完成，MP4 已保存到所选位置。");
       }, "export");
     }
     async function downloadFull() {
@@ -64396,6 +62486,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
       // Native Window methods need the page window, not the userscript sandbox receiver.
       saveFilePicker: typeof unsafeWindow.showSaveFilePicker === "function" ? unsafeWindow.showSaveFilePicker.bind(unsafeWindow) : null,
+      directoryPicker: typeof unsafeWindow.showDirectoryPicker === "function" ? unsafeWindow.showDirectoryPicker.bind(unsafeWindow) : null,
+      storage: unsafeWindow.navigator?.storage,
       get: (key, fallback) => GM_getValue(`biliClip.${key}`, fallback),
       set: (key, value) => GM_setValue(`biliClip.${key}`, value)
     });

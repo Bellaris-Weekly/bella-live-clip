@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { memoryFile } from '../support/memory-file.mjs';
 import assert from 'node:assert/strict';
 import { InputVideoTrack, Output, VideoSample, VideoSampleSink } from 'mediabunny';
 import { readVideoEncodingSettings, encodeVideoRange } from '../../../src/media/encoding.js';
@@ -213,8 +214,10 @@ for(const firstTimestamp of [.1,1.7])test(`精确导出遇到首帧前空区间�
   }})();
  });
  try{
-  const blob=await trimPrecise(input,{start:0,end:firstTimestamp+.35,onProgress:(progress,detail)=>events.push({progress,...detail})});
-  assert.ok(blob.size>0);assert.equal(events.at(-1).strategy,'full');
+  const fileHandle=firstTimestamp===1.7?memoryFile():undefined;
+  const result=await trimPrecise(input,{fileHandle,start:0,end:firstTimestamp+.35,onProgress:(progress,detail)=>events.push({progress,...detail})});
+  assert.ok((fileHandle?result.bytes:result.size)>0);assert.equal(events.at(-1).strategy,'full');
+  if(fileHandle){assert.equal(fileHandle.stats.opened,2);assert.equal(fileHandle.stats.aborted,1);assert.equal(fileHandle.stats.closed,1);}
   assert.ok(events.some(e=>e.message?.includes('整段编码')));
   assert.deepEqual(ranges,[[0,firstTimestamp],[0,firstTimestamp+.35]],'空边界之后从完整选区重新解码');
   assert.equal(native.frames.length,4);assert.equal(native.frames[0].timestamp,Math.trunc(firstTimestamp*1e6));

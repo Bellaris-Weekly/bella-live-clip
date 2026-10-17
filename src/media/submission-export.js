@@ -1,7 +1,8 @@
+import { mediaStorageError } from './temporary-media.js';
 import { openSubmissionMedia } from './remote-mp4.js';
 import { trimCopyTracks, trimPreciseTracks } from './smart-trim.js';
 
-export async function exportSubmission(request, submission, selection, { signal, precise = false, onProgress = () => {} } = {}) {
+export async function exportSubmission(request, submission, selection, { signal, precise = false, onProgress = () => {}, fileHandle } = {}) {
   signal?.throwIfAborted();
   const { start, end } = selection;
   if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > submission.duration + .001) {
@@ -28,15 +29,15 @@ export async function exportSubmission(request, submission, selection, { signal,
     report();
     const tracks = await media.getTracks();
     const trim = precise ? trimPreciseTracks : trimCopyTracks;
-    const blob = await trim(tracks, { start, end, signal,
+    const result = await trim(tracks, { start, end, signal, fileHandle,
       onProcessingStart() { phase = 'processing'; report(); },
       onProgress(value, detail) { progress = Math.max(progress, Math.min(.99, value)); message = detail?.message ?? message; report(); },
     });
     signal?.throwIfAborted();
     progress = 1; phase = 'complete'; report();
-    return blob;
+    return result;
   } catch (error) {
     if (signal?.aborted) throw signal.reason;
-    throw error;
+    throw mediaStorageError(error);
   } finally { media.dispose(); }
 }

@@ -22,6 +22,8 @@ import {createPlayer} from '../media/preview-player.js';
 import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
 import {exportSelection} from '../media/export.js';
+import {createClipFile} from '../media/file-output.js';
+import {createTemporaryMedia} from '../media/temporary-media.js';
 import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from '../media/recording.js';
 import {renderExportProgress} from '../ui/export-progress.js';
 import {fileName} from '../media/file-name.js';
@@ -29,7 +31,7 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null}){
+export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,directoryPicker=typeof window.showDirectoryPicker==='function'?window.showDirectoryPicker.bind(window):null,storage=globalThis.navigator?.storage}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');
  const readPageUrl=typeof pageUrl==='function'?pageUrl:()=>pageUrl;
@@ -47,7 +49,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
  let page='library',record=null,initialized=false,controller=null,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,recordingController=null,recordingPlan=null,estimateState='loading',clipSelection=null;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules});let scheduleController=null,exportMode='copy';
- const urls=[];let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
+ let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
  let fullStopController=null,fullFinishing=false;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
  function updateFeedback(){$('feedback').hidden=!controller&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
@@ -92,7 +94,7 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
  async function job(action,kind='load'){if(controller)return;const own=new AbortController();controller=own;jobKind=kind;controls();try{await action(own.signal);}catch(e){own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
- function clearDownloads(){urls.forEach(URL.revokeObjectURL);urls.length=0;$('downloads').replaceChildren();}
+ function clearDownloads(){$('downloads').replaceChildren();}
  function leavePage(){
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
   recordingController?.abort();recordingController=null;recordingPlan=null;
@@ -163,11 +165,33 @@ export function createApp({api,submissionRequest=api.request,get=(_,fallback)=>f
   if(controller){if(jobKind==='load'){pendingRoute=true;controller.abort();}return;}
   void currentVideo();
  }
- async function download(){await job(async signal=>{const selection=timeline.getSelection();if(isSubmission())player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');const onProgress=p=>{renderExportProgress($('progress'),status,p,isSubmission());if(isSubmission()&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
-  const outputs=isSubmission()?[{blob:await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress}),...selection}]:await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress});
-  for(const [i,output]of outputs.entries()){const a=document.createElement('a');a.href=URL.createObjectURL(output.blob);urls.push(a.href);a.download=fileName(record,output.start,output.end,outputs.length>1?`_第${i+1}段`:'');a.textContent=`保存${outputs.length>1?'第 '+(i+1)+' 段':''} MP4 · ${formatBytes(output.blob.size)}`;$('downloads').append(a);}
-  if(outputs.length===1)$('downloads').firstElementChild.click();status(outputs.length===1?'MP4 已生成，可点击下方链接再次保存。':`选区跨越录像中断，已生成 ${outputs.length} 个文件，请分别保存。`);
- },'export');}
+ async function download(){
+  if(controller||!ready)return;
+  const submission=isSubmission();
+  if(submission?!saveFilePicker:!directoryPicker||!storage?.getDirectory){status('当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。',true);return;}
+  await job(async signal=>{
+   const selection=timeline.getSelection();
+   // Pick the destination before the first network await, while click activation
+   // is still live. A directory also covers an unknown number of discontinuities.
+   const destination=submission
+    ?await saveFilePicker({suggestedName:fileName(record,selection.start,selection.end),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]})
+    :await directoryPicker({mode:'readwrite'});
+   signal.throwIfAborted();if(submission)player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');
+   const onProgress=p=>{renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
+   const showSaved=output=>{const line=document.createElement('p');line.textContent=`已保存 ${output.name} · ${formatBytes(output.bytes)}`;$('downloads').append(line);};
+   if(submission){
+    const output=await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress,fileHandle:destination});
+    showSaved({...output,name:destination.name});
+   }else{
+    await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress,
+     createTemporary:options=>createTemporaryMedia({...options,storage}),
+     createFile:({start,end,index,count})=>createClipFile(destination,fileName(record,start,end,count>1?`_第${index+1}段`:'')),
+     onSaved:showSaved,
+    });
+   }
+   status('导出完成，MP4 已保存到所选位置。');
+  },'export');
+ }
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
   if(controller||!ready)return;

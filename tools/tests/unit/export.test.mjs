@@ -4,7 +4,8 @@ import {
   Output, BufferTarget, Mp4OutputFormat, MpegTsOutputFormat, EncodedVideoPacketSource,
   EncodedAudioPacketSource, EncodedPacket, EncodedPacketSink, Input, BlobSource, MP4,
 } from 'mediabunny';
-import { exportSelection, convertInput } from '../../../src/media/export.js';
+import { convertInput } from '../../../src/media/export.js';
+import { exportSelection } from '../support/clip-export.mjs';
 import { createSegmentLoader } from '../../../src/media/segment-loader.js';
 import {saveRecording} from '../../../src/media/recording.js';
 import {avccUnits} from '../../../src/media/avc-packets.js';
@@ -21,6 +22,7 @@ const videoFrame = new Uint8Array(Buffer.from(frame, 'base64'));
 // One stereo AAC-LC silent packet generated with FFmpeg; no downloaded media.
 const audioConfig = { codec: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2, description: new Uint8Array([0x11, 0x90]) };
 const audioFrame = new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]);
+
 
 async function fixture(offset = 0, kind = 'plain') {
   const output = new Output({ format: kind === 'ts' ? new MpegTsOutputFormat() : new Mp4OutputFormat({ fastStart: 'fragmented' }), target: new BufferTarget() });
@@ -67,9 +69,9 @@ async function sampleApi(kind, absolute = false) {
     async request(url, { signal }) {
       starts.push(url); active++; peak = Math.max(peak, active);
       try {
-        signal.throwIfAborted();
+        signal?.throwIfAborted();
         await this.beforeRead?.(url, signal);
-        signal.throwIfAborted();
+        signal?.throwIfAborted();
         const data = files.get(url);
         finishes.push(url);
         return { data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) };
@@ -182,7 +184,7 @@ for (const reason of ['abort', 'network', 'processing']) {
           signal.addEventListener('abort', () => { pendingAborted = true; reject(signal.reason); }, { once: true });
         });
       }
-      if (reason === 'network' && url === 'part5') { await began.promise; throw failure; }
+      if (reason === 'network' && url === 'part2') { await began.promise; throw failure; }
     };
     const events = [];
     await assert.rejects(exportSelection(api, { start: 90 }, api.groups, { start: 10, end: 22 }, {
@@ -231,7 +233,7 @@ test('尾部清单时长高估时按真实数据夹紧，进度跨多个输出�
   const second = { ...api.groups[0], start: 115, streamEnd: 127 };
   const events = [];
   const outputs = await exportSelection(api, { start: 90 }, [first, second], { start: 10, end: 37 }, { onProgress: event => events.push(event) });
-  assert.deepEqual(outputs.map(output => [output.start, output.end]), [[10, 22], [25, 37]]);
+    assert.deepEqual(outputs.map(output => [output.start, output.end]), [[10, 22.8], [25, 37]]);
   assert.ok(events.every((event, index) => !index || event.progress >= events[index - 1].progress));
   assert.equal(events.filter(event => event.progress === 1).length, 1);
   assert.equal(events.at(-1).downloaded, 6, '跨输出复用的资源只累计一次完成数');
@@ -288,4 +290,111 @@ test('AAC 容器误标依赖包时仍保留全部声音，不把音频首包当�
       assert.equal(p.type,'key');assert.deepEqual(p.data,audioFrame);assert.ok(Math.abs(p.timestamp-count*1024/48000)<.00001);count++;
     }assert.equal(count,93);assert.ok(await output.getPrimaryVideoTrack());
   }finally{output.dispose();}
+});
+
+for (const [kind, absolute] of [['plain', true], ['plain', false], ['map', true], ['ts', true]]) {
+  for (const duration of [1.8, 1.95]) test(`选区统一真实时间线：${kind} ${absolute ? '连续' : '重置'}时间戳，清单 ${duration} 秒`, async () => {
+    const api = await sampleApi(kind, absolute);
+    api.segments.forEach(segment => segment.duration = duration);
+    api.groups[0].streamEnd = 100 + duration * 6;
+    const outputs = await exportSelection(api, { start: 100 }, api.groups, { start: 0, end: duration * 6 });
+    const media = await inspect(outputs[0].blob);
+    assert.deepEqual(media.counts, { video: 360, audio: 558 });
+    assert.ok(Math.abs(media.duration - 12) < .05, '累计清单误差不能改写实际媒体时长');
+    const input = new Input({ source: new BlobSource(outputs[0].blob), formats: [MP4] });
+    try {
+      for await (const packet of new EncodedPacketSink(await input.getPrimaryAudioTrack()).packets()) assert.deepEqual(packet.data, audioFrame);
+      for await (const packet of new EncodedPacketSink(await input.getPrimaryVideoTrack()).packets()) {
+        const pictures = data => avccUnits(data, 4).filter(unit => (unit[0] & 31) >= 1 && (unit[0] & 31) <= 5);
+        assert.deepEqual(pictures(packet.data), pictures(videoFrame));
+      }
+    } finally { input.dispose(); }
+  });
+}
+
+for (const duration of [1.8, 2.2]) test(`后续选区按所在分片映射实际起止，清单 ${duration} 秒`, async () => {
+  const api = await sampleApi('plain', true);
+  api.segments.forEach(segment => segment.duration = duration);
+  api.groups[0].streamEnd = 100 + duration * 6;
+  // Inside segments 2 and 4: real media positions 4.2 and 8.2 regardless
+  // of the declared playlist durations. Prefix files need not be downloaded.
+  const outputs = await exportSelection(api, { start: 100 }, api.groups, { start: 2 * duration + .2, end: 4 * duration + .2 });
+  const media = await inspect(outputs[0].blob);
+  assert.equal(media.counts.video, 120); assert.ok(Math.abs(media.duration - 4) < .05);
+  assert.ok(!api.starts.includes('part0')); assert.ok(!api.starts.includes('part1'));
+});
+
+for (const failure of ['temporary-quota', 'destination-write', 'destination-close', 'cancel']) test(`选区 ${failure} 会清理临时文件和未完成的成品`, async () => {
+  const { exportSelection: saveSelection } = await import('../../../src/media/export.js');
+  const { memoryFile } = await import('../support/memory-file.mjs');
+  const api = await sampleApi('plain', true), controller = new AbortController();
+  const error = failure === 'temporary-quota' ? new DOMException('quota', 'QuotaExceededError') : new Error(failure);
+  const temporary = memoryFile(), target = memoryFile(); let tempRemoved = 0, destRemoved = 0, saved = 0;
+  if (failure === 'temporary-quota') temporary.createWritable = async () => { throw error; };
+  const createWritable = target.createWritable;
+  target.createWritable = async () => {
+    const writer = await createWritable();
+    if (failure === 'destination-write') writer.write = async () => { throw error; };
+    if (failure === 'destination-close') writer.close = async () => { throw error; };
+    return writer;
+  };
+  await assert.rejects(saveSelection(api, { start: 100 }, api.groups, { start: 0, end: 12 }, {
+    signal: controller.signal,
+    createTemporary: async () => ({ handle: temporary, async remove() { tempRemoved++; } }),
+    createFile: async () => ({ handle: target, name: 'target.mp4', async remove() { destRemoved++; } }),
+    onSaved() { saved++; },
+    onProgress(event) { if (failure === 'cancel' && event.phase === 'processing') controller.abort(error); },
+  }), thrown => failure === 'temporary-quota' ? /存储空间不足/.test(thrown.message) && thrown.cause === error : thrown === error);
+  assert.equal(tempRemoved, 1); assert.equal(saved, 0); assert.equal(target.stats.closed, 0);
+  assert.equal(destRemoved, failure === 'temporary-quota' ? 0 : 1);
+  if (failure !== 'temporary-quota') assert.equal(target.stats.aborted, 1);
+});
+
+test('跨断流后段失败时，已成功保存的前段仍保留并已通知界面', async () => {
+  const { exportSelection: saveSelection } = await import('../../../src/media/export.js');
+  const { memoryFile } = await import('../support/memory-file.mjs');
+  const api = await sampleApi('plain', true), group = api.groups[0];
+  const files = [], removed = [], saved = []; let cleanups = 0;
+  const error = new Error('second file denied');
+  await assert.rejects(saveSelection(api, { start: 100 }, [group, { ...group, start: 115, streamEnd: 127 }], { start: 0, end: 27 }, {
+    createTemporary: async () => ({ handle: memoryFile(), async remove() { cleanups++; } }),
+    createFile: async ({ index }) => {
+      if (index) throw error;
+      const handle = memoryFile(); files.push(handle);
+      return { handle, name: 'first.mp4', async remove() { removed.push(index); } };
+    },
+    onSaved(output) { saved.push(output); },
+  }), value => value === error);
+  assert.equal(cleanups, 2); assert.equal(saved.length, 1); assert.ok(saved[0].bytes > 0);
+  assert.equal(files[0].stats.closed, 1); assert.deepEqual(removed, []);
+});
+
+for (const start of [.27, .67]) test(`跨多个文件的 B 帧 GOP 向前后寻找真实关键帧：${start}`, async () => {
+  const { config: bConfig, packets: bPackets } = await import('../support/b-frames.mjs');
+  const decoderConfig = { ...bConfig, description: new Uint8Array(Buffer.from(bConfig.description, 'base64')) };
+  const files = new Map(), segments = [], reads = [];
+  for (let gop = 0; gop < 4; gop++) for (let part = 0; part < 3; part++) {
+    const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new BufferTarget() });
+    const video = new EncodedVideoPacketSource('avc'); output.addVideoTrack(video); await output.start();
+    for (const [i, p] of bPackets.slice(part * 4, (part + 1) * 4).entries()) {
+      // The container lies about its first packet; byte-level verification must
+      // reject this false key and look across multiple preceding files.
+      await video.add(new EncodedPacket(new Uint8Array(Buffer.from(p.data, 'base64')), i === 0 ? 'key' : p.type,
+        p.timestamp + gop * .4, p.duration), { decoderConfig });
+    }
+    video.close(); await output.finalize(); const url = `part${gop * 3 + part}`;
+    files.set(url, output.target.buffer); segments.push({ url, duration: .4 / 3 });
+  }
+  const api = { async request(url) { reads.push(url); return { data: files.get(url) }; } };
+  const outputs = await exportSelection(api, { start: 0 }, [{ start: 0, streamEnd: 1.6, segments }], { start, end: start + .2 });
+  const initial = Math.floor(start / .4) * 3;
+  assert.ok(reads.includes(`part${initial}`), 'must search more than one preceding segment');
+  assert.ok(reads.includes(`part${initial + 6}`), 'must read through the next independent GOP');
+  const input = new Input({ source: new BlobSource(outputs[0].blob), formats: [MP4] });
+  try {
+    const packets = []; for await (const p of new EncodedPacketSink(await input.getPrimaryVideoTrack()).packets()) packets.push(p);
+    assert.equal(packets[0].type, 'key');
+    assert.ok(packets.some((p, i) => i && p.timestamp < packets[i - 1].timestamp), 'B-frame decode order must remain');
+    for (const packet of packets) assert.ok(bPackets.some(p => Buffer.from(p.data, 'base64').equals(Buffer.from(packet.data))), 'video bytes must remain original');
+  } finally { input.dispose(); }
 });
