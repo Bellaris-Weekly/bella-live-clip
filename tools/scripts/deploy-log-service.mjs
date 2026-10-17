@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { build } from 'esbuild';
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const required = ['cloudflare.account_id', 'cloudflare.api_token', 'worker.name', 'worker.domain', 'database.name', 'database.id', 'database.binding'];
+const required = ['cloudflare.account_id', 'cloudflare.api_token', 'worker.name', 'database.name', 'database.id', 'database.binding'];
 const valueAt = (object, key) => key.split('.').reduce((value, part) => value?.[part], object);
 
 export function parseConfig(raw) {
@@ -24,10 +24,6 @@ export function parseConfig(raw) {
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(config.worker.name)) throw new Error('worker.name 格式错误。');
   if (!/^[\w-]{1,64}$/.test(config.database.name)) throw new Error('database.name 格式错误。');
   if (config.database.binding !== 'LOGS_DB') throw new Error('database.binding 必须为 LOGS_DB。');
-  const hostname = config.worker.domain;
-  if (hostname.length > 253 || !hostname.includes('.') || !hostname.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) || hostname.endsWith('.workers.dev')) {
-    throw new Error('worker.domain 必须为自定义域名，不含协议、端口或路径。');
-  }
   return config;
 }
 
@@ -73,31 +69,6 @@ export async function preflight(config, fetchImpl = fetch) {
   if (database?.uuid !== config.database.id || database?.name !== config.database.name) {
     throw new Error('D1 名称或 ID 不匹配；不会迁移或部署。');
   }
-  const domains = await get(`/workers/domains?hostname=${encodeURIComponent(config.worker.domain)}`, '自定义域名');
-  if (!Array.isArray(domains) || !domains.some((domain) => domain.hostname === config.worker.domain && domain.service === config.worker.name && domain.enabled === true && (!domain.environment || domain.environment === 'production'))) {
-    throw new Error('自定义域名未启用或未关联到指定 Worker；请在 Cloudflare 面板完成绑定。');
-  }
-}
-
-export async function smokeTest(config, fetchImpl = fetch) {
-  const id = randomUUID();
-  const request = async (url, init, label) => {
-    let response;
-    try { response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(30_000) }); }
-    catch { throw new Error(`${label}请求失败；代码可能已部署，请检查工作流后重试。`); }
-    if (!response.ok) throw new Error(`${label}失败（HTTP ${response.status}）。`);
-    try { return await response.json(); } catch { throw new Error(`${label}响应无效。`); }
-  };
-  const inserted = await request(`https://${config.worker.domain}/v1/logs`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, source: 'log-service-smoke', event: 'deployment_check', level: 'info', version: '1', message: 'Synthetic deployment verification', context: { synthetic: true } }),
-  }, '日志写入验证');
-  if (inserted.ok !== true || inserted.duplicate !== false) throw new Error('日志写入验证返回异常。');
-  const queried = await request(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.account_id}/d1/database/${config.database.id}/query`, {
-    method: 'POST', headers: { Authorization: `Bearer ${config.cloudflare.api_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sql: 'SELECT id FROM logs WHERE source = ? AND id = ?', params: ['log-service-smoke', id] }),
-  }, '数据库回读验证');
-  if (queried.success !== true || queried.result?.[0]?.success !== true || queried.result[0].results?.[0]?.id !== id) throw new Error('数据库未确认收到本次验证日志。');
 }
 
 export async function runWrangler(args, options) {
@@ -112,7 +83,7 @@ export async function runWrangler(args, options) {
   }
 }
 
-export async function deployLogService({ env = process.env, fetchImpl = fetch, run = runWrangler, log = console.log, mask = (value) => console.log(`::add-mask::${value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`), tempRoot = path.join(root, '.local/log-service-deploy') } = {}) {
+export async function deployLogService({ env = process.env, fetchImpl = fetch, run = runWrangler, buildImpl = build, log = console.log, mask = (value) => console.log(`::add-mask::${value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`), tempRoot = path.join(root, '.local/log-service-deploy') } = {}) {
   const raw = env.LOG_SERVICE_CONFIG;
   if (!raw?.trim()) {
     if (env.GITHUB_EVENT_NAME === 'push') {
@@ -129,17 +100,25 @@ export async function deployLogService({ env = process.env, fetchImpl = fetch, r
     const config = parseConfig(raw);
     if (env.GITHUB_ACTIONS === 'true' && env.GITHUB_REF !== 'refs/heads/main') throw new Error('日志服务仅允许 main 分支部署。');
     await preflight(config, fetchImpl);
-    safeLog('现有 Worker、D1 和自定义域名预检通过。');
+    safeLog('现有 Worker 和 D1 预检通过。');
+    const bundle = await buildImpl({
+      entryPoints: [path.join(root, 'src/server/logs-worker.js')],
+      bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022', logLevel: 'silent',
+    });
+    const form = new FormData();
+    form.set('metadata', new Blob([JSON.stringify({
+      main_module: 'worker.js', compatibility_date: '2026-10-17',
+      bindings: [{ type: 'd1', name: config.database.binding, database_id: config.database.id }],
+      keep_bindings: ['plain_text', 'json', 'secret_text'],
+    })], { type: 'application/json' }));
+    form.set('worker.js', new Blob([bundle.outputFiles[0].contents], { type: 'application/javascript+module' }), 'worker.js');
     await mkdir(tempRoot, { recursive: true });
     directory = await mkdtemp(path.join(tempRoot, 'update-'));
-    const local = JSON.parse(await readFile(path.join(root, 'server/logs/wrangler.json'), 'utf8'));
-    const { $schema, ...base } = local;
     const generated = {
-      ...base, name: config.worker.name,
-      main: path.join(root, 'src/server/logs-worker.js'),
+      name: config.worker.name,
+      send_metrics: false,
       d1_databases: [{ binding: config.database.binding, database_name: config.database.name, database_id: config.database.id, migrations_dir: path.join(root, 'server/logs/migrations') }],
     };
-    // route/routes deliberately absent: custom domains remain dashboard-managed.
     const configPath = path.join(directory, 'wrangler.json');
     await writeFile(configPath, JSON.stringify(generated, null, 2), { mode: 0o600 });
     const { LOG_SERVICE_CONFIG, ...childEnv } = env;
@@ -149,9 +128,18 @@ export async function deployLogService({ env = process.env, fetchImpl = fetch, r
       WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG_SANITIZE: 'true', WRANGLER_LOG_PATH: path.join(directory, 'wrangler.log'), CI: 'true',
     });
     safeLog(await run(['d1', 'migrations', 'apply', 'LOGS_DB', '--remote', '--config', configPath], { env: childEnv }));
-    safeLog(await run(['deploy', '--config', configPath], { env: childEnv }));
-    await smokeTest(config, fetchImpl);
-    safeLog('数据库迁移、Worker 更新和线上写入回读验证成功。');
+    let uploaded;
+    try {
+      uploaded = await fetchImpl(`https://api.cloudflare.com/client/v4/accounts/${config.cloudflare.account_id}/workers/scripts/${encodeURIComponent(config.worker.name)}`, {
+        method: 'PUT', headers: { Authorization: `Bearer ${config.cloudflare.api_token}` },
+        body: form, signal: AbortSignal.timeout(60_000),
+      });
+    } catch { throw new Error('Worker 上传请求失败；请重试并确认部署状态。'); }
+    if (!uploaded.ok) throw new Error(`Worker 上传失败（HTTP ${uploaded.status}）。`);
+    let result;
+    try { result = await uploaded.json(); } catch { throw new Error('Worker 上传响应不是 JSON。'); }
+    if (result.success !== true) throw new Error('Worker 上传未成功；请检查 Token 权限和 Worker 配置。');
+    safeLog('数据库迁移和 Worker 更新成功。');
     return { skipped: false };
   } catch (error) {
     throw new Error(redact(error.message, secrets));
@@ -165,7 +153,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
   };
   deployLogService().then(async ({ skipped }) => {
-    await summary(skipped ? '日志服务部署已跳过：尚未设置 LOG_SERVICE_CONFIG。' : '日志服务更新成功，线上写入和数据库回读验证通过。');
+    await summary(skipped ? '日志服务部署已跳过：尚未设置 LOG_SERVICE_CONFIG。' : '数据库迁移和 Worker 更新成功；本次未验证公开接口。');
   }).catch(async (error) => {
     console.error(error.message);
     process.exitCode = 1;

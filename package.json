@@ -1,6 +1,6 @@
 {
   "name": "bella-live-clip",
-  "version": "2.11.9",
+  "version": "2.11.10",
   "private": true,
   "type": "module",
   "description": "Bilibili submission, live and replay clip downloader userscript",
@@ -11,8 +11,7 @@
     "check": "node --check bella-live-clip.user.js",
     "verify": "npm run build && npm run check && npm run check:version && npm test",
     "check:version": "node tools/scripts/check-version.mjs",
-    "logs:deploy": "node tools/scripts/deploy-log-service.mjs",
-    "logs:check": "wrangler deploy --dry-run --config server/logs/wrangler.json --outdir .local/log-service-build"
+    "logs:deploy": "node tools/scripts/deploy-log-service.mjs"
   },
   "dependencies": {
     "hls.js": "1.6.16",
