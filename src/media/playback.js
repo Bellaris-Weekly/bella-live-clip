@@ -1,4 +1,7 @@
 // Playback stays inside the selection; scrubbing preserves playback intent.
+// Seeks can land slightly short of a cut point (stream ends are clamped), so
+// positions within EDGE of a cut count as being on it.
+const EDGE=.05;
 export function createPlayback(video, onError, {getRange,position,seek}) {
  let scrubbing=false,resume=false,timer;
  const clearTimer=()=>{clearTimeout(timer);timer=undefined;};
@@ -7,10 +10,11 @@ export function createPlayback(video, onError, {getRange,position,seek}) {
  function constrain(restart=false){
   const range=getRange();if(!range)return true;
   const time=position();
-  if(time>=range.end&&!restart){
+  const atEnd=time>=range.end-EDGE;
+  if(atEnd&&!restart){
    clearTimer();video.pause();if(time!==range.end)seek(range.end);return false;
   }
-  if(time<range.start||time>=range.end)seek(range.start);
+  if(time<range.start-EDGE||atEnd)seek(range.start);
   return true;
  }
  const play=(restart=false)=>{if(constrain(restart))void playVideo();};
@@ -18,7 +22,7 @@ export function createPlayback(video, onError, {getRange,position,seek}) {
   clearTimer();
   if(scrubbing||video.paused||video.seeking||video.readyState<2)return;
   const range=getRange();if(!range)return;
-  if(position()<range.start){play();return;}
+  if(position()<range.start-EDGE){play();return;}
   if(!constrain())return;
   // timeupdate is sparse; schedule the stop against the remaining playback time.
   if(video.playbackRate>0)timer=setTimeout(check,(range.end-position())/video.playbackRate*1000);

@@ -68,7 +68,7 @@ test('播放位置与左右边界拖动均恢复原来的播放状态，覆盖�
    const event={button:0,clientX:50,pointerId:1,target,preventDefault(){}};
    elements.track.handlers.pointerdown(event);
    assert.equal(video.paused,true);assert.equal(video.playCount,0);
-   elements.track.handlers.pointermove({...event,clientX:60});
+   elements.track.handlers.pointermove({...event,buttons:1,clientX:60});
    elements.track.handlers[ending](event);
    assert.equal(video.paused,paused,`${handle}/${ending}`);
    assert.equal(video.playCount,paused?0:1);
@@ -187,4 +187,18 @@ test('播放中拖动到终点或缩短选区立即停止，暂停预览不被�
  f.playback.toggle();f.video.dispatchEvent(new Event('waiting'));assert.equal(f.timers.size,0);
  f.video.dispatchEvent(new Event('playing'));assert.equal(f.timers.size,1);
  f.playback.cancel();
+});
+
+test('进度与切点重合或因分段末尾夹取差一点时，播放从选区开头开始且不会反复定位',async()=>{
+ const range={start:10,end:60};
+ for(const [label,time,expected] of [['正好在结尾',60,10],['差 1 毫秒到结尾',59.999,10],['正好在开头',10,null],['差 1 毫秒到开头',9.999,null]]){
+  const video=makeVideo(true);video.currentTime=time;const seeks=[];
+  const playback=createPlayback(video,()=>assert.fail('播放错误'),{getRange:()=>range,position:()=>video.currentTime,seek:t=>{seeks.push(t);video.currentTime=t;}});
+  playback.toggle();
+  for(const event of ['playing','timeupdate','seeked'])video.dispatchEvent(new Event(event));
+  await Promise.resolve();
+  assert.equal(video.paused,false,label);
+  assert.deepEqual(seeks,expected===null?[]:[expected],label);
+  playback.cancel();
+ }
 });

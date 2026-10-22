@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.11
+// @version      2.11.12
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.11\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.12\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -345,7 +345,7 @@
   }
 
   // src/ui/template.html
-  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<button id="currentVideo" class="text-button" hidden>剪辑当前视频</button>\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><canvas id="pageMirror" hidden tabindex="0" role="button" aria-label="B 站同步画面，点击播放或暂停"></canvas><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><button id="playSelection" class="text-button" hidden>播放选段</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label id="wholeRecordingLabel" class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2 id="offlineTitle">暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
+  var template_default = '<button id="launcher" aria-label="贝报切片助手">✂<span>片段</span></button>\n<section id="panel" hidden aria-label="贝报切片助手">\n<header id="header"><h1>贝报切片助手<a id="version" tabindex="0" target="_blank" rel="noopener noreferrer"></a></h1><div class="header-tools"><input id="shortcut" readonly aria-label="启动快捷键" title="点击修改快捷键"/><button id="close" class="icon" aria-label="收起面板" title="收起面板">×</button></div></header>\n<div id="body">\n<button id="currentVideo" class="text-button" hidden>剪辑当前视频</button>\n<section id="library">\n<div id="libraryToolbar" class="library-toolbar"><div id="members" class="members"></div><button id="refreshLibrary" class="text-button refresh-button" aria-label="刷新场次" title="刷新场次">↻</button></div>\n<div class="library-content"><p id="scheduleNote" class="schedule-note" role="status" hidden></p><div id="cards" class="cards"></div><p id="libraryEmpty" class="empty" hidden></p></div>\n</section>\n<section id="editPage" tabindex="-1" hidden>\n<section class="record-section" aria-label="场次信息"><div id="editorToolbar" class="editor-heading"><button id="back" class="text-button">← 选择直播</button><button id="refreshEditor" class="text-button">刷新录像</button></div>\n<h2 id="recordTitle"></h2><p id="recordMeta"></p></section>\n<section class="preview-section" aria-label="视频预览"><div id="playerWrap"><video id="fullVideo" tabindex="0" playsinline preload="metadata"></video><canvas id="pageMirror" hidden tabindex="0" role="button" aria-label="B 站同步画面，点击播放或暂停"></canvas><div id="videoLoading">正在加载画面…</div></div>\n<div class="preview-toolbar"><div class="mark-buttons"><button id="markStart" class="text-button">设为开始</button><button id="markEnd" class="text-button">设为结束</button></div><div class="playback-center"><button id="togglePlayback" class="text-button" aria-label="播放" title="播放">▶</button><button id="playSelection" class="text-button" hidden>播放选段</button></div><span id="clock" aria-label="当前播放时间与总时长">00:00 / 00:00</span></div></section>\n<div id="segments" class="segments" role="group" aria-label="录像分段" hidden></div>\n<section class="timeline-section" aria-label="剪辑时间轴"><span id="selectionDuration" aria-label="片段时长"></span><div id="timeline" tabindex="0" aria-label="剪辑时间轴"><div id="thumbnails" aria-hidden="true"></div><div id="ticks"></div><div id="selection"></div><div id="playhead"></div><button id="startHandle" data-handle="start" role="slider" aria-label="选区起点"></button><button id="endHandle" data-handle="end" role="slider" aria-label="选区终点"></button></div>\n<div class="timeline-footer"><label id="wholeRecordingLabel" class="whole-recording"><input id="wholeRecording" type="checkbox" role="switch"/>整场</label><div id="timelineLabels"></div><span id="timelineZoom" aria-label="时间轴倍率"></span></div></section>\n<section class="export-section" aria-label="导出操作"><div class="export-toolbar"><div id="exportMode" class="export-mode" role="group" aria-label="导出方式"><button type="button" data-mode="copy" aria-pressed="true" title="原画快速，不重新编码">原画</button><button type="button" data-mode="precise" aria-pressed="false" title="精确裁剪，重新编码">精确</button></div><div class="export-summary"><span id="estimatedSize">大小计算中…</span></div></div><button id="download" class="button export-button" hidden>导出 ↓</button></section>\n</section>\n<section id="offline" class="empty" hidden><h2 id="offlineTitle">暂时无法打开本场直播</h2><p id="offlineReason"></p><button id="browseHistory" class="button">浏览历史场次</button><button id="retryCurrent" class="text-button">重新检查</button></section>\n<section id="feedback" class="feedback" hidden><div id="status" role="status" aria-live="polite"></div><progress id="progress" max="100" value="0" hidden></progress><button id="cancel" class="text-button" hidden>停止</button><div id="downloads"></div></section>\n</div>\n<span class="resize" data-edge="n"></span><span class="resize" data-edge="s"></span><span class="resize" data-edge="e"></span><span class="resize" data-edge="w"></span><span class="resize" data-edge="nw"></span><span class="resize" data-edge="ne"></span><span class="resize" data-edge="sw"></span><span class="resize" data-edge="se"></span>\n</section>\n';
 
   // src/ui/styles.css
   var styles_default = `:host{all:initial;color-scheme:light;font:13px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;color:var(--text);--gutter:18px;--text:#20332f;--accent:#147d70;--accent-hover:#10675c;--muted:#72817c;--line:#e1e9e5;--paper:#ffffff;--surface:#f5f8f6;--hover:#eaf1ed;--border-strong:#bbcec5;--ease:cubic-bezier(.2,.7,.2,1)}
@@ -492,6 +492,12 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 .library-content{padding:var(--gutter)}
 .record-section{padding:12px var(--gutter) 16px;border-bottom:1px solid var(--line)}
 .preview-section{padding:18px var(--gutter) 0}
+.segments{display:flex;flex-wrap:wrap;gap:6px;margin:12px var(--gutter) 0}
+.segments button{display:flex;align-items:baseline;gap:6px;background:#fff;border:1px solid var(--line);height:32px;padding:6px 10px;border-radius:8px;font-size:12px;line-height:18px;font-weight:500;white-space:nowrap}
+.segments button span{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.segments button:hover:not(:disabled){background:var(--surface)}
+.segments button[aria-pressed=true]{background:#e5f3ec;border-color:#9fc9b6;color:var(--accent)}
+.segments button:disabled{opacity:.5;cursor:default}
 .timeline-section{position:relative;margin:12px var(--gutter) 18px;padding:46px 14px 12px;background:linear-gradient(160deg,#f1f7f3,#f8faf9);border:1px solid var(--line);border-radius:14px}
 .timeline-section::after{content:"";position:absolute;top:33px;left:14px;right:14px;height:3px;border-radius:3px;background:#dce7e0;pointer-events:none}
 .export-section{padding:var(--gutter);background:var(--surface);border-top:1px solid var(--line)}
@@ -560,7 +566,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     const editor = [$("togglePlayback"), $("playSelection"), $("wholeRecording"), $("download")];
     const managed = /* @__PURE__ */ new Set([...marks, ...editor, $("cancel"), $("startHandle"), $("endHandle")]);
     const navigation = [...root.querySelectorAll("#body button,#body input")].filter((el) => !managed.has(el));
-    const cards = $("cards"), download = $("download"), label = download.querySelector("span");
+    const cards = $("cards"), segments = $("segments"), download = $("download"), label = download.querySelector("span");
     const exportMode = $("exportMode"), cancel = $("cancel"), progress = $("progress"), launcher = $("launcher");
     let locked;
     const assign = (element, key, value) => {
@@ -569,7 +575,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     return ({ busy, ready, page, whole, submission = false, stopping = false }) => {
       for (const element of [...navigation, ...cards.children]) assign(element, "disabled", busy);
       for (const element of editor) assign(element, "disabled", busy || !ready);
-      for (const element of marks) assign(element, "disabled", busy || !ready || whole);
+      for (const element of [...marks, ...segments.children]) assign(element, "disabled", busy || !ready || whole);
       const nextLocked = busy || !ready || whole;
       if (locked !== nextLocked) {
         locked = nextLocked;
@@ -773,21 +779,22 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   var clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   // src/ui/timeline-model.js
-  function validateRange(start, end, duration) {
+  function validateRange(start, end, duration, min = 0) {
     if (![start, end, duration].every(Number.isFinite) || start < 0 || end <= start) {
       throw new Error("结束时间必须晚于开始时间。");
     }
+    if (start < min - 1e-3) throw new Error(`开始时间超出范围，最早为 ${formatTime(min, true)}。`);
     if (end > duration + 1e-3) throw new Error(`结束时间超出范围，最晚为 ${formatTime(duration, true)}。`);
     return { start, end };
   }
-  function zoomWindow(view3, total, factor, anchor = 0.5) {
-    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total), total);
+  function zoomWindow(view3, total, factor, anchor = 0.5, min = 0) {
+    const span = view3.end - view3.start, width = clamp(span * factor, Math.min(0.25, total - min), total - min);
     const pivot = view3.start + span * clamp(anchor, 0, 1);
-    const start = clamp(pivot - width * anchor, 0, total - width);
+    const start = clamp(pivot - width * anchor, min, total - width);
     return { start, end: start + width };
   }
-  function panWindow(view3, total, delta) {
-    const width = view3.end - view3.start, start = clamp(view3.start + delta, 0, total - width);
+  function panWindow(view3, total, delta, min = 0) {
+    const width = view3.end - view3.start, start = clamp(view3.start + delta, min, total - width);
     return { start, end: start + width };
   }
 
@@ -822,18 +829,18 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 
   // src/ui/timeline.js
   var KEYBOARD_STEP = 5;
-  function fitSelection(start, end, total) {
-    const width = Math.min(total, (end - start) * 1.12);
-    const left = clamp(start - (width - (end - start)) / 2, 0, total - width);
+  function fitSelection(start, end, total, min = 0) {
+    const width = Math.min(total - min, (end - start) * 1.12);
+    const left = clamp(start - (width - (end - start)) / 2, min, total - width);
     return { start: left, end: left + width };
   }
-  function dragSelection(session, x, width, selection, total) {
+  function dragSelection(session, x, width, selection, total, min = 0) {
     const delta = (x - session.x) / width * (session.view.end - session.view.start);
-    return moveBoundary(selection, session.type, session.anchor + delta, total);
+    return moveBoundary(selection, session.type, session.anchor + delta, total, min);
   }
-  function moveBoundary(selection, type, time, total) {
-    const gap = Math.min(1e-3, total / 2);
-    const target = clamp(time, 0, total);
+  function moveBoundary(selection, type, time, total, min = 0) {
+    const gap = Math.min(1e-3, (total - min) / 2);
+    const target = clamp(time, min, total);
     const next = { ...selection };
     if (type === "start") next.start = Math.min(target, selection.end - gap);
     else next.end = Math.max(target, selection.start + gap);
@@ -842,7 +849,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
   function createTimeline({ track, startHandle, endHandle, selectionElement, playhead, ticks, labels, onPreview, onScrubStart, onScrubEnd, onSelection = () => {
   }, onView = () => {
   } }) {
-    let total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending, zoomFrame = 0, zooming = false, zoomTarget = null, tickTimes = [];
+    let min = 0, total = 0, selection = { start: 0, end: 1 }, view3 = { start: 0, end: 1 }, drag = null, current = 0, locked = false, frame = 0, pending, zoomFrame = 0, zooming = false, zoomTarget = null, tickTimes = [];
     const pct = (t) => clamp((t - view3.start) / (view3.end - view3.start) * 100, 0, 100);
     const timeLabel = (t) => {
       const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = Math.floor(t) % 60;
@@ -854,8 +861,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       playhead.style.left = `${pct(current)}%`;
       playhead.hidden = current < view3.start || current > view3.end;
     }
+    const loaded = () => total > min;
     function renderLock() {
-      for (const el of [startHandle, endHandle]) el.disabled = locked || !total;
+      for (const el of [startHandle, endHandle]) el.disabled = locked || !loaded();
     }
     function render() {
       startHandle.style.left = `${pct(selection.start)}%`;
@@ -864,7 +872,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       selectionElement.style.right = `${100 - pct(selection.end)}%`;
       for (const [el, value] of [[startHandle, selection.start], [endHandle, selection.end]]) {
         el.setAttribute("aria-valuenow", value.toFixed(3));
-        el.setAttribute("aria-valuemin", 0);
+        el.setAttribute("aria-valuemin", min);
         el.setAttribute("aria-valuemax", total);
       }
       if (!zooming) tickTimes = tickElements.map((_, i) => view3.start + (view3.end - view3.start) * i / 4);
@@ -874,9 +882,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         span.style.left = `${position}%`;
         span.style.transform = `translateX(-${clamp(position, 0, 100)}%)`;
       });
-      track.dataset.zoom = `${(total / (view3.end - view3.start)).toFixed(1)}×`;
-      track.style.setProperty("--view-start", `${view3.start / total * 100}%`);
-      track.style.setProperty("--view-width", `${(view3.end - view3.start) / total * 100}%`);
+      track.dataset.zoom = `${((total - min) / (view3.end - view3.start)).toFixed(1)}×`;
+      track.style.setProperty("--view-start", `${(view3.start - min) / (total - min) * 100}%`);
+      track.style.setProperty("--view-width", `${(view3.end - view3.start) / (total - min) * 100}%`);
       labels.textContent = formatTimeRange(selection.start, selection.end);
       renderPlayhead();
       renderLock();
@@ -891,7 +899,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       track.classList.remove("refitting");
     }
     function setSelection(next, refit = false) {
-      validateRange(next.start, next.end, total);
+      validateRange(next.start, next.end, total, min);
       stopZoom();
       selection = next;
       render();
@@ -900,7 +908,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     function fitView() {
       stopZoom();
-      const target = fitSelection(selection.start, selection.end, total);
+      const target = fitSelection(selection.start, selection.end, total, min);
       if (target.start === view3.start && target.end === view3.end) return;
       if (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
         view3 = target;
@@ -920,7 +928,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
         const width = span * Math.exp(Math.log(targetSpan / span) * ease);
         const travel = span === targetSpan ? ease : (span - width) / (span - targetSpan);
         const middle = center2 + (targetCenter - center2) * travel;
-        const left = clamp(middle - width / 2, 0, total - width);
+        const left = clamp(middle - width / 2, min, total - width);
         view3 = { start: left, end: left + width };
         if (progress === 1) {
           stopZoom();
@@ -935,9 +943,9 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       if (!drag) return;
       const rect = track.getBoundingClientRect();
       let target;
-      if (drag.type === "playhead") target = clamp(drag.view.start + (x - rect.left) / rect.width * (drag.view.end - drag.view.start), 0, total);
+      if (drag.type === "playhead") target = clamp(drag.view.start + (x - rect.left) / rect.width * (drag.view.end - drag.view.start), min, total);
       else {
-        selection = dragSelection(drag, x, rect.width, selection, total);
+        selection = dragSelection(drag, x, rect.width, selection, total, min);
         target = selection[drag.type];
         view3 = { start: Math.min(view3.start, selection.start), end: Math.max(view3.end, selection.end) };
       }
@@ -958,7 +966,7 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
       }
     }
     track.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || locked || !total) return;
+      if (e.button !== 0 || locked || !loaded()) return;
       e.preventDefault();
       if (zooming) {
         stopZoom();
@@ -973,6 +981,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     });
     track.addEventListener("pointermove", (e) => {
       if (!drag) return;
+      if (!(e.buttons & 1)) {
+        finish(e);
+        return;
+      }
       pending = e.clientX;
       if (!frame) frame = requestAnimationFrame(flush);
     });
@@ -987,41 +999,44 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     track.addEventListener("pointerup", finish);
     track.addEventListener("pointercancel", finish);
+    track.addEventListener("lostpointercapture", finish);
     track.addEventListener("wheel", (e) => {
-      if (locked || !total || drag) return;
+      if (locked || !loaded() || drag) return;
       e.preventDefault();
       stopZoom();
       const r = track.getBoundingClientRect();
-      view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start)) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width);
+      view3 = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) ? panWindow(view3, total, (e.deltaX || e.deltaY) / r.width * (view3.end - view3.start), min) : zoomWindow(view3, total, Math.exp(e.deltaY * 5e-3), (e.clientX - r.left) / r.width, min);
       render();
     }, { passive: false });
     function handleKeyDown(e) {
-      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || isEditing(e) || !["ArrowLeft", "ArrowRight"].includes(e.key) || locked || !total || drag) return;
+      if (e.defaultPrevented || e.isComposing || e.altKey || e.ctrlKey || e.metaKey || isEditing(e) || !["ArrowLeft", "ArrowRight"].includes(e.key) || locked || !loaded() || drag) return;
       e.preventDefault();
       e.stopPropagation();
       const type = e.target.closest("[data-handle]")?.dataset.handle || "playhead";
       const delta = e.key === "ArrowRight" ? KEYBOARD_STEP : -KEYBOARD_STEP;
       onScrubStart?.();
       if (type === "playhead") {
-        current = clamp(current + delta, 0, total);
+        current = clamp(current + delta, min, total);
         if (zooming) {
           stopZoom();
           render();
         } else renderPlayhead();
       } else {
-        const next = moveBoundary(selection, type, selection[type] + delta, total);
+        const next = moveBoundary(selection, type, selection[type] + delta, total, min);
         current = next[type];
         setSelection(next, true);
       }
       onPreview(current);
       onScrubEnd?.(current);
     }
-    return { handleKeyDown, reset(duration, next = { start: 0, end: duration }) {
+    return { handleKeyDown, reset(bounds, next) {
+      const range = typeof bounds === "number" ? { start: 0, end: bounds } : bounds;
       stopZoom();
-      total = duration;
-      current = 0;
-      view3 = { start: 0, end: total };
-      setSelection(next);
+      min = range.start;
+      total = range.end;
+      current = min;
+      view3 = { ...range };
+      setSelection(next ?? { ...range });
     }, setSelection, getSelection: () => ({ ...selection }), getView: () => ({ ...view3 }), setCurrent(t) {
       if (!drag) {
         current = t;
@@ -1649,6 +1664,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     }
     function move(event) {
       if (!drag || event.pointerId !== drag.id || !isActive()) return;
+      if (!(event.buttons & 1)) {
+        finish(event);
+        return;
+      }
       const rect = drag.track.getBoundingClientRect();
       drag.time = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * drag.duration;
       if (frame === null) frame = requestAnimationFrame(paint);
@@ -27934,11 +27953,11 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
     }
     async read() {
       const groups = [];
-      for (const stream of this.streams) {
+      for (const [index, stream] of this.streams.entries()) {
         const response = await this.api.request(stream.stream, { signal: this.signal });
         this.signal?.throwIfAborted();
         const parsed = parsePlaylist(response.data, response.url);
-        for (const group of parsed.groups) groups.push({ ...group, start: stream.start_time + group.offset, streamEnd: stream.end_time });
+        for (const group of parsed.groups) groups.push({ ...group, start: stream.start_time + group.offset, streamEnd: stream.end_time, streamIndex: index });
       }
       return groups;
     }
@@ -61044,7 +61063,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     function seek(time) {
       video.pause();
-      const found = streams.findIndex((p) => time >= p.start_time - record.start && time <= p.end_time - record.start);
+      const contains = (p) => time >= p.start_time - record.start && time <= p.end_time - record.start;
+      const found = streams[index] && contains(streams[index]) ? index : streams.findIndex(contains);
       if (found < 0) {
         target = NaN;
         loading.hidden = false;
@@ -61107,6 +61127,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
   }
 
   // src/media/playback.js
+  var EDGE = 0.05;
   function createPlayback(video, onError, { getRange, position, seek }) {
     let scrubbing = false, resume = false, timer;
     const clearTimer = () => {
@@ -61120,13 +61141,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const range = getRange();
       if (!range) return true;
       const time = position();
-      if (time >= range.end && !restart) {
+      const atEnd = time >= range.end - EDGE;
+      if (atEnd && !restart) {
         clearTimer();
         video.pause();
         if (time !== range.end) seek(range.end);
         return false;
       }
-      if (time < range.start || time >= range.end) seek(range.start);
+      if (time < range.start - EDGE || atEnd) seek(range.start);
       return true;
     }
     const play = (restart = false) => {
@@ -61137,7 +61159,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       if (scrubbing || video.paused || video.seeking || video.readyState < 2) return;
       const range = getRange();
       if (!range) return;
-      if (position() < range.start) {
+      if (position() < range.start - EDGE) {
         play();
         return;
       }
@@ -61949,6 +61971,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     let member = MEMBERS.find((m) => m.room === room) || MEMBERS.find((m) => m.id === get("member", "bella")) || MEMBERS[0];
     let page = "library", record = null, initialized = false, controller = null, ready = false, libraryScroll = 0, playbackTotal = 0, estimate = null, recordingController = null, recordingPlan = null, estimateState = "loading", clipSelection = null, previewDiagnostic = null;
+    let recordStreams = [], segments = [], segmentIndex = 0;
     function setTitle(element, text2) {
       element.textContent = text2;
       element.classList.toggle("hanging-title", /^[\p{Ps}\p{Pi}]/u.test(text2));
@@ -61971,11 +61994,12 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     let rect = constrainRect(get("windowV2", defaults2()), viewport());
     const applyRect = () => Object.assign($("panel").style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
     applyRect();
-    const playback = createPlayback(video, status2, { getRange: () => ready ? timeline.getSelection() : null, position: () => player?.position() ?? 0, seek: (t) => {
+    const seekTo = (t) => {
       player?.seek(t);
       timeline.setCurrent(t);
       updateClock(t);
-    } });
+    };
+    const playback = createPlayback(video, status2, { getRange: () => ready ? timeline.getSelection() : null, position: () => player?.position() ?? 0, seek: seekTo });
     const activePlayback = () => playerKind === "submission" ? player : playback;
     bindVideoControls(video, playback, status2);
     const thumbnails = createThumbnails({ container: $("thumbnails"), request: api.request });
@@ -62029,13 +62053,15 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     };
     for (const event of ["play", "pause", "ended", "emptied"]) video.addEventListener(event, syncPlayback);
     function updateExportSummary(selection = timeline.getSelection()) {
-      $("selectionDuration").textContent = formatDuration(selection.end - selection.start);
+      const whole = $("wholeRecording").checked && !isSubmission() && segments.length > 1;
+      const range = whole ? { start: 0, end: playbackTotal } : selection;
+      $("selectionDuration").textContent = formatDuration(whole ? segments.reduce((sum, s) => sum + s.end - s.start, 0) : selection.end - selection.start);
       if (isSubmission()) {
         const rate = record.media.video.bandwidth + (record.media.audio?.bandwidth || 0);
         $("estimatedSize").textContent = rate ? `预计成品约 ${formatBytes(rate * (selection.end - selection.start) / 8)}` : "大小暂不可用";
         return;
       }
-      $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, selection))}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
+      $("estimatedSize").textContent = estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, range))}` : estimateState === "error" ? "大小暂不可用" : "大小计算中…";
     }
     function startEstimate(plan, signal) {
       void (async () => {
@@ -62113,6 +62139,10 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       ready = false;
       playbackTotal = 0;
       clipSelection = null;
+      recordStreams = [];
+      segments = [];
+      segmentIndex = 0;
+      renderSegments();
       $("wholeRecording").checked = false;
       timeline.stop();
       player?.clear();
@@ -62188,13 +62218,42 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       updateClock(0);
       recordingController = new AbortController();
       recordingPlan = new RecordingPlan(api, streams, recordingController.signal);
+      recordStreams = streams;
+      segments = segmentBounds(record, streams, total);
       thumbnails.load(record, streams);
-      timeline.reset(total);
       ready = true;
+      selectSegment(record.live ? segments.length - 1 : 0);
       startEstimate(recordingPlan, recordingController.signal);
       $("editPage").focus({ preventScroll: true });
-      if (record.live) player.seek(Math.max(streams[0].start_time - record.start, streams.at(-1).end_time - record.start - 15));
       status2("按住时间轴预览；松开选区边界后自动适配视野。");
+    }
+    function segmentBounds(owner, streams, total) {
+      return streams.map((stream, i) => ({ start: clamp(stream.start_time - owner.start, 0, total), end: owner.live && i === streams.length - 1 ? total : clamp(stream.end_time - owner.start, 0, total) }));
+    }
+    function renderSegments() {
+      const container = $("segments");
+      container.hidden = segments.length < 2;
+      container.replaceChildren(...segments.length < 2 ? [] : segments.map((bounds, i) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("aria-pressed", i === segmentIndex);
+        const range = document.createElement("span");
+        range.textContent = formatTimeRange(bounds.start, bounds.end, "–");
+        button.append(`第 ${i + 1} 段`, range);
+        button.onclick = () => {
+          if (i !== segmentIndex) selectSegment(i);
+        };
+        return button;
+      }));
+      controls();
+    }
+    function selectSegment(index) {
+      const bounds = segments[index], stream = recordStreams[index];
+      segmentIndex = index;
+      player.pause();
+      timeline.reset(bounds);
+      seekTo(record.live && index === segments.length - 1 ? Math.max(bounds.start, stream.end_time - record.start - 15) : bounds.start);
+      renderSegments();
     }
     async function enterRecord(next) {
       await job((signal) => {
@@ -62327,10 +62386,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     async function downloadFull() {
       if (controller || !ready) return;
+      const split = segments.length > 1;
       await job(async (signal, diagnostic) => {
         diagnostic.stage("select_destination");
-        if (!saveFilePicker) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。");
-        const handle = await saveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
+        if (split ? !directoryPicker : !saveFilePicker) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。");
+        const destination = split ? await directoryPicker({ mode: "readwrite" }) : await saveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
         signal.throwIfAborted();
         player.pause();
         clearDownloads();
@@ -62340,23 +62400,50 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         signal.throwIfAborted();
         fullStopController = new AbortController();
         controls();
-        const result = await saveRecording(api, groups, handle, { signal, stopSignal: fullStopController.signal, onProgress: (p) => {
-          diagnostic.progress(p);
-          if (p.progress !== void 0) $("progress").value = p.progress * 100;
-          if (p.phase === "stopping" || p.phase === "finalizing") {
-            fullFinishing = true;
-            controls();
-            status2("正在保存…");
-          } else if (p.phase !== "saved") status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
-        } });
-        if (!result.saved) {
-          status2("已停止。");
-          return;
+        const stopSignal = fullStopController.signal;
+        const parts = split ? segments.map((bounds, index) => ({ bounds, index, groups: groups.filter((group) => group.streamIndex === index) })).filter((part) => part.groups.length) : [{ groups }];
+        let saved = 0, stopped = false;
+        for (const [i, part] of parts.entries()) {
+          if (stopSignal.aborted) {
+            stopped = true;
+            break;
+          }
+          const label = split ? `第 ${part.index + 1} 段` : "整场";
+          const file = split ? await createClipFile(destination, fileName(record, part.bounds.start, part.bounds.end, `_整场_第${part.index + 1}段`)) : null;
+          let result;
+          try {
+            result = await saveRecording(api, part.groups, file?.handle ?? destination, { signal, stopSignal, onProgress: (p) => {
+              diagnostic.progress(p);
+              if (p.progress !== void 0) $("progress").value = (i + p.progress) / parts.length * 100;
+              if (p.phase === "stopping" || p.phase === "finalizing") {
+                fullFinishing = true;
+                controls();
+                status2("正在保存…");
+              } else if (p.phase !== "saved") status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : split ? `整场下载 · 第 ${i + 1}/${parts.length} 段` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+            } });
+          } catch (error) {
+            await file?.remove().catch(() => {
+            });
+            throw error;
+          }
+          if (!result.saved) {
+            await file?.remove().catch(() => {
+            });
+            stopped = true;
+            break;
+          }
+          saved++;
+          const message = document.createElement("p");
+          message.textContent = `${split ? `${label}${result.stopped ? "（部分）" : ""}` : result.stopped ? "已完成部分" : "整场"}已保存到所选位置${file ? ` · ${file.name}` : ""} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
+          $("downloads").append(message);
+          if (result.stopped) {
+            stopped = true;
+            break;
+          }
+          fullFinishing = false;
+          controls();
         }
-        status2(result.stopped ? "已停止。" : "整场下载完成。");
-        const message = document.createElement("p");
-        message.textContent = `${result.stopped ? "已完成部分" : "整场"}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
-        $("downloads").append(message);
+        status2(stopped || !saved ? "已停止。" : "整场下载完成。");
       }, "export", { action: "recording_download", selection: { start: 0, end: playbackTotal }, mode: "whole" });
     }
     async function open() {
@@ -62422,7 +62509,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     $("wholeRecording").onchange = () => {
       if ($("wholeRecording").checked) {
         clipSelection = timeline.getSelection();
-        timeline.setSelection({ start: 0, end: playbackTotal }, true);
+        timeline.setSelection({ ...segments[segmentIndex] }, true);
+        if (segments.length > 1) status2(`整场共 ${segments.length} 段，将分别保存为 ${segments.length} 个文件。`);
       } else {
         timeline.setSelection(clipSelection, true);
         clipSelection = null;
@@ -62492,13 +62580,11 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
         const move = (ev) => onMove(ev.clientX - x, ev.clientY - y, initial);
         const finish = () => {
           element.removeEventListener("pointermove", move);
-          element.removeEventListener("pointerup", finish);
-          element.removeEventListener("pointercancel", finish);
+          for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) element.removeEventListener(name, finish);
           onEnd?.();
         };
         element.addEventListener("pointermove", move);
-        element.addEventListener("pointerup", finish);
-        element.addEventListener("pointercancel", finish);
+        for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) element.addEventListener(name, finish);
       });
     }
     drag($("header"), (dx, dy, r) => {

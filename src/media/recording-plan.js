@@ -6,11 +6,11 @@ export class RecordingPlan {
 
   async read(){
     const groups=[];
-    for(const stream of this.streams){
+    for(const [index,stream] of this.streams.entries()){
       const response=await this.api.request(stream.stream,{signal:this.signal});
       this.signal?.throwIfAborted();
       const parsed=parsePlaylist(response.data,response.url);
-      for(const group of parsed.groups)groups.push({...group,start:stream.start_time+group.offset,streamEnd:stream.end_time});
+      for(const group of parsed.groups)groups.push({...group,start:stream.start_time+group.offset,streamEnd:stream.end_time,streamIndex:index});
     }
     return groups;
   }

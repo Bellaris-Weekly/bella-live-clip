@@ -91,7 +91,7 @@ test('左右边界松手后整条视野连续放大，刻度保留时间参照�
   f.timeline.setCurrent(duration*.5);
   const event={button:0,clientX:type==='start'?20:80,pointerId:1,target:f[type+'Handle'],preventDefault(){}};
   f.track.handlers.pointerdown(event);
-  f.track.handlers.pointermove({...event,clientX:type==='start'?30:70});
+  f.track.handlers.pointermove({...event,buttons:1,clientX:type==='start'?30:70});
   f.track.handlers.pointerup(event);
   const selected=f.timeline.getSelection(),before=f.timeline.getView(),ticks=f.ticks.children.map(el=>el.textContent);
   assert.deepEqual(before,{start:0,end:duration},'松手当帧不跳到目标视野');
@@ -213,4 +213,43 @@ test('未加载、锁定、拖动、编辑输入和系统组合键不会被方�
  f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
  assert.equal(arrow(f,f.track).defaultPrevented,undefined);f.track.handlers.pointerup({pointerId:1});
  f.timeline.setCurrent(90);f.timeline.reset(100);arrow(f,f.track);assert.equal(f.previews.at(-1),5,'换场清除上一场播放位置');
+});
+
+test('页面外松开导致捕获丢失或松开事件未送达时结束拖动，回到时间轴不再跟随鼠标',t=>{
+ for(const lost of ['lostpointercapture','released-move']){
+  const f=fixture(t);const ends=[];
+  const timeline=createTimeline({...f,onPreview:value=>f.previews.push(value),onScrubEnd:(time,options)=>ends.push([time,options])});
+  timeline.reset(100);
+  f.track.handlers.pointerdown({button:0,buttons:1,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
+  if(lost==='lostpointercapture')f.track.handlers.lostpointercapture({type:'lostpointercapture',pointerId:1});
+  else f.track.handlers.pointermove({type:'pointermove',buttons:0,clientX:70,pointerId:1});
+  assert.deepEqual(ends,[[50,{canceled:false}]],lost);
+  const count=f.previews.length;
+  f.track.handlers.pointermove({type:'pointermove',buttons:0,clientX:80,pointerId:1});f.advance(0);
+  assert.equal(f.previews.length,count,`${lost}: 未按键移动不预览`);
+  f.track.handlers.pointerup({type:'pointerup',pointerId:1});assert.equal(ends.length,1,`${lost}: 不重复结束`);
+ }
+});
+
+test('分段范围限制拖动、方向键、缩放和选区，时间仍从直播开始计算',t=>{
+ const f=fixture(t);
+ f.timeline.reset({start:40,end:100});
+ assert.deepEqual(f.timeline.getSelection(),{start:40,end:100});assert.deepEqual(f.timeline.getView(),{start:40,end:100});
+ assert.equal(f.startHandle.style.left,'0%');assert.equal(f.startHandle.attributes['aria-valuemin'],40);
+ f.track.handlers.pointerdown({button:0,buttons:1,clientX:0,pointerId:1,target:f.track,preventDefault(){}});
+ f.track.handlers.pointerup({type:'pointerup',pointerId:1});
+ assert.equal(f.previews.at(-1),40,'时间轴左端对应分段开头');
+ f.track.handlers.pointerdown({button:0,buttons:1,clientX:10,pointerId:1,target:f.startHandle,preventDefault(){}});
+ f.track.handlers.pointermove({buttons:1,clientX:-50,pointerId:1});f.advance(0);
+ f.track.handlers.pointerup({type:'pointerup',pointerId:1});
+ assert.equal(f.timeline.getSelection().start,40,'起点不能拖出分段');
+ f.timeline.handleKeyDown({key:'ArrowLeft',target:f.startHandle,preventDefault(){},stopPropagation(){}});
+ assert.equal(f.timeline.getSelection().start,40);
+ f.timeline.stop();
+ f.track.handlers.wheel({deltaY:-200,deltaX:0,clientX:0,shiftKey:false,preventDefault(){}});
+ f.track.handlers.wheel({deltaY:-30,deltaX:0,clientX:0,shiftKey:true,preventDefault(){}});
+ assert.ok(f.timeline.getView().start>=40,'平移不越过分段开头');
+ f.track.handlers.wheel({deltaY:2000,deltaX:0,clientX:0,shiftKey:false,preventDefault(){}});
+ assert.deepEqual(f.timeline.getView(),{start:40,end:100},'缩小最多显示整段');
+ assert.throws(()=>f.timeline.setSelection({start:30,end:60}),/最早为 00:00:40/);
 });

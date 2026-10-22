@@ -13,6 +13,8 @@ export function bindPageProgress({document,getPlayer,isActive}) {
  }
  function move(event){
   if(!drag||event.pointerId!==drag.id||!isActive())return;
+  // The release can happen outside the page and never reach the document.
+  if(!(event.buttons&1)){finish(event);return;}
   const rect=drag.track.getBoundingClientRect();
   drag.time=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*drag.duration;
   if(frame===null)frame=requestAnimationFrame(paint);

@@ -48,6 +48,8 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  for(const m of MEMBERS){const button=document.createElement('button');button.dataset.member=m.id;const dot=document.createElement('i');dot.style.backgroundColor=m.color;button.append(dot,document.createTextNode(m.name));$('members').append(button);}
  let member=MEMBERS.find(m=>m.room===room)||MEMBERS.find(m=>m.id===get('member','bella'))||MEMBERS[0];
  let page='library',record=null,initialized=false,controller=null,ready=false,libraryScroll=0,playbackTotal=0,estimate=null,recordingController=null,recordingPlan=null,estimateState='loading',clipSelection=null,previewDiagnostic=null;
+ // Each stream is one recorded segment (a new one starts after a disconnect); the editor works on one at a time.
+ let recordStreams=[],segments=[],segmentIndex=0;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
  const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules});let scheduleController=null,exportMode='copy';
  let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
@@ -58,7 +60,8 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
  let rect=constrainRect(get('windowV2',defaults()),viewport());
  const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
- const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player?.position()??0,seek:t=>{player?.seek(t);timeline.setCurrent(t);updateClock(t);}});
+ const seekTo=t=>{player?.seek(t);timeline.setCurrent(t);updateClock(t);};
+ const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player?.position()??0,seek:seekTo});
  const activePlayback=()=>playerKind==='submission'?player:playback;
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request});
@@ -78,9 +81,12 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const syncPlayback=()=>{const paused=playerKind==='submission'?player.isPaused():video.paused||video.ended;if(paused===lastPlaybackPaused)return;lastPlaybackPaused=paused;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
-  $('selectionDuration').textContent=formatDuration(selection.end-selection.start);
+  // A whole download covers every segment, not just the one on the timeline.
+  const whole=$('wholeRecording').checked&&!isSubmission()&&segments.length>1;
+  const range=whole?{start:0,end:playbackTotal}:selection;
+  $('selectionDuration').textContent=formatDuration(whole?segments.reduce((sum,s)=>sum+s.end-s.start,0):selection.end-selection.start);
   if(isSubmission()){const rate=record.media.video.bandwidth+(record.media.audio?.bandwidth||0);$('estimatedSize').textContent=rate?`预计成品约 ${formatBytes(rate*(selection.end-selection.start)/8)}`:'大小暂不可用';return;}
-  $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,selection))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
+  $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,range))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
  function startEstimate(plan,signal){
   void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
@@ -100,7 +106,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
   recordingController?.abort();recordingController=null;recordingPlan=null;previewDiagnostic=null;
   activePlayback()?.cancel();submissionThumbnails=false;
-  estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;
+  estimate=null;estimateState='loading';record=null;ready=false;playbackTotal=0;clipSelection=null;recordStreams=[];segments=[];segmentIndex=0;renderSegments();
   $('wholeRecording').checked=false;timeline.stop();player?.clear();thumbnails.clear();clearDownloads();updateClock(0);
  }
  function renderCards(){
@@ -139,9 +145,30 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
   recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
-  thumbnails.load(record,streams);timeline.reset(total);ready=true;startEstimate(recordingPlan,recordingController.signal);$('editPage').focus({preventScroll:true});
-  if(record.live)player.seek(Math.max(streams[0].start_time-record.start,streams.at(-1).end_time-record.start-15));
+  recordStreams=streams;segments=segmentBounds(record,streams,total);
+  thumbnails.load(record,streams);ready=true;selectSegment(record.live?segments.length-1:0);startEstimate(recordingPlan,recordingController.signal);$('editPage').focus({preventScroll:true});
   status('按住时间轴预览；松开选区边界后自动适配视野。');
+ }
+ function segmentBounds(owner,streams,total){
+  // A live recording keeps growing past the last reported end.
+  return streams.map((stream,i)=>({start:clamp(stream.start_time-owner.start,0,total),end:owner.live&&i===streams.length-1?total:clamp(stream.end_time-owner.start,0,total)}));
+ }
+ function renderSegments(){
+  const container=$('segments');container.hidden=segments.length<2;
+  container.replaceChildren(...(segments.length<2?[]:segments.map((bounds,i)=>{
+   const button=document.createElement('button');button.type='button';button.setAttribute('aria-pressed',i===segmentIndex);
+   const range=document.createElement('span');range.textContent=formatTimeRange(bounds.start,bounds.end,'–');
+   button.append(`第 ${i+1} 段`,range);button.onclick=()=>{if(i!==segmentIndex)selectSegment(i);};
+   return button;
+  })));
+  controls();
+ }
+ function selectSegment(index){
+  const bounds=segments[index],stream=recordStreams[index];
+  segmentIndex=index;player.pause();timeline.reset(bounds);
+  // Live recordings open near the newest picture; replays open at the segment start.
+  seekTo(record.live&&index===segments.length-1?Math.max(bounds.start,stream.end_time-record.start-15):bounds.start);
+  renderSegments();
  }
  async function enterRecord(next){await job(signal=>{leavePage();return loadRecord(next,signal);},'load',{action:'record_load',record:next});}
  async function currentRoom(){await job(async (signal,diagnostic)=>{leavePage();$('offlineTitle').textContent='暂时无法打开本场直播';showPage('offline');$('offlineReason').textContent='正在获取当前直播间…';try{const source=MEMBERS.find(m=>m.room===room)||{room,name:'当前直播间'};const next=await api.current(source,signal,{allowOffline:true});if(!next){$('offlineReason').textContent='当前没有直播。可以切换到历史回放，选择已结束的场次。';status('可重新检查直播，或浏览历史场次。');return;}await loadRecord(next,signal);}catch(e){if(e.name==='AbortError')throw e;diagnostic.fail(e,signal);showPage('offline');$('offlineReason').textContent=e.message;status('可重新检查直播，或浏览历史场次。');}},'load',{action:'room_load',record:{room}});}
@@ -198,22 +225,38 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
   if(controller||!ready)return;
+  // Segments are separate recordings: save each to its own MP4 instead of splicing them.
+  const split=segments.length>1;
   await job(async (signal,diagnostic)=>{
    diagnostic.stage('select_destination');
-   if(!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
-   const handle=await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
+   if(split?!directoryPicker:!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
+   const destination=split?await directoryPicker({mode:'readwrite'}):await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
    diagnostic.stage('preparing');const groups=await recordingPlan.load(signal);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
-   const result=await saveRecording(api,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
-    diagnostic.progress(p);
-    if(p.progress!==undefined)$('progress').value=p.progress*100;
-    if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
-    else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
-   }});
-   if(!result.saved){status('已停止。');return;}
-   status(result.stopped?'已停止。':'整场下载完成。');
-   const message=document.createElement('p');message.textContent=`${result.stopped?'已完成部分':'整场'}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
+   const stopSignal=fullStopController.signal;
+   const parts=split?segments.map((bounds,index)=>({bounds,index,groups:groups.filter(group=>group.streamIndex===index)})).filter(part=>part.groups.length):[{groups}];
+   let saved=0,stopped=false;
+   for(const [i,part]of parts.entries()){
+    if(stopSignal.aborted){stopped=true;break;}
+    const label=split?`第 ${part.index+1} 段`:'整场';
+    const file=split?await createClipFile(destination,fileName(record,part.bounds.start,part.bounds.end,`_整场_第${part.index+1}段`)):null;
+    let result;
+    try{
+     result=await saveRecording(api,part.groups,file?.handle??destination,{signal,stopSignal,onProgress:p=>{
+      diagnostic.progress(p);
+      if(p.progress!==undefined)$('progress').value=(i+p.progress)/parts.length*100;
+      if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
+      else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:split?`整场下载 · 第 ${i+1}/${parts.length} 段`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+     }});
+    }catch(error){await file?.remove().catch(()=>{});throw error;}
+    if(!result.saved){await file?.remove().catch(()=>{});stopped=true;break;}
+    saved++;
+    const message=document.createElement('p');message.textContent=`${split?`${label}${result.stopped?'（部分）':''}`:result.stopped?'已完成部分':'整场'}已保存到所选位置${file?` · ${file.name}`:''} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
+    if(result.stopped){stopped=true;break;}
+    fullFinishing=false;controls();
+   }
+   status(stopped||!saved?'已停止。':'整场下载完成。');
   },'export',{action:'recording_download',selection:{start:0,end:playbackTotal},mode:'whole'});
  }
  async function open(){$('panel').hidden=false;if(playerKind==='submission')player.resume();void versionControl.refresh();const route=parseSubmissionUrl(readPageUrl());observedRoute=route?.key;if(route&&(!initialized||loadedRoute!==route.key)){initialized=true;await currentVideo();return;}if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
@@ -229,7 +272,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
  $('cancel').onclick=()=>{if(fullStopController){fullStopController.abort();controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
  $('wholeRecording').onchange=()=>{
-  if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({start:0,end:playbackTotal},true);}
+  if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({...segments[segmentIndex]},true);if(segments.length>1)status(`整场共 ${segments.length} 段，将分别保存为 ${segments.length} 个文件。`);}
   else{timeline.setSelection(clipSelection,true);clipSelection=null;}
   controls();
  };
@@ -249,8 +292,8 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
       if(e.button!==0 || e.target.closest('button,input,select,a') && element!==$('launcher')) return;
       const x=e.clientX,y=e.clientY, initial={...rect}; element.setPointerCapture(e.pointerId); e.preventDefault();
       const move=ev=>onMove(ev.clientX-x,ev.clientY-y,initial);
-      const finish=()=>{ element.removeEventListener('pointermove',move); element.removeEventListener('pointerup',finish); element.removeEventListener('pointercancel',finish); onEnd?.(); };
-      element.addEventListener('pointermove',move); element.addEventListener('pointerup',finish); element.addEventListener('pointercancel',finish);
+      const finish=()=>{ element.removeEventListener('pointermove',move); for(const name of ['pointerup','pointercancel','lostpointercapture']) element.removeEventListener(name,finish); onEnd?.(); };
+      element.addEventListener('pointermove',move); for(const name of ['pointerup','pointercancel','lostpointercapture']) element.addEventListener(name,finish);
     });
   }
   drag($('header'),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));

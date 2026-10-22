@@ -28,7 +28,10 @@ export function createPlayer({video,loading,api,status,onTime,onError=()=>{}}) {
   hls.loadSource(streams[index].stream);hls.attachMedia(video);
  }
  function seek(time){
-  video.pause();const found=streams.findIndex(p=>time>=p.start_time-record.start&&time<=p.end_time-record.start);
+  video.pause();
+  // Prefer the loaded stream so a time on a shared boundary does not reload the previous one.
+  const contains=p=>time>=p.start_time-record.start&&time<=p.end_time-record.start;
+  const found=streams[index]&&contains(streams[index])?index:streams.findIndex(contains);
   if(found<0){target=NaN;loading.hidden=false;loading.textContent='该位置没有录像';return;}
   const local=clamp(time-(streams[found].start_time-record.start),0,Math.max(0,streams[found].end_time-streams[found].start_time-.001));
   loading.textContent='正在定位画面…';loading.hidden=false;
