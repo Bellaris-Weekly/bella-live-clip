@@ -23,7 +23,6 @@ import {createPlayer} from '../media/preview-player.js';
 import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
 import {exportSelection} from '../media/export.js';
-import {createClipFile} from '../media/file-output.js';
 import {createTemporaryMedia} from '../media/temporary-media.js';
 import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from '../media/recording.js';
 import {renderExportProgress} from '../ui/export-progress.js';
@@ -32,7 +31,7 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,directoryPicker=typeof window.showDirectoryPicker==='function'?window.showDirectoryPicker.bind(window):null,storage=globalThis.navigator?.storage}){
+export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,storage=globalThis.navigator?.storage}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');
  const readPageUrl=typeof pageUrl==='function'?pageUrl:()=>pageUrl;
@@ -199,12 +198,11 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   const selection=timeline.getSelection();
   await job(async (signal,diagnostic)=>{
    diagnostic.stage('select_destination');
-   if(submission?!saveFilePicker:!directoryPicker||!storage?.getDirectory)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。');
+   if(!saveFilePicker||!submission&&!storage?.getDirectory)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。');
    // Pick the destination before the first network await, while click activation
-   // is still live. A directory also covers an unknown number of discontinuities.
-   const destination=submission
-    ?await saveFilePicker({suggestedName:fileName(record,selection.start,selection.end),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]})
-    :await directoryPicker({mode:'readwrite'});
+   // is still live. A clip stays inside one segment, so it is always one file; a
+   // file picker also works in Downloads/Desktop, which Chrome refuses as directories.
+   const destination=await saveFilePicker({suggestedName:fileName(record,selection.start,selection.end),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();if(submission)player.cancel();else player.pause();clearDownloads();status('正在读取选中的片段…');
    diagnostic.stage('preparing');
    const onProgress=p=>{diagnostic.progress(p);renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
@@ -213,9 +211,10 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
     const output=await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress,fileHandle:destination});
     showSaved({...output,name:destination.name});
    }else{
-    await exportSelection(api,record,await recordingPlan.load(signal),selection,{signal,precise:exportMode==='precise',onProgress,
+    const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===segmentIndex);
+    await exportSelection(api,record,groups,selection,{signal,precise:exportMode==='precise',onProgress,
      createTemporary:options=>createTemporaryMedia({...options,storage}),
-     createFile:({start,end,index,count})=>createClipFile(destination,fileName(record,start,end,count>1?`_第${index+1}段`:'')),
+     createFile:()=>({handle:destination,name:destination.name,remove:async()=>{}}),
      onSaved:showSaved,
     });
    }
@@ -225,39 +224,25 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  async function downloadFull(){
   // Keep the picker inside the click activation, before playlist/network work.
   if(controller||!ready)return;
-  // Segments are separate recordings: save each to its own MP4 instead of splicing them.
-  const split=segments.length>1;
+  // Segments are separate recordings: only the selected one is saved, never spliced.
+  const bounds=segments[segmentIndex]??{start:0,end:playbackTotal},index=segmentIndex;
   await job(async (signal,diagnostic)=>{
    diagnostic.stage('select_destination');
-   if(split?!directoryPicker:!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
-   const destination=split?await directoryPicker({mode:'readwrite'}):await saveFilePicker({suggestedName:fileName(record,0,playbackTotal,'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
+   if(!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
+   const handle=await saveFilePicker({suggestedName:fileName(record,bounds.start,bounds.end,segments.length>1?`_整场_第${index+1}段`:'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   diagnostic.stage('preparing');const groups=await recordingPlan.load(signal);signal.throwIfAborted();
+   diagnostic.stage('preparing');const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
-   const stopSignal=fullStopController.signal;
-   const parts=split?segments.map((bounds,index)=>({bounds,index,groups:groups.filter(group=>group.streamIndex===index)})).filter(part=>part.groups.length):[{groups}];
-   let saved=0,stopped=false;
-   for(const [i,part]of parts.entries()){
-    if(stopSignal.aborted){stopped=true;break;}
-    const label=split?`第 ${part.index+1} 段`:'整场';
-    const file=split?await createClipFile(destination,fileName(record,part.bounds.start,part.bounds.end,`_整场_第${part.index+1}段`)):null;
-    let result;
-    try{
-     result=await saveRecording(api,part.groups,file?.handle??destination,{signal,stopSignal,onProgress:p=>{
-      diagnostic.progress(p);
-      if(p.progress!==undefined)$('progress').value=(i+p.progress)/parts.length*100;
-      if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
-      else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:split?`整场下载 · 第 ${i+1}/${parts.length} 段`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
-     }});
-    }catch(error){await file?.remove().catch(()=>{});throw error;}
-    if(!result.saved){await file?.remove().catch(()=>{});stopped=true;break;}
-    saved++;
-    const message=document.createElement('p');message.textContent=`${split?`${label}${result.stopped?'（部分）':''}`:result.stopped?'已完成部分':'整场'}已保存到所选位置${file?` · ${file.name}`:''} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
-    if(result.stopped){stopped=true;break;}
-    fullFinishing=false;controls();
-   }
-   status(stopped||!saved?'已停止。':'整场下载完成。');
-  },'export',{action:'recording_download',selection:{start:0,end:playbackTotal},mode:'whole'});
+   const result=await saveRecording(api,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
+    diagnostic.progress(p);
+    if(p.progress!==undefined)$('progress').value=p.progress*100;
+    if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
+    else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，自动重连中（第 ${p.attempt} 次）`:'整场下载'} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+   }});
+   if(!result.saved){status('已停止。');return;}
+   status(result.stopped?'已停止。':'整场下载完成。');
+   const message=document.createElement('p');message.textContent=`${result.stopped?'已完成部分':'整场'}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
+  },'export',{action:'recording_download',selection:{...bounds},mode:'whole'});
  }
  async function open(){$('panel').hidden=false;if(playerKind==='submission')player.resume();void versionControl.refresh();const route=parseSubmissionUrl(readPageUrl());observedRoute=route?.key;if(route&&(!initialized||loadedRoute!==route.key)){initialized=true;await currentVideo();return;}if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
    renderCards();const selected=member;void libraries.load(selected).then(result=>{
@@ -272,7 +257,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
  $('cancel').onclick=()=>{if(fullStopController){fullStopController.abort();controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
  $('wholeRecording').onchange=()=>{
-  if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({...segments[segmentIndex]},true);if(segments.length>1)status(`整场共 ${segments.length} 段，将分别保存为 ${segments.length} 个文件。`);}
+  if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({...segments[segmentIndex]},true);}
   else{timeline.setSelection(clipSelection,true);clipSelection=null;}
   controls();
  };

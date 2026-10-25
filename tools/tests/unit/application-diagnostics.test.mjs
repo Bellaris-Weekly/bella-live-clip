@@ -20,9 +20,9 @@ const stubs = {
   'playback': 'export const createPlayback=()=>({cancel(){}});export const bindVideoControls=()=>{};',
   'thumbnails': 'export const createThumbnails=()=>({clear(){},load(){},update(){}});',
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
-  'export': 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options);',
+  'export': 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan': 'export class RecordingPlan{async load(){return scenario.groups;}}',
-  'recording': 'export const estimateRecordingRate=async()=>null;export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options);',
+  'recording': 'export const estimateRecordingRate=async()=>null;export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
   'temporary-media': 'export const createTemporaryMedia=()=>{};',
 };
 const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle:true,write:false,format:'iife',globalName:'application',
@@ -56,7 +56,7 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   const requests=[];
   const diagnostics=createDiagnosticReporter({endpoint:'https://logs.example.com/v1/logs',version:'1.2.3',online:()=>true,id:()=>crypto.randomUUID(),request:options=>{requests.push(JSON.parse(options.data));options.onload({status:201});}});
   const api={request:async()=>({data:''}),history:async()=>[],current};
-  const app=context.application.createApp({api,diagnostics,pageUrl:()=>page,saveFilePicker:picker,directoryPicker:picker,storage:{getDirectory(){}}});
+  const app=context.application.createApp({api,diagnostics,pageUrl:()=>page,saveFilePicker:picker,storage:{getDirectory(){}}});
   return {app,requests,seeks,$:id=>root.getElementById(id),navigate:value=>{page=value;}};
 }
 
@@ -110,25 +110,28 @@ test('已捕获的视频和直播加载错误仍上报，正常未开播不当�
   assert.match(offline.$('offlineReason').textContent,/当前没有直播/);
 });
 
-test('断流产生的多段录像可逐段选择，整场按段分别保存，单段时隐藏分段', async () => {
+test('断流产生的多段录像可逐段选择，整场与片段只保存当前段，单段时隐藏分段', async () => {
   const record={key:'k',uid:1,room:123,member:'成员',title:'直播',start:1000,end:1300,live:false};
   const names=[],saves=[];
-  const directory={async getFileHandle(name,{create=false}={}){if(!create)throw new DOMException('missing','NotFoundError');names.push(name);return {name};},async removeEntry(){}};
-  const fixture=start({url:'https://live.bilibili.com/123',current:async()=>record,picker:async()=>directory,
+  const fixture=start({url:'https://live.bilibili.com/123',current:async()=>record,picker:async options=>{names.push(options.suggestedName);return {name:options.suggestedName};},
     streams:[{start_time:1000,end_time:1100,stream:'a'},{start_time:1200,end_time:1300,stream:'b'}],
     groups:[{streamIndex:0,start:1000},{streamIndex:1,start:1200}],total:300,
-    exportWork:async options=>{saves.push(options);return {saved:true,stopped:false,bytes:1,duration:100};}});
+    exportWork:async (options,groups)=>{saves.push({...options,groups});return {saved:true,stopped:false,bytes:1,duration:100};}});
   await fixture.app.open();
   const segments=fixture.$('segments');
   assert.equal(segments.hidden,false);assert.equal(segments.children.length,2);
   assert.deepEqual(fixture.seeks,[0]);
   segments.children[1].onclick();assert.deepEqual(fixture.seeks,[0,200]);
-  fixture.$('wholeRecording').checked=true;fixture.$('wholeRecording').onchange();
-  assert.match(fixture.$('status').textContent,/2 段/);
   await fixture.$('download').onclick();
-  assert.equal(saves.length,2);
-  assert.equal(names.length,2);assert.match(names[0],/_00-00-00-00-01-40_整场_第1段\.mp4$/);assert.match(names[1],/_00-03-20-00-05-00_整场_第2段\.mp4$/);
-  assert.equal(fixture.$('downloads').children.length,2);assert.equal(fixture.$('status').textContent,'整场下载完成。');
+  assert.equal(saves.length,1);assert.equal(names.length,1);assert.deepEqual(saves[0].groups.map(group=>group.streamIndex),[1]);
+  const clip=await saves[0].createFile({start:202,end:208,index:0,count:1});
+  assert.equal(clip.name,names[0]);
+  fixture.$('wholeRecording').checked=true;fixture.$('wholeRecording').onchange();
+  await fixture.$('download').onclick();
+  assert.equal(saves.length,2);assert.deepEqual(saves[1].groups.map(group=>group.streamIndex),[1]);
+  assert.equal(names.length,2);assert.match(names[1],/_00-03-20-00-05-00_整场_第2段\.mp4$/);
+  assert.equal(fixture.$('downloads').children.length,1);assert.match(fixture.$('downloads').children[0].textContent,/^整场已保存/);
+  assert.equal(fixture.$('status').textContent,'整场下载完成。');
 
   const single=start({url:'https://live.bilibili.com/123',current:async()=>record,total:300,streams:[{start_time:1000,end_time:1300,stream:'a'}]});
   await single.app.open();

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.12
+// @version      2.11.13
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.12\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.13\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -27039,19 +27039,6 @@ The @mediabunny/mp3-encoder extension package provides support for encoding MP3.
         }
       }
     };
-  }
-  async function createClipFile(directory, name) {
-    const stem = name.replace(/\.mp4$/i, "");
-    for (let suffix = 0; ; suffix++) {
-      const candidate = suffix ? `${stem} (${suffix}).mp4` : name;
-      try {
-        await directory.getFileHandle(candidate);
-      } catch (error) {
-        if (error.name !== "NotFoundError") throw error;
-        const handle = await directory.getFileHandle(candidate, { create: true });
-        return { handle, name: candidate, remove: () => directory.removeEntry(candidate) };
-      }
-    }
   }
 
   // src/media/encoding.js
@@ -61911,7 +61898,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       }
     }
     progress = processing = 1;
-    message = "已保存到所选文件夹";
+    message = "已保存到所选位置";
     report("complete");
     return outputs;
   }
@@ -61944,7 +61931,7 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
 
   // src/app/application.js
   function createApp({ api, diagnostics = createDiagnosticReporter(), submissionRequest = api.request, get = (_, fallback) => fallback, set = () => {
-  }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null, directoryPicker = typeof window.showDirectoryPicker === "function" ? window.showDirectoryPicker.bind(window) : null, storage = globalThis.navigator?.storage }) {
+  }, pageUrl = () => location.href, saveFilePicker = typeof window.showSaveFilePicker === "function" ? window.showSaveFilePicker.bind(window) : null, storage = globalThis.navigator?.storage }) {
     const host = document.createElement("div");
     host.id = "bella-live-clip-host";
     const root = host.attachShadow({ mode: "open" });
@@ -62350,8 +62337,8 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       const selection = timeline.getSelection();
       await job(async (signal, diagnostic) => {
         diagnostic.stage("select_destination");
-        if (submission ? !saveFilePicker : !directoryPicker || !storage?.getDirectory) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。");
-        const destination = submission ? await saveFilePicker({ suggestedName: fileName(record, selection.start, selection.end), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] }) : await directoryPicker({ mode: "readwrite" });
+        if (!saveFilePicker || !submission && !storage?.getDirectory) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 或 Edge 的 HTTPS 页面导出。");
+        const destination = await saveFilePicker({ suggestedName: fileName(record, selection.start, selection.end), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
         signal.throwIfAborted();
         if (submission) player.cancel();
         else player.pause();
@@ -62372,12 +62359,14 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
           const output = await exportSubmission(api.request, record, selection, { signal, precise: true, onProgress, fileHandle: destination });
           showSaved({ ...output, name: destination.name });
         } else {
-          await exportSelection(api, record, await recordingPlan.load(signal), selection, {
+          const groups = (await recordingPlan.load(signal)).filter((group) => group.streamIndex === segmentIndex);
+          await exportSelection(api, record, groups, selection, {
             signal,
             precise: exportMode === "precise",
             onProgress,
             createTemporary: (options) => createTemporaryMedia({ ...options, storage }),
-            createFile: ({ start, end, index, count }) => createClipFile(destination, fileName(record, start, end, count > 1 ? `_第${index + 1}段` : "")),
+            createFile: () => ({ handle: destination, name: destination.name, remove: async () => {
+            } }),
             onSaved: showSaved
           });
         }
@@ -62386,65 +62375,38 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
     }
     async function downloadFull() {
       if (controller || !ready) return;
-      const split = segments.length > 1;
+      const bounds = segments[segmentIndex] ?? { start: 0, end: playbackTotal }, index = segmentIndex;
       await job(async (signal, diagnostic) => {
         diagnostic.stage("select_destination");
-        if (split ? !directoryPicker : !saveFilePicker) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。");
-        const destination = split ? await directoryPicker({ mode: "readwrite" }) : await saveFilePicker({ suggestedName: fileName(record, 0, playbackTotal, "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
+        if (!saveFilePicker) throw new Error("当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。");
+        const handle = await saveFilePicker({ suggestedName: fileName(record, bounds.start, bounds.end, segments.length > 1 ? `_整场_第${index + 1}段` : "_整场"), types: [{ description: "MP4 视频", accept: { "video/mp4": [".mp4"] } }] });
         signal.throwIfAborted();
         player.pause();
         clearDownloads();
         status2("正在下载整场并写入文件…");
         diagnostic.stage("preparing");
-        const groups = await recordingPlan.load(signal);
+        const groups = (await recordingPlan.load(signal)).filter((group) => group.streamIndex === index);
         signal.throwIfAborted();
         fullStopController = new AbortController();
         controls();
-        const stopSignal = fullStopController.signal;
-        const parts = split ? segments.map((bounds, index) => ({ bounds, index, groups: groups.filter((group) => group.streamIndex === index) })).filter((part) => part.groups.length) : [{ groups }];
-        let saved = 0, stopped = false;
-        for (const [i, part] of parts.entries()) {
-          if (stopSignal.aborted) {
-            stopped = true;
-            break;
-          }
-          const label = split ? `第 ${part.index + 1} 段` : "整场";
-          const file = split ? await createClipFile(destination, fileName(record, part.bounds.start, part.bounds.end, `_整场_第${part.index + 1}段`)) : null;
-          let result;
-          try {
-            result = await saveRecording(api, part.groups, file?.handle ?? destination, { signal, stopSignal, onProgress: (p) => {
-              diagnostic.progress(p);
-              if (p.progress !== void 0) $("progress").value = (i + p.progress) / parts.length * 100;
-              if (p.phase === "stopping" || p.phase === "finalizing") {
-                fullFinishing = true;
-                controls();
-                status2("正在保存…");
-              } else if (p.phase !== "saved") status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : split ? `整场下载 · 第 ${i + 1}/${parts.length} 段` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
-            } });
-          } catch (error) {
-            await file?.remove().catch(() => {
-            });
-            throw error;
-          }
-          if (!result.saved) {
-            await file?.remove().catch(() => {
-            });
-            stopped = true;
-            break;
-          }
-          saved++;
-          const message = document.createElement("p");
-          message.textContent = `${split ? `${label}${result.stopped ? "（部分）" : ""}` : result.stopped ? "已完成部分" : "整场"}已保存到所选位置${file ? ` · ${file.name}` : ""} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
-          $("downloads").append(message);
-          if (result.stopped) {
-            stopped = true;
-            break;
-          }
-          fullFinishing = false;
-          controls();
+        const result = await saveRecording(api, groups, handle, { signal, stopSignal: fullStopController.signal, onProgress: (p) => {
+          diagnostic.progress(p);
+          if (p.progress !== void 0) $("progress").value = p.progress * 100;
+          if (p.phase === "stopping" || p.phase === "finalizing") {
+            fullFinishing = true;
+            controls();
+            status2("正在保存…");
+          } else if (p.phase !== "saved") status2(`${p.reconnecting ? `网络波动，自动重连中（第 ${p.attempt} 次）` : "整场下载"} · ${formatBytes(p.speed)}/秒 · 已接收 ${formatBytes(p.bytes)} · 已写入 ${formatBytes(p.written)}`);
+        } });
+        if (!result.saved) {
+          status2("已停止。");
+          return;
         }
-        status2(stopped || !saved ? "已停止。" : "整场下载完成。");
-      }, "export", { action: "recording_download", selection: { start: 0, end: playbackTotal }, mode: "whole" });
+        status2(result.stopped ? "已停止。" : "整场下载完成。");
+        const message = document.createElement("p");
+        message.textContent = `${result.stopped ? "已完成部分" : "整场"}已保存到所选位置 · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
+        $("downloads").append(message);
+      }, "export", { action: "recording_download", selection: { ...bounds }, mode: "whole" });
     }
     async function open() {
       $("panel").hidden = false;
@@ -62510,7 +62472,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       if ($("wholeRecording").checked) {
         clipSelection = timeline.getSelection();
         timeline.setSelection({ ...segments[segmentIndex] }, true);
-        if (segments.length > 1) status2(`整场共 ${segments.length} 段，将分别保存为 ${segments.length} 个文件。`);
       } else {
         timeline.setSelection(clipSelection, true);
         clipSelection = null;
@@ -62805,7 +62766,6 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
       // Native Window methods need the page window, not the userscript sandbox receiver.
       saveFilePicker: typeof unsafeWindow.showSaveFilePicker === "function" ? unsafeWindow.showSaveFilePicker.bind(unsafeWindow) : null,
-      directoryPicker: typeof unsafeWindow.showDirectoryPicker === "function" ? unsafeWindow.showDirectoryPicker.bind(unsafeWindow) : null,
       storage: unsafeWindow.navigator?.storage,
       get: (key, fallback) => GM_getValue(`biliClip.${key}`, fallback),
       set: (key, value) => GM_setValue(`biliClip.${key}`, value)

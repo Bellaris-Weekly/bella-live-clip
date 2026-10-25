@@ -73,14 +73,8 @@ test('submission APIs use the page fetch receiver rather than the userscript san
   assert.equal((await submissionRequest('https://api.bilibili.com/x/web-interface/view')).data,'{"code":0}');
 });
 
-test('directory picker uses the page receiver during click activation; OPFS keeps its native storage receiver', async () => {
-  let active = true, picked = 0;
+test('OPFS keeps its native storage receiver and the userscript no longer asks for a directory', async () => {
   const storage = { async getDirectory() { assert.equal(this, storage); return 'opfs'; } };
-  const pageWindow = { navigator: { storage }, showDirectoryPicker(options) {
-    assert.equal(this, pageWindow); assert.ok(active); assert.equal(options.mode, 'readwrite'); picked++; return Promise.resolve('directory');
-  } };
-  const options = start(pageWindow, { showDirectoryPicker() { assert.fail('sandbox picker'); } });
-  const pending = options.directoryPicker({ mode: 'readwrite' }); active = false;
-  assert.equal(picked, 1); assert.equal(await pending, 'directory'); assert.equal(await options.storage.getDirectory(), 'opfs');
-  assert.equal(start({}).directoryPicker, null);
+  const options = start({ navigator: { storage }, showDirectoryPicker() { assert.fail('directory picker'); } }, {});
+  assert.equal(await options.storage.getDirectory(), 'opfs'); assert.equal('directoryPicker' in options, false);
 });

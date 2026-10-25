@@ -203,6 +203,6 @@ export async function exportSelection(api, record, groups, selection, {
       finally { if (temporary) await temporary.remove(); }
     }
   }
-  progress = processing = 1; message = '已保存到所选文件夹'; report('complete');
+  progress = processing = 1; message = '已保存到所选位置'; report('complete');
   return outputs;
 }
