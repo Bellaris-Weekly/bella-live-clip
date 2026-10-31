@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         贝报切片助手
 // @namespace    https://github.com/Bellaris-Weekly/bella-live-clip
-// @version      2.11.13
+// @version      2.11.14
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
@@ -32,7 +32,7 @@
 
 (() => {
   // src/header.txt
-  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.13\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
+  var header_default = "// ==UserScript==\n// @name         贝报切片助手\n// @namespace    https://github.com/Bellaris-Weekly/bella-live-clip\n// @version      2.11.14\n// @author       贝极星周报\n// @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip\n// @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js\n// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js\n// @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。\n// @match        https://*.bilibili.com/*\n// @match        https://bilibili.com/*\n// @connect      share.bellaris.fans\n// @connect      calendar.bk0717.us.ci\n// @connect      api.live.bilibili.com\n// @connect      api.bilibili.com\n// @connect      live.bilibili.com\n// @connect      bilivideo.com\n// @connect      bilivideo.cn\n// @connect      hdslb.com\n// @connect      acgvideo.com\n// @grant        GM_xmlhttpRequest\n// @grant        GM_getValue\n// @grant        GM_setValue\n// @grant        GM_registerMenuCommand\n// @grant        unsafeWindow\n// @run-at       document-idle\n// @noframes\n// @license      MIT (own code) + MPL-2.0 + Apache-2.0\n// ==/UserScript==\n// Bundles hls.js 1.6.16 (Apache-2.0). https://www.npmjs.com/package/hls.js/v/1.6.16\n// Bundles Mediabunny 1.56.1 (MPL-2.0). Source: https://www.npmjs.com/package/mediabunny/v/1.56.1\n";
 
   // src/services/updates.js
   function parseVersion(version2) {
@@ -621,10 +621,26 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
     if (info?.code !== 0 || !info.data?.room_info) throw new Error("直播间暂未返回场次信息。");
     return info.data.room_info;
   }
+  function roomFromBaseInfo(data, room) {
+    const info = data?.by_room_ids?.[room];
+    if (!info || ![0, 1, 2].includes(info.live_status)) {
+      throw new Error("直播间暂未返回场次信息。");
+    }
+    if (info.live_status !== 1) return info;
+    const time = info.live_time;
+    const start = typeof time === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(time) ? Date.parse(`${time.replace(" ", "T")}+08:00`) / 1e3 : NaN;
+    if (!Number.isFinite(start) || start <= 0) {
+      throw new Error("直播开播时间不可用，请稍后重新检查。");
+    }
+    return { ...info, live_start_time: start };
+  }
   function recordFromRoom(info, member, now2 = Date.now() / 1e3) {
     if (info.live_status !== 1) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
-    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str)) {
+    if (typeof info.live_id_str !== "string" || !/^\d+$/.test(info.live_id_str) || !/[1-9]/.test(info.live_id_str)) {
       throw new Error("直播场次编号不可用，请刷新直播间。");
+    }
+    if (!Number.isFinite(info.live_start_time) || info.live_start_time <= 0 || !Number.isSafeInteger(Number(info.uid)) || Number(info.uid) <= 0 || !Number.isSafeInteger(Number(info.room_id)) || Number(info.room_id) <= 0) {
+      throw new Error("直播场次信息不完整，请重新检查。");
     }
     return {
       key: info.live_id_str,
@@ -62707,10 +62723,38 @@ Schedule: ${scheduleItems.map((seg) => segmentToString(seg))} pos: ${this.timeli
       return [...new Map(records.map((record) => [record.key, record])).values()].sort((a, b) => b.start - a.start);
     }
     async current(member, signal, { allowOffline = false } = {}) {
-      const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
-      const info = roomFromHtml(data);
-      if (allowOffline && info.live_status !== 1) return null;
-      return recordFromRoom(info, member);
+      const resolve = (info) => {
+        if (![0, 1, 2].includes(info?.live_status)) throw new Error("直播间暂未返回场次信息。");
+        if (Number(info.room_id) !== Number(member.room) && Number(info.short_id) !== Number(member.room)) {
+          throw new Error("返回的直播间与当前房间不一致，请重新检查。");
+        }
+        if (info.live_status !== 1) return null;
+        return recordFromRoom(info, member);
+      };
+      let record;
+      try {
+        const data = await this.get(
+          "/xlive/web-room/v1/index/getRoomBaseInfo",
+          { room_ids: member.room, req_biz: "web_room_componet" },
+          signal
+        );
+        signal?.throwIfAborted();
+        record = resolve(roomFromBaseInfo(data, member.room));
+      } catch (error) {
+        if (signal?.aborted) throw signal.reason;
+        if (error.name === "AbortError") throw error;
+        try {
+          const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
+          signal?.throwIfAborted();
+          record = resolve(roomFromHtml(data));
+        } catch (fallbackError) {
+          if (signal?.aborted) throw signal.reason;
+          if (fallbackError.name === "AbortError") throw fallbackError;
+          throw error;
+        }
+      }
+      if (!record && !allowOffline) throw new Error("当前没有直播。可以切换到历史回放，选择已结束的场次。");
+      return record;
     }
     async clips(record, start, end, signal) {
       const data = await this.get("/xlive/web-room/v1/videoService/GetUserSliceStream", {

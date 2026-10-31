@@ -26,10 +26,31 @@ export function roomFromHtml(html) {
   return info.data.room_info;
 }
 
+export function roomFromBaseInfo(data, room) {
+  const info = data?.by_room_ids?.[room];
+  if (!info || ![0, 1, 2].includes(info.live_status)) {
+    throw new Error('直播间暂未返回场次信息。');
+  }
+  if (info.live_status !== 1) return info;
+  // This endpoint returns Beijing wall time, without a timezone suffix.
+  const time = info.live_time;
+  const start = typeof time === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(time)
+    ? Date.parse(`${time.replace(' ', 'T')}+08:00`) / 1000 : NaN;
+  if (!Number.isFinite(start) || start <= 0) {
+    throw new Error('直播开播时间不可用，请稍后重新检查。');
+  }
+  return { ...info, live_start_time: start };
+}
+
 export function recordFromRoom(info, member, now = Date.now() / 1000) {
   if (info.live_status !== 1) throw new Error('当前没有直播。可以切换到历史回放，选择已结束的场次。');
-  if (typeof info.live_id_str !== 'string' || !/^\d+$/.test(info.live_id_str)) {
+  if (typeof info.live_id_str !== 'string' || !/^\d+$/.test(info.live_id_str) || !/[1-9]/.test(info.live_id_str)) {
     throw new Error('直播场次编号不可用，请刷新直播间。');
+  }
+  if (!Number.isFinite(info.live_start_time) || info.live_start_time <= 0 ||
+      !Number.isSafeInteger(Number(info.uid)) || Number(info.uid) <= 0 ||
+      !Number.isSafeInteger(Number(info.room_id)) || Number(info.room_id) <= 0) {
+    throw new Error('直播场次信息不完整，请重新检查。');
   }
   return {
     key: info.live_id_str, title: info.title, start: info.live_start_time,

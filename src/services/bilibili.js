@@ -1,4 +1,4 @@
-import { recordFromReplay, recordFromRoom, roomFromHtml } from '../domain/records.js';
+import { recordFromReplay, recordFromRoom, roomFromHtml, roomFromBaseInfo } from '../domain/records.js';
 import {RequestError} from './retry-request.js';
 
 const API = 'https://api.live.bilibili.com';
@@ -72,10 +72,37 @@ export class BiliApi {
   }
 
   async current(member, signal, { allowOffline = false } = {}) {
-    const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
-    const info = roomFromHtml(data);
-    if (allowOffline && info.live_status !== 1) return null;
-    return recordFromRoom(info, member);
+    const resolve = info => {
+      if (![0, 1, 2].includes(info?.live_status)) throw new Error('直播间暂未返回场次信息。');
+      if (Number(info.room_id) !== Number(member.room) && Number(info.short_id) !== Number(member.room)) {
+        throw new Error('返回的直播间与当前房间不一致，请重新检查。');
+      }
+      if (info.live_status !== 1) return null;
+      return recordFromRoom(info, member);
+    };
+    let record;
+    try {
+      // Resolve by room ID so activity layouts and page redirects cannot select the stream.
+      const data = await this.get('/xlive/web-room/v1/index/getRoomBaseInfo',
+        { room_ids: member.room, req_biz: 'web_room_componet' }, signal);
+      signal?.throwIfAborted();
+      record = resolve(roomFromBaseInfo(data, member.room));
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      if (error.name === 'AbortError') throw error;
+      try {
+        const { data } = await this.request(`https://live.bilibili.com/${member.room}`, { signal });
+        signal?.throwIfAborted();
+        record = resolve(roomFromHtml(data));
+      } catch (fallbackError) {
+        if (signal?.aborted) throw signal.reason;
+        if (fallbackError.name === 'AbortError') throw fallbackError;
+        // Preserve the actionable API error instead of replacing it with missing activity-page HTML.
+        throw error;
+      }
+    }
+    if (!record && !allowOffline) throw new Error('当前没有直播。可以切换到历史回放，选择已结束的场次。');
+    return record;
   }
 
   async clips(record, start, end, signal) {

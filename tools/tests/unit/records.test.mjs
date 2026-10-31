@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {MEMBERS,recordFromReplay,recordFromRoom,roomFromHtml,roomIdFromUrl} from '../../../src/domain/records.js';
+import {MEMBERS,recordFromReplay,recordFromRoom,roomFromHtml,roomFromBaseInfo,roomIdFromUrl} from '../../../src/domain/records.js';
 
 test('直播编号原样保留，不经过浮点数',()=>{
  for(const key of ['734979151883758285','987654321098765432']) {
@@ -27,4 +27,17 @@ test('直播间链接只接受标准与 blanc 数字路径',()=>{
  assert.equal(roomIdFromUrl('https://live.bilibili.com/22632424'),22632424);
  assert.equal(roomIdFromUrl('https://live.bilibili.com/blanc/22632424?foo=1'),22632424);
  assert.equal(roomIdFromUrl('https://www.bilibili.com/22632424'),null);
+});
+
+test('房间基础信息不把缺失场次数据当作未开播，不使用浮点场次编号',()=>{
+ for(const data of [null,{}, {by_room_ids:{}}, {by_room_ids:{30858592:{}}}]){
+  assert.throws(()=>roomFromBaseInfo(data,30858592),/暂未返回场次信息/);
+ }
+ const info={live_status:1,live_time:'2026-10-31 19:50:47',live_id:742106027349433696};
+ const normalized=roomFromBaseInfo({by_room_ids:{30858592:info}},30858592);
+ assert.equal(normalized.live_start_time,1793447447);
+ assert.throws(()=>recordFromRoom(normalized,MEMBERS[4]),/直播场次编号不可用/);
+ for(const time of [undefined,0,'invalid','2026-10-31 19:50:47Z','2026-99-31 19:50:47','0000-00-00 00:00:00']){
+  assert.throws(()=>roomFromBaseInfo({by_room_ids:{30858592:{...info,live_time:time}}},30858592),/直播开播时间不可用/);
+ }
 });

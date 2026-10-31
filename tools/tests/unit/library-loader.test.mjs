@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createLibraryLoader} from '../../../src/app/library-loader.js';
+import {BiliApi} from '../../../src/services/bilibili.js';
+import {MEMBERS} from '../../../src/domain/records.js';
 
 const member={id:'bella'};
 const records=[{key:'one'}];
@@ -72,4 +74,39 @@ test('refresh cancels an old live lookup and prevents stale library replacement'
  const old=loader.load(member);const rejection=assert.rejects(old,{name:'AbortError'});
  const fresh=await loader.load(member,{refresh:true});pending.resolve({key:'stale',live:true});await rejection;
  assert.deepEqual(loader.get(member),fresh);assert.equal(fresh.records[0].key,'fresh');
+});
+
+test('an activity live session missing from replay history appears in the member library and uses its exact clip identity',async()=>{
+ const sinuo=MEMBERS.find(member=>member.id==='sinuo');
+ const key='742106027349433696',title='【3D出道周年纪念直播】执笔入梦';
+ let unavailable=true;const calls=[];
+ const api=new BiliApi(async value=>{
+  const url=new URL(value);calls.push(url);
+  if(url.hostname==='live.bilibili.com')return {data:'<script>window.__BILIACT_EVAPAGEDATA__={};</script>'};
+  let data;
+  if(url.pathname.endsWith('/GetOtherSliceList')){
+   data={replay_info:[{live_key:'741000000000000001',live_info:{title:'历史直播'},start_time:1793300000,end_time:1793303600,room_id:sinuo.room}],pagination:{total:1}};
+  }else if(url.pathname.endsWith('/getRoomBaseInfo')){
+   if(unavailable)return {data:JSON.stringify({code:-352})};
+   data={by_room_ids:{[sinuo.room]:{room_id:sinuo.room,uid:sinuo.uid,title,live_status:1,live_id_str:key,live_time:'2026-10-31 19:50:47'}}};
+  }else if(url.pathname.endsWith('/GetUserSliceStream')){
+   assert.equal(url.searchParams.get('live_uid'),sinuo.uid);
+   assert.equal(url.searchParams.get('live_key'),key);
+   assert.equal(url.searchParams.get('start_time'),'1793447457');
+   assert.equal(url.searchParams.get('end_time'),'1793447467');
+   data={list:[{start_time:1793447457,end_time:1793447467}]};
+  }else assert.fail(`unexpected request: ${url.pathname}`);
+  return {data:JSON.stringify({code:0,data})};
+ });
+ const loader=createLibraryLoader({api,schedules:{enrich:async records=>({records,failed:false})}});
+ const first=await loader.load(sinuo);
+ assert.equal(first.liveFailed,true);assert.equal(first.ready,false);assert.equal(first.records.length,1);
+ unavailable=false;calls.length=0;
+ // The previous failure must not cache the absence of a current live session.
+ const recovered=await loader.load(sinuo);
+ assert.equal(recovered.liveFailed,false);assert.equal(recovered.ready,true);
+ assert.deepEqual(recovered.records.map(record=>record.key),[key,'741000000000000001']);
+ const live=recovered.records[0];assert.equal(live.title,title);assert.equal(live.live,true);assert.equal(live.member,'思诺');
+ assert.ok(calls.every(url=>url.hostname==='api.live.bilibili.com'));
+ assert.equal((await api.clips(live,10,20)).length,1);
 });

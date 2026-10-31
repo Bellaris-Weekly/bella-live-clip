@@ -26,21 +26,114 @@ test('新增成员按配置查询回放并保留身份字段',async()=>{
  }
 });
 
-test('optional current lookup treats offline and looping rooms as absent while direct entry explains absence',async()=>{
- for(const live_status of [0,2]){
-  const api=new BiliApi(async()=>({data:`<script>window.__NEPTUNE_IS_MY_WAIFU__=${JSON.stringify({roomInfoRes:{code:0,data:{room_info:{live_status}}}})};</script>`}));
-  assert.equal(await api.current(MEMBERS[0],undefined,{allowOffline:true}),null);
-  await assert.rejects(api.current(MEMBERS[0]),/当前没有直播/);
+const activityRoom = {live_status:1,live_id_str:'742106027349433696',live_time:'2026-10-31 19:50:47',
+ uid:MEMBERS[4].uid,room_id:30858592,title:'【3D出道周年纪念直播】执笔入梦'};
+const baseResponse = (info, room=info.room_id) => ({data:JSON.stringify({code:0,data:{by_room_ids:{[room]:info}}})});
+const htmlResponse = info => ({data:`<script>window.__NEPTUNE_IS_MY_WAIFU__=${JSON.stringify({roomInfoRes:{code:0,data:{room_info:info}}})};</script>`});
+
+test('room lookup works independently of page templates for every member and an unconfigured room',async()=>{
+ for(const member of [...MEMBERS,{room:123456,name:'当前直播间'}]){
+  const calls=[];const signal=new AbortController().signal;
+  const info={...activityRoom,room_id:member.room,uid:member.uid||123};
+  const api=new BiliApi(async(url,options)=>{
+   calls.push({url:new URL(url),options});
+   return baseResponse({...info,live_id:Number(info.live_id_str)});
+  });
+  const result=await api.current(member,signal,{allowOffline:true});
+  assert.equal(calls.length,1);const call=calls[0];
+  assert.equal(call.url.origin,'https://api.live.bilibili.com');
+  assert.equal(call.url.pathname,'/xlive/web-room/v1/index/getRoomBaseInfo');
+  assert.equal(call.url.searchParams.get('room_ids'),String(member.room));
+  assert.equal(call.url.searchParams.get('req_biz'),'web_room_componet');
+  assert.equal(call.options.auth,true);assert.equal(call.options.signal,signal);
+  assert.equal(result.key,'742106027349433696');assert.equal(result.start,1793447447);
+  assert.equal(result.room,member.room);assert.equal(result.uid,info.uid);assert.equal(result.member,member.name);assert.equal(result.live,true);
  }
 });
 
-test('current lookup uses each member room and preserves full live identity',async()=>{
- for(const member of [MEMBERS[0],MEMBERS[4]]){
-  const info={live_status:1,live_id_str:'987654321098765432',live_start_time:100,uid:member.uid,room_id:member.room,title:'当前直播'};
-  const api=new BiliApi(async url=>{assert.equal(url,`https://live.bilibili.com/${member.room}`);return {data:`<script>window.__NEPTUNE_IS_MY_WAIFU__=${JSON.stringify({roomInfoRes:{code:0,data:{room_info:info}}})};</script>`};});
-  const result=await api.current(member,undefined,{allowOffline:true});
-  assert.equal(result.key,info.live_id_str);assert.equal(result.member,member.name);assert.equal(result.room,member.room);assert.equal(result.live,true);
+test('offline and looping API results never trigger a page lookup',async()=>{
+ for(const live_status of [0,2]){
+  let calls=0;
+  const api=new BiliApi(async()=>{calls++;return baseResponse({...activityRoom,live_status,live_time:'0000-00-00 00:00:00'});});
+  assert.equal(await api.current(MEMBERS[4],undefined,{allowOffline:true}),null);
+  await assert.rejects(api.current(MEMBERS[4]),/当前没有直播/);
+  assert.equal(calls,2);
  }
- const broken=new BiliApi(async()=>({data:'unavailable'}));
- await assert.rejects(broken.current(MEMBERS[0],undefined,{allowOffline:true}),/未找到直播场次信息/);
+});
+
+test('failed, malformed or incomplete API responses use validated room HTML',async()=>{
+ const failures=[
+  ()=>{throw new Error('HTTP 503');},
+  ()=>({data:'not JSON'}),
+  ()=>({data:JSON.stringify({code:-352})}),
+  ()=>baseResponse({...activityRoom,live_id_str:undefined}),
+  ()=>baseResponse({...activityRoom,live_id_str:'0'}),
+  ()=>baseResponse({...activityRoom,live_time:undefined}),
+  ()=>baseResponse({...activityRoom,uid:undefined}),
+  ()=>baseResponse({...activityRoom,room_id:123},30858592),
+ ];
+ for(const failure of failures){
+  const calls=[];const signal=new AbortController().signal;
+  const api=new BiliApi(async(url,options)=>{
+   calls.push({url,options});
+   return url.startsWith('https://live.')?htmlResponse({...activityRoom,live_start_time:1793447447}):failure();
+  });
+  const result=await api.current(MEMBERS[4],signal);
+  assert.equal(result.key,activityRoom.live_id_str);assert.equal(result.start,1793447447);
+  assert.equal(calls.length,2);assert.equal(calls[1].url,'https://live.bilibili.com/30858592');
+  assert.ok(calls.every(call=>call.options.signal===signal));assert.equal(calls[1].options.auth,undefined);
+ }
+});
+
+test('valid offline HTML remains usable when the API fails',async()=>{
+ for(const live_status of [0,2]){
+  const api=new BiliApi(async url=>url.startsWith('https://live.')?htmlResponse({...activityRoom,live_status}):{data:'unavailable'});
+  assert.equal(await api.current(MEMBERS[4],undefined,{allowOffline:true}),null);
+  await assert.rejects(api.current(MEMBERS[4]),/当前没有直播/);
+ }
+});
+
+test('activity HTML cannot hide the original API error and other rooms cannot supply the stream',async()=>{
+ for(const [response,message] of [
+  [{code:-352,message:'-352'},/B 站暂时限制了请求/],
+  [{code:-101},/请先在这个浏览器中登录/],
+  [{code:0,data:{by_room_ids:{}}},/暂未返回场次信息/],
+ ]){
+  for(const page of [
+   {data:'<script>window.__BILIACT_EVAPAGEDATA__={};</script>'},
+   htmlResponse({...activityRoom,live_start_time:1793447447,room_id:123}),
+   htmlResponse({...activityRoom,live_start_time:1793447447,live_id_str:undefined}),
+  ]){
+   const api=new BiliApi(async url=>url.startsWith('https://live.')?page:{data:JSON.stringify(response)});
+   await assert.rejects(api.current(MEMBERS[4],undefined,{allowOffline:true}),message);
+  }
+ }
+});
+
+test('short room IDs can resolve to their canonical room without changing the session',async()=>{
+ const api=new BiliApi(async()=>baseResponse({...activityRoom,short_id:123},123));
+ const result=await api.current({room:123,name:'当前直播间'});
+ assert.equal(result.room,30858592);assert.equal(result.key,activityRoom.live_id_str);
+});
+
+test('cancellation stops lookup even when a transport returns late data',async()=>{
+ for(const lateSuccess of [false,true]){
+  for(const abortAt of [1,2]){
+   const controller=new AbortController();const error=new DOMException('已取消','AbortError');let calls=0;
+   const api=new BiliApi(async()=>{
+    calls++;
+    if(calls===abortAt){
+     controller.abort(error);
+     if(lateSuccess)return abortAt===1?baseResponse(activityRoom):htmlResponse({...activityRoom,live_start_time:1793447447});
+     throw error;
+    }
+    throw new Error('network');
+   });
+   await assert.rejects(api.current(MEMBERS[4],controller.signal),e=>e===error);
+   assert.equal(calls,abortAt);
+  }
+ }
+ const error=new DOMException('已取消','AbortError');let calls=0;
+ const api=new BiliApi(async()=>{calls++;throw error;});
+ await assert.rejects(api.current(MEMBERS[4]),e=>e===error);assert.equal(calls,1);
 });
