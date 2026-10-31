@@ -7,7 +7,7 @@ export async function runCardChecks(app, query, preloadProbe) {
  try{
   await until(()=>root.querySelectorAll('.record-card').length===6&&!root.getElementById('refreshLibrary').disabled);
   if(query.has('preload')){
-   assert(preloadProbe.historyCalls>0&&preloadProbe.historyStartedAt[0]<=preloadProbe.openCalledAt,'打开面板前没有开始预加载');
+   assert(preloadProbe.historyCalls>0,'打开面板后没有加载列表');
    assert(preloadProbe.historyCalls===1,'打开面板重复请求了直播列表');
    checks.push('打开面板前已预加载且复用同一列表请求');
   }

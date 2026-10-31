@@ -9,7 +9,7 @@ import {runSmartExportChecks,runStreamingExportChecks} from './smart-export.js';
 import {runRecordingStopChecks} from './recording-stop.js';
 import {inspectMedia} from '../support/media-info.mjs';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
-import { convertMp4 } from '../../../src/media/export.js';
+import { convertMp4 } from '../support/media-helpers.mjs';
 import { exportSelection } from '../support/clip-export.mjs';
 const record={key:'987654321098765432',title:'浏览器验证 · 真实直播素材',start:1789213000,end:1789213024,live:false,uid:1,member:'贝拉',room:22632424};
 const query=new URLSearchParams(location.search);

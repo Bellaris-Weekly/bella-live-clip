@@ -56,7 +56,7 @@ function descriptor(stream) {
 export function normalizeSubmission(metadata, route, play) {
   const page = submissionPart(metadata, route);
   if (play.is_preview) throw new Error('当前账号只能试看这个视频，无法导出完整选段。');
-  let media, previewMedia, quality, previewQuality;
+  let media, previewMedia, quality;
   if (play.dash) {
     const videos = (play.dash.video ?? []).filter(item => /^avc[13]\./i.test(item.codecs ?? ''));
     videos.sort((a,b) => Number(b.id)-Number(a.id) || Number(b.bandwidth)-Number(a.bandwidth));
@@ -72,14 +72,13 @@ export function normalizeSubmission(metadata, route, play) {
     media = {video:descriptor(videos[0]), audio:audios.length ? descriptor(audios[0]) : null, combined:false};
     previewMedia = {video:descriptor(videos.at(-1)), audio:audios.length ? descriptor(audios.at(-1)) : null, combined:false};
     quality = videos[0].id;
-    previewQuality = videos.at(-1).id;
   } else {
     if (play.durl?.length !== 1 || !/^mp4/i.test(play.format ?? '')) {
       throw new Error('当前视频没有可用的 DASH 或单文件 MP4，请检查账号权限。');
     }
     media = {video:descriptor(play.durl[0]), audio:null, combined:true};
     previewMedia = media;
-    quality = previewQuality = play.quality;
+    quality = play.quality;
   }
   const duration = Number(play.timelength) / 1000 || Number(page.duration);
   if (!(duration > 0 && Number.isFinite(duration))) throw new Error('视频时长不可用，请重新加载。');
@@ -92,5 +91,5 @@ export function normalizeSubmission(metadata, route, play) {
   return {kind:'submission', key:`${metadata.bvid}:${page.cid}`, bvid:metadata.bvid, cid:page.cid,
     part:page.page, title:metadata.title, partTitle:metadata.pages.length > 1 ? page.part : '',
     uploader:metadata.owner?.name ?? '', duration,
-    referer:`https://www.bilibili.com/video/${metadata.bvid}/?p=${page.page}`, qualityLabel:label(quality), previewQualityLabel:label(previewQuality), media, previewMedia};
+    referer:`https://www.bilibili.com/video/${metadata.bvid}/?p=${page.page}`, qualityLabel:label(quality), media, previewMedia};
 }

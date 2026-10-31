@@ -6,7 +6,6 @@ import {
 } from 'mediabunny';
 import { convertInput } from '../../../src/media/export.js';
 import { exportSelection } from '../support/clip-export.mjs';
-import { createSegmentLoader } from '../../../src/media/segment-loader.js';
 import {saveRecording} from '../../../src/media/recording.js';
 import {avccUnits} from '../../../src/media/avc-packets.js';
 import {RequestError} from '../../../src/services/retry-request.js';
@@ -151,28 +150,6 @@ for (const [kind, absolute] of [['plain', false], ['map', true], ['ts', false]])
   });
 }
 
-test('快预读不会挤掉慢的当前分片，保留窗口有界且按 URL 和字节范围复用', async () => {
-  const seen = [], current = deferred();
-  const segments = Array.from({ length: 8 }, (_, i) => ({ url: 'same', range: { offset: i * 10, length: 10 }, duration: 2 }));
-  const loader = createSegmentLoader({ async request(url, { range }) {
-    seen.push(range.offset);
-    if (range.offset === 0 && seen.length === 1) await current.promise;
-    return { data: new ArrayBuffer(10) };
-  } }, segments);
-  try {
-    const first = loader.read(segments[0]);
-    await loader.read(segments[1]);
-    current.resolve();
-    await first;
-    for (let i = 0; i < 4; i++) await loader.read({ ...segments[0], range: { ...segments[0].range } });
-    assert.equal(seen.filter(offset => offset === 0).length, 1, '已预读分片不能驱逐当前片');
-    for (let i = 1; i < 7; i++) await loader.read(segments[i]);
-    await loader.read(segments[1]);
-    assert.equal(seen.filter(offset => offset === 10).length, 2, '旧片在前向处理后应已释放');
-    assert.ok(seen.includes(70), '持续处理时预读下一片');
-  } finally { await loader.close(); }
-});
-
 for (const reason of ['abort', 'network', 'processing']) {
   test(`并行导出${reason}失败终止待下载请求，立即重试可成功`, async () => {
     const api = await sampleApi('plain'), controller = new AbortController(), began = deferred(), failure = new Error(reason);
@@ -238,17 +215,6 @@ test('尾部清单时长高估时按真实数据夹紧，进度跨多个输出�
   assert.equal(events.filter(event => event.progress === 1).length, 1);
   assert.equal(events.at(-1).downloaded, 6, '跨输出复用的资源只累计一次完成数');
   for (const output of outputs) assert.equal((await inspect(output.blob)).counts.video, 360);
-});
-
-test('尾部规划后从头处理会恢复前向预读，不受规划游标影响', async () => {
-  const seen = [], segments = Array.from({ length: 10 }, (_, i) => ({ url: String(i), duration: 2 }));
-  const loader = createSegmentLoader({ async request(url) { seen.push(url); return { data: new ArrayBuffer(1) }; } }, segments);
-  try {
-    await loader.read(segments[6]);
-    loader.beginProcessing();
-    await loader.read(segments[1]);
-    assert.ok(seen.includes('2'), '规划读过后面的分片也必须预读实际处理位置的下一片');
-  } finally { await loader.close(); }
 });
 
 function markAudioDependent(bytes) {

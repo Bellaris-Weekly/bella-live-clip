@@ -1,4 +1,4 @@
-import { Input, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
+import { Input, MP4, MPEG_TS, BufferSource,
   Output, StreamTarget, Mp4OutputFormat, EncodedPacketSink, EncodedVideoPacketSource, EncodedAudioPacketSource } from 'mediabunny';
 import {createRecordingDownload} from './recording-download.js';
 import {RecordingTimeline,recordingTime} from './recording-timeline.js';
@@ -27,39 +27,6 @@ export function estimateSelectionBytes(estimate, recordStart, selection) {
     }
   }
   return bytes;
-}
-
-export function recordingSource(groups,read) {
-  const resources=new Map();let number=0;
-  const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-PLAYLIST-TYPE:VOD',
-    '#EXT-X-TARGETDURATION:'+Math.ceil(groups.reduce((max,g)=>g.segments.reduce((n,s)=>Math.max(n,s.duration),max),0))];
-  for(const [i,group]of groups.entries()){
-    if(i)lines.push('#EXT-X-DISCONTINUITY');
-    for(const segment of group.segments){
-      const path=`https://recording.invalid/${number++}`;
-      resources.set(path,group.map?[group.map,segment]:[segment]);
-      lines.push(`#EXTINF:${segment.duration},`,path);
-    }
-  }
-  lines.push('#EXT-X-ENDLIST');
-  const manifest=new TextEncoder().encode(lines.join('\n'));
-  return new CustomPathedSource('https://recording.invalid/index.m3u8',request=>{
-    if(request.isRoot)return new BufferSource(manifest);
-    const parts=resources.get(String(request.path));
-    let sizes;
-    return new CustomSource({maxCacheSize:0,
-      async getSize(){sizes=[];for(const part of parts)sizes.push((await read(part)).byteLength);return sizes.reduce((a,b)=>a+b,0);},
-      async read(start,end){
-        const result=new Uint8Array(end-start);let offset=0;
-        for(const [i,part]of parts.entries()){
-          const left=Math.max(start,offset),right=Math.min(end,offset+sizes[i]);
-          if(right>left)result.set((await read(part)).subarray(left-offset,right-offset),left-start);
-          offset+=sizes[i];
-        }
-        return result;
-      },
-    });
-  });
 }
 
 export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,onProgress=()=>{},onSegment=()=>{},concurrency=6}={}) {

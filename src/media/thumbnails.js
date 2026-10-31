@@ -39,7 +39,7 @@ export async function readThumbnail(request,sample,signal) {
  }
 }
 
-export function createThumbnails({container,request,api,metadataRequest,readFrame=readThumbnail}) {
+export function createThumbnails({container,request,api,metadataRequest,createStoryboard,readFrame=readThumbnail}) {
  let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,decoding=Promise.resolve(),release=()=>{};
  function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
  function clear(){cancel();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;release();container.replaceChildren();}
@@ -96,7 +96,7 @@ export function createThumbnails({container,request,api,metadataRequest,readFram
  }
  return {load(next,parts,{defer=false,onFrames,center=0}={}){clear();record=next;streams=parts;
    decoding=defer?new Promise(resolve=>{release=resolve;}):Promise.resolve();
-   source=createThumbnailSource({record,api,request,metadataRequest,readFrame:decode,onFrames});void source.warm(parts,center).catch(()=>{});},
+   source=createThumbnailSource({record,api,request,metadataRequest,createStoryboard,readFrame:decode,onFrames});void source.warm(parts,center).catch(()=>{});},
   setStreams(parts,center=0){streams=parts;viewKey='';void source?.warm(parts,center).catch(()=>{});if(currentView)update(currentView);},
   frameUrl:time=>source?.frameUrl(time)??null,
   resume(){release();},update,clear};

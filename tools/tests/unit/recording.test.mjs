@@ -4,13 +4,12 @@ import {Output,BufferTarget,Mp4OutputFormat,EncodedVideoPacketSource,EncodedPack
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
 import {exportSelection} from '../support/clip-export.mjs';
 import {config,frame} from '../support/synthetic-frame.mjs';
-import {formatCompactTime,formatDuration} from '../../../src/shared/format.js';
+import {formatDuration} from '../../../src/shared/format.js';
 import {saveRecording,estimateRecordingRate,estimateSelectionBytes} from '../../../src/media/recording.js';
 import {RequestError} from '../../../src/services/retry-request.js';
 import {config as bConfig,packets as bPackets} from '../support/b-frames.mjs';
 
-test('紧凑起止时间与中文时长覆盖进位和不同高位零',()=>{
- for(const [n,s]of [[0,'0.000'],[9.125,'9.125'],[65.2,'1:05.200'],[3605.25,'1:00:05.250'],[59.9996,'1:00.000']])assert.equal(formatCompactTime(n),s);
+test('中文时长覆盖进位和不同高位零',()=>{
  for(const [n,s]of [[0,'0.0秒'],[9.25,'9.3秒'],[59.96,'1分0.0秒'],[65.23,'1分5.2秒'],[3600,'1时0分0.0秒'],[3725.25,'1时2分5.3秒']])assert.equal(formatDuration(n),s);
 });
 

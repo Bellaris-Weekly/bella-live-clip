@@ -133,3 +133,28 @@ test('an activity live session missing from replay history appears in the member
  assert.ok(calls.every(url=>url.hostname==='api.live.bilibili.com'));
  assert.equal((await api.clips(live,10,20)).length,1);
 });
+
+function storeFixture(saved){const writes=[];return {writes,read:()=>saved,write:(_,value)=>writes.push(value)};}
+const ready={api:{history:async()=>records,current:async()=>null},schedules:{enrich:async value=>({records:value,failed:false})}};
+test('a list saved by another tab within minutes needs no requests',async()=>{
+ let calls=0;const store=storeFixture({time:1000,records:[{key:'saved'}]});
+ const loader=createLibraryLoader({...ready,api:{...ready.api,history:async()=>{calls++;return records;}},store,now:()=>1000+60000});
+ assert.equal((await loader.load(member)).records[0].key,'saved');assert.equal(calls,0);
+});
+test('an older saved list shows at once and refreshes behind it',async()=>{
+ const store=storeFixture({time:1000,records:[{key:'saved'}]}),updates=[];
+ const loader=createLibraryLoader({...ready,backgroundEnrichment:true,onUpdate:(_,result)=>updates.push(result),store,now:()=>1000+3600000});
+ assert.equal(loader.get(member).records[0].key,'saved','visible before any request');
+ await loader.load(member);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(loader.get(member).records[0].key,'one');assert.equal(updates.length,1);
+ assert.equal(store.writes.length,1);assert.equal(store.writes[0].time,1000+3600000);
+});
+test('day-old, malformed and partial lists are not trusted',async()=>{
+ for(const saved of [{time:1000,records:[{key:'old'}]},{time:1000+86400000*2-1,records:'x'},null]){
+  const loader=createLibraryLoader({...ready,store:storeFixture(saved),now:()=>1000+86400000*2});
+  assert.equal(loader.get(member),null);
+ }
+ const store=storeFixture(null);
+ const loader=createLibraryLoader({...ready,api:{...ready.api,current:async()=>{throw new Error('offline');}},store});
+ await loader.load(member);assert.equal(store.writes.length,0,'a list missing live status is not shared');
+});

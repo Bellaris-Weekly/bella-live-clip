@@ -138,5 +138,4 @@ test('single representation and silent videos retain explicit preview sources',(
  assert.deepEqual(result.previewMedia,result.media);
  const combined=normalizeSubmission(metadata(),{part:1},{format:'mp4',quality:64,timelength:60000,durl:[{url:'https://test.bilivideo.com/movie.mp4'}]});
  assert.equal(combined.previewMedia,combined.media);
- assert.equal(combined.previewQualityLabel,combined.qualityLabel);
 });

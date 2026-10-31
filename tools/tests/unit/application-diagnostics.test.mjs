@@ -35,10 +35,10 @@ const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle
   }}]});
 
 function element() {
-  return {dataset:{},style:{},hidden:false,children:[],classList:{toggle(){},add(){},remove(){}},
+  return {dataset:{},style:{},hidden:false,children:[],listeners:{},classList:{toggle(){},add(){},remove(){}},
     append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},
     querySelector:()=>null,
-    get childElementCount(){return this.children.length;},focus(){},addEventListener(){},removeEventListener(){},
+    get childElementCount(){return this.children.length;},focus(){},addEventListener(name,fn){this.listeners[name]=fn;},removeEventListener(){},
     setAttribute(name,value){this.attributes??={};this.attributes[name]=String(value);},getAttribute(name){return this.attributes?.[name]??null;},removeAttribute(){},getBoundingClientRect(){return {left:0,top:0,right:10,bottom:10};},
   };
 }
@@ -58,7 +58,7 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   runInNewContext(outputFiles[0].text,context);
   const requests=[];
   const diagnostics=createDiagnosticReporter({endpoint:'https://logs.example.com/v1/logs',version:'1.2.3',online:()=>true,id:()=>crypto.randomUUID(),request:options=>{requests.push(JSON.parse(options.data));options.onload({status:201});}});
-  const api={request:async()=>({data:''}),history:async()=>[],current,clips};
+  const api={request:async()=>({data:''}),history:async()=>{scenario.historyCalls=(scenario.historyCalls||0)+1;return [];},current,clips};
   const app=context.application.createApp({api,diagnostics,pageUrl:()=>page,saveFilePicker:picker,storage:{getDirectory(){}}});
   return {app,requests,seeks,scenario,timers,document,async poll(){const [id,fn]=timers.entries().next().value;timers.delete(id);await fn();},$:id=>root.getElementById(id),navigate:value=>{page=value;}};
 }
@@ -169,6 +169,13 @@ for(const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999'])
  assert.deepEqual(f.seeks,[85],'播放位置不变');assert.deepEqual(f.scenario.selection,selection);
  assert.equal(f.requests.length,0);assert.equal(f.$('editPage').hidden,false);
  assert.match(f.$('refreshEditor').innerHTML,/glyph-refresh/);assert.equal(f.$('refreshEditor').getAttribute('aria-label'),'刷新录像');assert.equal(f.$('refreshEditor').title,'刷新录像');
+});
+
+test('不打开面板不发账号请求；鼠标移到入口才准备列表，只准备一次',async()=>{
+ const f=start({url:'https://www.bilibili.com/'}),launcher=f.$('launcher');
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(f.scenario.historyCalls??0,0);
+ launcher.listeners.pointerenter();launcher.listeners.focus();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.scenario.historyCalls,1);
 });
 
 test('打开失败的录像刷新时重新打开；回放地址更新不打断大小预估',async()=>{

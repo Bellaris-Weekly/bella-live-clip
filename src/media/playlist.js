@@ -49,20 +49,7 @@ export function parsePlaylist(text, baseUrl) {
   return { groups, duration: total };
 }
 
-export async function mapConcurrent(items, concurrency, task, signal) {
-  const result = new Array(items.length);
-  let cursor = 0, failed = false;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (!failed && cursor < items.length) {
-      signal?.throwIfAborted();
-      const index = cursor++;
-      try { result[index] = await task(items[index], index); }
-      catch (error) { failed = true; throw error; }
-    }
-  });
-  await Promise.all(workers);
-  return result;
-}
+export const segmentKey = segment => JSON.stringify([segment.url, segment.range ?? null]);
 
 export function selectPlaylistRange(parsed,start,end) {
  const plans=[];

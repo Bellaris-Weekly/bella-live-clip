@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EncodedPacket, EncodedVideoPacketSource, StreamTarget } from 'mediabunny';
-import { createMediaOutput, createClipFile } from '../../../src/media/file-output.js';
+import { createMediaOutput } from '../../../src/media/file-output.js';
+import { createClipFile } from '../support/media-helpers.mjs';
 import { createTemporaryMedia } from '../../../src/media/temporary-media.js';
 import { memoryFile } from '../support/memory-file.mjs';
 import { config, frame } from '../support/synthetic-frame.mjs';

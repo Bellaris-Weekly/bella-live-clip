@@ -1,11 +1,10 @@
 import {
   Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion,
 } from 'mediabunny';
-import { selectPlaylistRange } from './playlist.js';
+import { segmentKey, selectPlaylistRange } from './playlist.js';
 import { trimPrecise } from './smart-trim.js';
 import { recordingTime } from './recording-timeline.js';
 import { saveRecording } from './recording.js';
-import { segmentKey } from './segment-loader.js';
 import { createMediaOutput } from './file-output.js';
 import { createTemporaryMedia, mediaStorageError } from './temporary-media.js';
 import { requestWithRetry } from '../services/retry-request.js';
@@ -39,12 +38,6 @@ export async function convertInput(input, { start, end, precise = false, signal,
     if (canceling) await canceling;
     await session.cancel();
   }
-}
-
-export async function convertMp4(blob, options = {}) {
-  const input = new Input({ source: new BlobSource(blob), formats: [MP4, MPEG_TS] });
-  try { return await convertInput(input, options); }
-  finally { input.dispose(); }
 }
 
 // Boundary probes use native packet times, never the HLS clock heuristic. A

@@ -33,17 +33,3 @@ export async function createMediaOutput({ fileHandle, signal } = {}) {
     },
   };
 }
-
-// Directory saves must never overwrite an unrelated existing clip.
-export async function createClipFile(directory, name) {
-  const stem = name.replace(/\.mp4$/i, '');
-  for (let suffix = 0; ; suffix++) {
-    const candidate = suffix ? `${stem} (${suffix}).mp4` : name;
-    try { await directory.getFileHandle(candidate); }
-    catch (error) {
-      if (error.name !== 'NotFoundError') throw error;
-      const handle = await directory.getFileHandle(candidate, { create: true });
-      return { handle, name: candidate, remove: () => directory.removeEntry(candidate) };
-    }
-  }
-}

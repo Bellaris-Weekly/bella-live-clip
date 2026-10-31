@@ -1,7 +1,7 @@
 import { Input, BlobSource, MP4, EncodedPacketSink } from 'mediabunny';
-import { exportSelection, convertMp4 } from '../../../src/media/export.js';
+import { exportSelection } from '../../../src/media/export.js';
+import { convertMp4, createClipFile } from '../support/media-helpers.mjs';
 import { createTemporaryMedia } from '../../../src/media/temporary-media.js';
-import { createClipFile } from '../../../src/media/file-output.js';
 import { createApp } from '../../../src/app/application.js';
 import { inspectMedia } from '../support/media-info.mjs';
 

@@ -1,5 +1,5 @@
 import { Input, BlobSource, MP4, Output, BufferTarget, Mp4OutputFormat, Conversion, QUALITY_HIGH, EncodedPacketSink } from 'mediabunny';
-import { convertMp4 } from '../../../src/media/export.js';
+import { convertMp4 } from '../support/media-helpers.mjs';
 import { inspectMedia } from '../support/media-info.mjs';
 
 async function videoFrames(blob) {

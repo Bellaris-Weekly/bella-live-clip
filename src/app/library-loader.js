@@ -9,14 +9,30 @@ function waitFor(promise, signal) {
   });
 }
 
-export function createLibraryLoader({ api, schedules, backgroundEnrichment = false, onUpdate = () => {} }) {
+const FRESH_FOR = 5 * 60 * 1000, KEEP_FOR = 24 * 60 * 60 * 1000;
+
+// `store` shares finished lists between tabs: a recent one avoids the requests
+// entirely, and an older one is shown at once while the list refreshes behind it.
+export function createLibraryLoader({ api, schedules, backgroundEnrichment = false, onUpdate = () => {}, store = null, now = Date.now }) {
   const cache = new Map();
   const requests = new Map();
   const controllers = new Set();
 
+  function get(member) {
+    const id = member.id;
+    if (!cache.has(id)) {
+      const saved = store?.read(id);
+      const age = now() - saved?.time;
+      if (Array.isArray(saved?.records) && age >= 0 && age < KEEP_FOR) {
+        cache.set(id, { records: saved.records, failed: false, liveFailed: false, ready: age < FRESH_FOR, stale: age >= FRESH_FOR });
+      }
+    }
+    return cache.get(id) || null;
+  }
+
   function load(member, { refresh = false, signal } = {}) {
     const id = member.id;
-    const cached = cache.get(id);
+    const cached = get(member);
     if (!refresh && cached?.ready) return waitFor(Promise.resolve(cached), signal);
 
     let request = requests.get(id);
@@ -28,7 +44,7 @@ export function createLibraryLoader({ api, schedules, backgroundEnrichment = fal
       early.catch(() => {});
       const promise = (async () => {
         let records = cached?.records, liveFailed = false;
-        if (refresh || !cached || cached.liveFailed) {
+        if (refresh || !cached || cached.liveFailed || cached.stale) {
           const [history, current] = await Promise.all([
             api.history(member, controller.signal),
             api.current(member, controller.signal, { allowOffline: true }).catch(error => {
@@ -48,6 +64,7 @@ export function createLibraryLoader({ api, schedules, backgroundEnrichment = fal
         controller.signal.throwIfAborted();
         const next = { records: result.records, failed: result.failed, liveFailed, ready: !result.failed && !liveFailed };
         cache.set(id, next);
+        if (next.ready) store?.write(id, { time: now(), records: next.records });
         if (backgroundEnrichment) onUpdate(member, next);
         return next;
       })();
@@ -66,10 +83,6 @@ export function createLibraryLoader({ api, schedules, backgroundEnrichment = fal
 
   function preload(member) {
     return load(member).catch(() => null);
-  }
-
-  function get(member) {
-    return cache.get(member.id) || null;
   }
 
   function abortAll() {

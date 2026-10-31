@@ -1,5 +1,5 @@
 import { Input, BlobSource, MP4, EncodedPacketSink } from 'mediabunny';
-import { convertMp4 } from '../../../src/media/export.js';
+import { convertMp4 } from '../support/media-helpers.mjs';
 import { exportSelection } from '../support/clip-export.mjs';
 import { createAvcNormalizer } from '../../../src/media/avc-packets.js';
 import { inspectMedia } from '../support/media-info.mjs';

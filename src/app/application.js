@@ -53,7 +53,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  // Each stream is one recorded segment (a new one starts after a disconnect); the editor works on one at a time.
  let recordStreams=[],segments=[],segmentIndex=0;
  function setTitle(element,text){element.textContent=text;element.classList.toggle('hanging-title',/^[\p{Ps}\p{Pi}]/u.test(text));}
- const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules,backgroundEnrichment:true,onUpdate(selected,result){
+ const schedules=new ScheduleService(api.request);const libraries=createLibraryLoader({api,schedules,backgroundEnrichment:true,store:{read:id=>get(`library.${id}`,null),write:(id,value)=>set(`library.${id}`,value)},onUpdate(selected,result){
   if(member.id===selected.id&&page==='library'&&!$('panel').hidden){renderCards();showScheduleResult(result);}
  }});let scheduleController=null,exportMode='copy',backgroundStarted=false;
  let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
@@ -73,7 +73,13 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player?.position()??0,seek:seekTo});
  const activePlayback=()=>playerKind==='submission'?player:playback;
  bindVideoControls(video,playback,status);
- const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest});
+ // The player and the timeline strip read the same stills; one video needs one copy.
+ let storyboard=null;
+ function storyboardFor(submission){
+  if(storyboard?.key!==submission.key){storyboard?.reader.dispose?.();storyboard={key:submission.key,reader:createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest,submission})};}
+  return {...storyboard.reader,dispose(){}};
+ }
+ const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest,createStoryboard:({submission})=>storyboardFor(submission)});
  const mediaApi={request:mediaRequest};
  const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{if(playerKind==='live')player.scrub(t);else player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(playerKind==='live')player.beginScrub();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>{if(playerKind==='live')player.endScrub();activePlayback()?.end({commit:!canceled});},onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
  const updater=createRecordingUpdater({api,onUpdate:applyStreams,
@@ -87,7 +93,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   player=kind==='submission'?createSubmissionPlayer({...options,canvas:$('pageMirror'),
    getVideo:()=>document.querySelector('.bpx-player-container video, .bilibili-player-video video')??document.querySelector('video'),
    isCurrent:()=>parseSubmissionUrl(readPageUrl())?.key===loadedRoute,getRange:()=>timeline.getSelection(),onState:()=>syncPlayback(),
-   createPreview:submission=>createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest,submission})}):createPlayer(options);
+   createPreview:storyboardFor}):createPlayer(options);
  }
  let lastPlaybackPaused;
  const syncPlayback=()=>{const paused=playerKind==='submission'?player.isPaused():video.paused||video.ended;if(paused===lastPlaybackPaused)return;lastPlaybackPaused=paused;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
@@ -140,7 +146,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   recordingController?.abort();recordingController=null;recordingPlan=null;previewDiagnostic=null;
   activePlayback()?.cancel();submissionThumbnails=false;
   estimate=null;estimateState='loading';backgroundStarted=false;record=null;ready=false;playbackTotal=0;clipSelection=null;recordStreams=[];segments=[];segmentIndex=0;renderSegments();
-  $('wholeRecording').checked=false;timeline.stop();player?.clear();thumbnails.clear();clearDownloads();updateClock(0);
+  $('wholeRecording').checked=false;timeline.stop();player?.clear();thumbnails.clear();storyboard?.reader.dispose?.();storyboard=null;clearDownloads();updateClock(0);
  }
  function renderCards(){
   const focusedKey=root.activeElement?.dataset.recordKey,scroll=$('body').scrollTop;
@@ -250,13 +256,13 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
    const onProgress=p=>{diagnostic.progress(p);renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`预计成品约 ${formatBytes(p.estimatedBytes)}`;};
    const showSaved=output=>{const line=document.createElement('p');line.textContent=`已保存 ${output.name} · ${formatBytes(output.bytes)}`;$('downloads').append(line);};
    if(submission){
-    const output=await exportSubmission(api.request,record,selection,{signal,precise:true,onProgress,fileHandle:destination});
+    const output=await exportSubmission(mediaRequest,record,selection,{signal,precise:true,onProgress,fileHandle:destination});
     showSaved({...output,name:destination.name});
    }else{
     await ensureTemporarySpace(storage,estimate?estimateSelectionBytes(estimate,record.start,selection):0);
     await updater.ensureFresh(record,signal);signal.throwIfAborted();
     const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===segmentIndex);
-    await exportSelection(api,record,groups,selection,{signal,precise:exportMode==='precise',onProgress,
+    await exportSelection(mediaApi,record,groups,selection,{signal,precise:exportMode==='precise',onProgress,
      createTemporary:options=>createTemporaryMedia({...options,storage}),
      createFile:()=>({handle:destination,name:destination.name,remove:async()=>{}}),
      onSaved:showSaved,
@@ -277,7 +283,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
    diagnostic.stage('preparing');await updater.ensureFresh(record,signal);signal.throwIfAborted();const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
-   const result=await saveRecording(api,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
+   const result=await saveRecording(mediaApi,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
     diagnostic.progress(p);
     if(p.progress!==undefined)$('progress').value=p.progress*100;
     if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
@@ -338,5 +344,10 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const navigationTimer=setInterval(checkCurrentVideo,500);
  window.addEventListener('popstate',checkCurrentVideo);
  window.addEventListener('pagehide',()=>{unbindPageProgress();clearInterval(navigationTimer);window.removeEventListener('popstate',checkCurrentVideo);controller?.abort();libraries.abortAll();leavePage();player?.destroy();});
-  controls();if(!room&&!parseSubmissionUrl(readPageUrl()))void libraries.preload(member);return {open,root};
+  // Only prepare the list once someone reaches for the panel: this runs on every
+  // Bilibili page, and account-bound requests there would add up across tabs.
+  let preloaded=Boolean(room||parseSubmissionUrl(readPageUrl()));
+  const preload=()=>{if(!preloaded){preloaded=true;void libraries.preload(member);}};
+  $('launcher').addEventListener('pointerenter',preload);$('launcher').addEventListener('focus',preload);
+  controls();return {open,root};
 }
