@@ -1,8 +1,5 @@
-import Hls from 'hls.js';
-import {makeHlsLoader} from './preview-player.js';
-import {readSubmissionThumbnail} from './submission-thumbnail.js';
+import {loadHls,makeHlsLoader} from './preview-player.js';
 import {createThumbnailSource,FRAME_INTERVAL} from '../services/thumbnail-source.js';
-import {readFragmentStill} from './fragment-still.js';
 import {drawFitted} from '../shared/fit.js';
 
 export function thumbnailSamples(record,streams,view,count=6) {
@@ -16,7 +13,11 @@ export function thumbnailSamples(record,streams,view,count=6) {
 
 // A separate, muted decoder keeps thumbnail seeks away from the user's player.
 export async function readThumbnail(request,sample,signal) {
- if(sample.stream.kind==='submission')return readSubmissionThumbnail(request,sample.stream,sample.local,signal);
+ if(sample.stream.kind==='submission'){
+  const {readSubmissionThumbnail}=await import('./submission-thumbnail.js');
+  return readSubmissionThumbnail(request,sample.stream,sample.local,signal);
+ }
+ const Hls=await loadHls();
  signal.throwIfAborted();
  const video=document.createElement('video');video.muted=true;video.playsInline=true;
  const hls=new Hls({loader:makeHlsLoader(request),enableWorker:false,startPosition:sample.local,maxBufferLength:1,maxMaxBufferLength:2,backBufferLength:0});
@@ -43,7 +44,9 @@ export async function readThumbnail(request,sample,signal) {
 
 const DEMAND_LIMIT=2;
 
-export function createThumbnails({container,request,api,metadataRequest,createStoryboard,locate,readStill=readFragmentStill,readFrame=readThumbnail}) {
+const readFragment=(...args)=>import('./fragment-still.js').then(module=>module.readFragmentStill(...args));
+
+export function createThumbnails({container,request,api,metadataRequest,createStoryboard,locate,readStill=readFragment,readFrame=readThumbnail}) {
  let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,decoding=Promise.resolve(),release=()=>{};
  function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
  function clear(){cancel();demands.abort();demands=new AbortController();wanted=null;seen.clear();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;release();container.replaceChildren();}

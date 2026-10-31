@@ -22,7 +22,8 @@ const stubs = {
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
   'export': 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan': 'export class RecordingPlan{constructor(api,streams,signal){this.streams=streams;this.signal=signal;scenario.plans.push(this);}async load(){return scenario.groups;}}',
-  'recording': 'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
+  'recording-estimate': 'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;',
+  'recording': 'export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
   'temporary-media': 'export const createTemporaryMedia=()=>{};export const ensureTemporarySpace=async(...args)=>scenario.space?.(...args);',
 };
 const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle:true,write:false,format:'iife',globalName:'application',

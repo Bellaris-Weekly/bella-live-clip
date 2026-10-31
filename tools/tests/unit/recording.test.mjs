@@ -5,7 +5,8 @@ import {RecordingPlan} from '../../../src/media/recording-plan.js';
 import {exportSelection} from '../support/clip-export.mjs';
 import {config,frame} from '../support/synthetic-frame.mjs';
 import {formatDuration} from '../../../src/shared/format.js';
-import {saveRecording,estimateRecordingRate,estimateSelectionBytes} from '../../../src/media/recording.js';
+import {saveRecording} from '../../../src/media/recording.js';
+import {estimateRecordingRate,estimateSelectionBytes} from '../../../src/media/recording-estimate.js';
 import {RequestError} from '../../../src/services/retry-request.js';
 import {config as bConfig,packets as bPackets} from '../support/b-frames.mjs';
 

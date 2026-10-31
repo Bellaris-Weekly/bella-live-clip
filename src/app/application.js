@@ -20,15 +20,13 @@ import {createSubmissionStoryboard} from '../services/submission-storyboard.js';
 import {bindPageProgress} from '../ui/page-progress.js';
 import {parseSubmissionUrl} from '../domain/submission.js';
 import {createSubmissionPlayer} from '../media/submission-player.js';
-import {exportSubmission} from '../media/submission-export.js';
 import {RecordingPlan} from '../media/recording-plan.js';
 import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
 import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
-import {exportSelection} from '../media/export.js';
 import {createTemporaryMedia,ensureTemporarySpace} from '../media/temporary-media.js';
-import {estimateRecordingRate,estimateSelectionBytes,saveRecording} from '../media/recording.js';
+import {estimateRecordingRate,estimateSelectionBytes} from '../media/recording-estimate.js';
 import {renderExportProgress} from '../ui/export-progress.js';
 import {fileName} from '../media/file-name.js';
 import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
@@ -270,11 +268,13 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
    const onProgress=p=>{diagnostic.progress(p);renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`约 ${formatBytes(p.estimatedBytes)}`;};
    const showSaved=output=>{const line=document.createElement('p');line.textContent=`已保存 ${output.name} · ${formatBytes(output.bytes)}`;$('downloads').append(line);};
    if(submission){
+    const {exportSubmission}=await import('../media/submission-export.js');
     const output=await exportSubmission(mediaRequest,record,selection,{signal,precise:exportMode()==='precise',onProgress,fileHandle:destination});
     showSaved({...output,name:destination.name});
    }else{
     await ensureTemporarySpace(storage,estimate?estimateSelectionBytes(estimate,record.start,selection):0);
     const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===segmentIndex);
+    const {exportSelection}=await import('../media/export.js');
     await exportSelection(mediaApi,record,groups,selection,{signal,precise:exportMode()==='precise',onProgress,
      createTemporary:options=>createTemporaryMedia({...options,storage}),
      createFile:()=>({handle:destination,name:destination.name,remove:async()=>{}}),
@@ -296,6 +296,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
    signal.throwIfAborted();player.pause();clearDownloads();status('正在导出整场…');
    diagnostic.stage('preparing');const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
+   const {saveRecording}=await import('../media/recording.js');
    const result=await saveRecording(mediaApi,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
     diagnostic.progress(p);
     if(p.progress!==undefined)$('progress').value=p.progress*100;

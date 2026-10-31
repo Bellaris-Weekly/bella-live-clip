@@ -1,6 +1,12 @@
-import Hls from 'hls.js';
-
 import { clamp } from '../shared/math.js';
+
+// Named here so the player can be created before hls.js has loaded.
+const EVENT={ERROR:'hlsError',MANIFEST_PARSED:'hlsManifestParsed',LEVEL_LOADED:'hlsLevelLoaded',FRAG_LOADED:'hlsFragLoaded'};
+const NETWORK_ERROR='networkError';
+
+// Parsing is cheap but initializing the library is not, and this script runs on
+// every Bilibili page, so it starts the first time a recording opens.
+export const loadHls=()=>import('hls.js/light').then(module=>module.default);
 
 export function makeHlsLoader(request) {
  return class {
@@ -28,7 +34,7 @@ const BOUNDARY_GAP=.1,RELOAD_LIMIT=3,RECOVERY_LIMIT=2;
 // holding its frame, while playback buffers ahead as usual.
 const PAUSED_BUFFER=2,PLAYING_BUFFER=12;
 
-export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},onStreams,HlsClass=Hls}) {
+export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},onStreams,HlsClass}) {
  let hls,record,streams=[],index=-1,generation=0,target=null,notified=false,attachedEnd=0;
  let scrubbing=false,scrubTime=null,settle=null,lastSeek=0;
  let fragments=[],reloads=new Map(),recoveries=0,renewed=false,failed=false,renewal=null;
@@ -66,18 +72,18 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;fragments=[];reloads=new Map();
   target=time;attachedEnd=streams[part].end_time;loading.hidden=false;
   hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:PAUSED_BUFFER,maxMaxBufferLength:24,maxBufferHole:1,backBufferLength:15,startPosition:time});
-  hls.on(Hls.Events.ERROR,(_,data)=>{
+  hls.on(EVENT.ERROR,(_,data)=>{
    if(token!==generation||!data.fatal)return;
-   if(data.type===Hls.ErrorTypes.NETWORK_ERROR&&!renewed){renewed=true;void renew(data);}else fail(data);
+   if(data.type===NETWORK_ERROR&&!renewed){renewed=true;void renew(data);}else fail(data);
   });
-  hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
-  hls.on(Hls.Events.LEVEL_LOADED,(_,{details})=>{
+  hls.on(EVENT.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
+  hls.on(EVENT.LEVEL_LOADED,(_,{details})=>{
    if(token!==generation)return;
    fragments=details.fragments;
    const safe=Number.isFinite(target)?clearBoundary(target):target;
    if(safe!==target){target=safe;video.currentTime=safe;hls.startLoad(safe);}
   });
-  hls.on(Hls.Events.FRAG_LOADED,(_,{frag})=>{
+  hls.on(EVENT.FRAG_LOADED,(_,{frag})=>{
    if(token!==generation||typeof frag.sn!=='number')return;
    const count=(reloads.get(frag.sn)||0)+1;reloads.set(frag.sn,count);
    if(count>RELOAD_LIMIT)recover();
@@ -129,5 +135,5 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   if(scrubTime!==null){if(showStill(frameUrl(scrubTime)))loading.hidden=true;}
   else if(!notified&&record)showStill(frameUrl(target===null?0:offset()+target));
  }
- return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在加载…';showStill(record.poster);const nextStreams=await api.clips(record,0,requestedEnd(),signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,reload(){if(failed)attach(index,Number.isFinite(target)?target:video.currentTime);},beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
+ return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在加载…';showStill(record.poster);const [library,nextStreams]=await Promise.all([HlsClass??loadHls(),api.clips(record,0,requestedEnd(),signal)]);HlsClass=library;signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,reload(){if(failed)attach(index,Number.isFinite(target)?target:video.currentTime);},beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
 }
