@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,6 +32,10 @@ jobs:
 
       - name: Verify
         run: npm run verify
+
+      - name: Check the version changed with the script
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: node tools/scripts/check-version.mjs --since "${{ github.event.before }}"
 
       - name: Check built artifact is committed
         run: git diff --exit-code -- bella-live-clip.user.js
