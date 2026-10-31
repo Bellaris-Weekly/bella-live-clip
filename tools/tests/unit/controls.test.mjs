@@ -5,7 +5,7 @@ import {createControls} from '../../../src/ui/controls.js';
 function fixture(){
   const writes=[];
   const element=(id,initial={})=>new Proxy({id,disabled:false,hidden:false,...initial},{set(target,key,value){writes.push([id,key,value]);target[key]=value;return true;}});
-  const ids=['markStart','markEnd','togglePlayback','wholeRecording','download','cancel','startHandle','endHandle','back','refreshEditor','refreshLibrary','copy','precise','member','cards','exportMode','progress','launcher','playSelection','segments'];
+  const ids=['markStart','markEnd','selectionStart','selectionEnd','togglePlayback','wholeRecording','download','cancel','startHandle','endHandle','back','refreshEditor','refreshLibrary','copy','precise','member','cards','exportMode','progress','launcher','playSelection','segments'];
   const elements=Object.fromEntries(ids.map(id=>[id,element(id)]));
   const label=element('label',{textContent:'导出'});elements.download.querySelector=()=>label;
   elements.cards.children=[];elements.segments.children=[];elements.launcher.dataset=element('dataset');
@@ -45,20 +45,18 @@ test('重复渲染不写入 DOM，切换模式保留按钮节点，新建卡片�
 
 test('整场停止按钮在收尾期间锁定，任务结束或切换片段后恢复普通取消',()=>{
  const f=fixture(),state={busy:true,ready:true,whole:true,page:'edit'};
- f.update(state);assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,false);
- f.update({...state,stopping:true});assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,true);assert.equal(f.download.disabled,true);
+ f.update(state);assert.equal(f.cancel.disabled,false);
+ f.update({...state,stopping:true});assert.equal(f.cancel.disabled,true);assert.equal(f.download.disabled,true);
  f.update({...state,busy:false});assert.equal(f.cancel.disabled,false);assert.equal(f.cancel.hidden,true);
- f.update({...state,whole:false});assert.equal(f.cancel.textContent,'停止');assert.equal(f.cancel.disabled,false);
+ f.update({...state,whole:false});assert.equal(f.cancel.disabled,false);
 });
 
 
-test('投稿固定精确模式隐藏选择器，返回直播恢复模式选择',()=>{
+test('投稿与直播都能选择导出方式，只有整场隐藏选择器',()=>{
  const f=fixture();
  for(const busy of [false,true]){
   const state={busy,ready:true,page:'edit',whole:false};
-  f.update({...state,submission:true});assert.equal(f.exportMode.hidden,true);
-  f.update({...state,submission:false});assert.equal(f.exportMode.hidden,false);
-  f.update({...state,submission:false,whole:true});assert.equal(f.exportMode.hidden,true);
-  f.update({...state,submission:true});assert.equal(f.exportMode.hidden,true);
+  f.update(state);assert.equal(f.exportMode.hidden,false);
+  f.update({...state,whole:true});assert.equal(f.exportMode.hidden,true);
  }
 });

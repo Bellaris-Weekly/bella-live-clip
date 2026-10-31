@@ -54,7 +54,7 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
  async function renew(data){
   const token=generation,own=new AbortController();renewal=own;
   const time=Number.isFinite(target)?target:video.currentTime;
-  waiting('正在刷新录像地址…');
+  waiting('正在加载…');
   try{
    const parts=await api.clips(record,0,requestedEnd(),own.signal);
    if(token!==generation)return;
@@ -91,7 +91,7 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   const found=streams[index]&&contains(streams[index])?index:streams.findIndex(contains);
   if(found<0){target=NaN;hideStill();waiting('该位置没有录像');return;}
   const local=clearBoundary(clamp(time-(streams[found].start_time-record.start),0,Math.max(0,streams[found].end_time-streams[found].start_time-.001)));
-  waiting('正在定位画面…');
+  waiting('正在加载…');
   // Keep buffered playback untouched during a background update. Only replace
   // its old snapshot when the user seeks into newly available footage.
   if(!hls||found!==index||time+record.start>=attachedEnd&&streams[found].end_time>attachedEnd)attach(found,local);else{target=local;video.currentTime=local;}
@@ -110,7 +110,7 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
  video.addEventListener('seeked',ready);video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);
  video.addEventListener('play',bufferAhead);video.addEventListener('pause',bufferOne);
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
- video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
+ video.onwaiting=()=>waiting('正在加载…');video.onplaying=()=>{loading.hidden=true;};
  function clear(){generation++;renewal?.abort();renewal=null;failed=false;renewed=false;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;scrubbing=false;scrubTime=null;clearTimeout(settle);settle=null;hideStill();}
  function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.removeEventListener('play',bufferAhead);video.removeEventListener('pause',bufferOne);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
  function availableTotal(){return (record.live?streams.at(-1).end_time:record.end)-record.start;}

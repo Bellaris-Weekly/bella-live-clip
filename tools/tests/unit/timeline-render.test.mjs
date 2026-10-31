@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {formatTimeRange} from '../../../src/shared/format.js';
 import {createTimeline,fitSelection} from '../../../src/ui/timeline.js';
 
 class Element {
@@ -30,7 +31,7 @@ function fixture(t){
   const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(key=>[key,new Element()]));
   elements.startHandle.dataset.handle='start';elements.endHandle.dataset.handle='end';
   const previews=[],selections=[],views=[];
-  const timeline=createTimeline({...elements,onPreview:value=>previews.push(value),onSelection:value=>selections.push(value),onView:(view,motion)=>views.push({view,motion})});
+  const timeline=createTimeline({...elements,onRange:({start,end})=>{elements.labels.textContent=formatTimeRange(start,end);},onPreview:value=>previews.push(value),onSelection:value=>selections.push(value),onView:(view,motion)=>views.push({view,motion})});
   const staticElements=[elements.startHandle,elements.endHandle,elements.selectionElement,elements.labels,elements.ticks,...elements.ticks.children];
   return {...elements,timeline,previews,selections,views,frames,advance(now){const callbacks=[...frames.values()];frames.clear();callbacks.forEach(fn=>fn(now));},staticWrites:()=>staticElements.map(el=>el.writes)};
 }
@@ -165,7 +166,7 @@ test('左右键按五秒调整播放位置，连续按键累积且不改选区',
  for(const duration of [24,7200]){
   f.timeline.reset(duration);f.timeline.setCurrent(7);
   const writes=f.staticWrites();
-  for(const [key,expected,extra]of [['ArrowRight',12,{}],['ArrowRight',17,{repeat:true}],['ArrowLeft',12,{shiftKey:true}]]){
+  for(const [key,expected,extra]of [['ArrowRight',12,{}],['ArrowRight',17,{repeat:true}],['ArrowLeft',12,{}]]){
    const event=arrow(f,f.track,key,extra);
    assert.equal(f.previews.at(-1),expected);assert.equal(event.defaultPrevented,true);assert.equal(event.stopped,true);
   }
@@ -184,7 +185,7 @@ test('点击任一边界会聚焦，缩放后与重复按键仍按五秒调整�
   f.track.handlers.pointerup({pointerId:1});assert.equal(handle.focused,true);
   f.advance(0);f.advance(420);
   const original=f.timeline.getSelection(),key=type==='start'?'ArrowLeft':'ArrowRight',expected=type==='start'?1:duration-1;
-  arrow(f,handle,key,{shiftKey:true});assert.equal(f.timeline.getSelection()[type],expected);assert.equal(f.previews.at(-1),expected);
+  arrow(f,handle,key);assert.equal(f.timeline.getSelection()[type],expected);assert.equal(f.previews.at(-1),expected);
   const other=type==='start'?'end':'start';assert.equal(f.timeline.getSelection()[other],original[other]);
   arrow(f,handle,key,{repeat:true});assert.equal(f.timeline.getSelection()[type],type==='start'?0:duration);
   const before=f.timeline.getSelection();
@@ -270,4 +271,15 @@ test('live growth preserves zoomed views; whole mode alone expands selection and
  f.track.handlers.pointerup({pointerId:1});assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(160),true);
  f.timeline.setSelection({start:20,end:40},true);assert.equal(f.timeline.isInteracting(),true);assert.equal(f.timeline.extend(180),false);
  f.advance(0);f.advance(500);assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(180),true);
+});
+
+test('Shift 按 1 秒、逗号句号按 0.1 秒移动，其他修饰键不处理',t=>{
+ const f=fixture(t);
+ f.timeline.reset(100);f.timeline.setCurrent(10);
+ arrow(f,f.track,'ArrowRight',{shiftKey:true});assert.equal(f.previews.at(-1),11);
+ arrow(f,f.track,'ArrowLeft',{shiftKey:true});assert.equal(f.previews.at(-1),10);
+ arrow(f,f.track,'.');assert.ok(Math.abs(f.previews.at(-1)-10.1)<1e-9);
+ arrow(f,f.track,',');assert.ok(Math.abs(f.previews.at(-1)-10)<1e-9);
+ const before=f.previews.length;arrow(f,f.track,'ArrowRight',{ctrlKey:true});assert.equal(f.previews.length,before);
+ assert.deepEqual(f.timeline.getBounds(),{start:0,end:100});
 });

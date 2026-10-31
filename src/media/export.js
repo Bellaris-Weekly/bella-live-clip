@@ -23,7 +23,7 @@ export async function convertInput(input, { start, end, precise = false, signal,
     conversion = await Conversion.init(options);
     signal?.throwIfAborted();
     if (!conversion.isValid || conversion.discardedTracks.length) {
-      throw new Error('这段录像无法完整封装为 MP4，已停止导出，避免丢失声音或画面。');
+      throw new Error('这段录像无法保存为 MP4，已停止，以免丢失声音或画面。');
     }
     conversion.onProgress = onProgress;
     onProcessingStart();
@@ -145,7 +145,7 @@ export async function exportSelection(api, record, groups, selection, {
     try {
       temporary = await createTemporary({ signal });
       signal?.throwIfAborted();
-      message = '正在整理录像并写入临时文件';
+      message = '正在整理录像';
       const expanded = await extendPlan(group, plan, read, signal);
       for (const segment of expanded.segments) resources.add(segmentKey(segment));
       const savingApi = { async request(url, options) {
@@ -173,7 +173,7 @@ export async function exportSelection(api, record, groups, selection, {
       if (end <= start) throw new Error('选区内没有可导出的音视频，请调整起止位置。');
       destination = await createFile({ start: plan.offset + plan.start, end: plan.offset + plan.end, index, count: plans.length });
       signal?.throwIfAborted();
-      message = '正在裁剪并写入文件';
+      message = '正在裁剪';
       const result = await convertInput(input, { start, end, precise, signal, fileHandle: destination.handle,
         onProgress(value, detail) {
           if (detail?.message) message = detail.message;
@@ -196,6 +196,6 @@ export async function exportSelection(api, record, groups, selection, {
       finally { if (temporary) await temporary.remove(); }
     }
   }
-  progress = processing = 1; message = '已保存到所选位置'; report('complete');
+  progress = processing = 1; message = '已保存'; report('complete');
   return outputs;
 }

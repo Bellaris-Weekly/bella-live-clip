@@ -8,7 +8,7 @@ export class RecordingTimeline {
   append(tracks, discontinuity = false) {
     const starts = tracks.map(track => track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity));
     const first = Math.min(...starts);
-    if (!Number.isFinite(first)) throw new Error('录像分片没有音视频数据。');
+    if (!Number.isFinite(first)) throw new Error('这段录像没有音视频数据。');
     if (this.offset === null || discontinuity) this.offset = recordingTime(this.end - first);
     let correction = 0;
     for (const [index, track] of tracks.entries()) {
@@ -29,7 +29,7 @@ export class RecordingTimeline {
       for (const packet of track.packets) {
         const timestamp = recordingTime(packet.timestamp + this.offset);
         if (packet.type === 'key') state.boundary = state.max;
-        if (timestamp < state.boundary) throw new Error('录像分片内部的关键帧时间线发生倒退，无法无损拼接。');
+        if (timestamp < state.boundary) throw new Error('录像时间线异常，无法无损导出，请改用精确导出。');
         state.max = Math.max(state.max, timestamp);
         state.end = Math.max(state.end, recordingTime(timestamp + packet.duration));
       }

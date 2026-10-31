@@ -80,7 +80,7 @@ test('names screenshots using local click time and safe streamer names', () => {
 
 import {JSDOM} from 'jsdom';
 import {installLiveScreenshot} from '../../../src/ui/live-screenshot.js';
-const flush = () => new Promise(resolve => setImmediate(resolve));
+const flush = () => new Promise(resolve => setTimeout(resolve, 230));
 
 function pageFixture(t, { embedded = false } = {}) {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://live.bilibili.com/1234' });

@@ -192,7 +192,7 @@ test('首个关键帧可在后续文件，正常文件边界的依赖帧不丢�
 
 test('整条视频轨道都没有真实关键帧时明确报错并中止文件',async()=>{
  const data=await partialGopFixture([{...bPackets[1],timestamp:0}]),file=disk();
- await assert.rejects(saveRecording({request:async()=>({data})},[{segments:[{url:'0',duration:1}]}],file),/缺少可独立解码的关键帧/);
+ await assert.rejects(saveRecording({request:async()=>({data})},[{segments:[{url:'0',duration:1}]}],file),/缺少关键帧/);
  assert.equal(file.aborted,true);assert.equal(file.closed,false);
 });
 

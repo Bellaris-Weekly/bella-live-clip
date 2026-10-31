@@ -84,5 +84,5 @@ test('临时文件使用独立名称并只清理自己，浏览器不支持时�
   const first = await createTemporaryMedia({ storage }), second = await createTemporaryMedia({ storage });
   assert.notEqual(first.handle.name, second.handle.name); await first.remove(); await second.remove();
   assert.deepEqual(removed, created);
-  await assert.rejects(createTemporaryMedia({ storage: {} }), /不支持临时文件/);
+  await assert.rejects(createTemporaryMedia({ storage: {} }), /不支持保存文件/);
 });

@@ -1,9 +1,9 @@
 import {clamp} from '../shared/math.js';
-import {formatTimeRange} from '../shared/format.js';
 import {zoomWindow, panWindow, validateRange} from './timeline-model.js';
 import {isEditing} from './shortcuts.js';
 
-const KEYBOARD_STEP=5;
+const KEYBOARD_STEP=5,SHIFT_STEP=1,FINE_STEP=.1;
+const STEP_KEYS={ArrowLeft:-1,ArrowRight:1,',':-1,'.':1};
 
 export function fitSelection(start,end,total,min=0) {
  const width=Math.min(total-min,(end-start)*1.12);
@@ -22,7 +22,7 @@ function moveBoundary(selection,type,time,total,min=0) {
  else next.end=Math.max(target,selection.start+gap);
  return next;
 }
-export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,labels,onPreview,onScrubStart,onScrubEnd,onSelection=()=>{},onView=()=>{}}) {
+export function createTimeline({track,startHandle,endHandle,selectionElement,playhead,ticks,onRange,onPreview,onScrubStart,onScrubEnd,onSelection=()=>{},onView=()=>{}}) {
  let min=0,total=0,selection={start:0,end:1},view={start:0,end:1},drag=null,current=0,locked=false,frame=0,pending,zoomFrame=0,zooming=false,zoomTarget=null,tickTimes=[];
  const pct=t=>clamp((t-view.start)/(view.end-view.start)*100,0,100);
  const timeLabel=t=>{const h=Math.floor(t/3600),m=Math.floor(t/60)%60,s=Math.floor(t)%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':');};
@@ -46,7 +46,7 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   track.dataset.zoom=`${((total-min)/(view.end-view.start)).toFixed(1)}×`;
   track.style.setProperty('--view-start',`${(view.start-min)/(total-min)*100}%`);
   track.style.setProperty('--view-width',`${(view.end-view.start)/(total-min)*100}%`);
-  labels.textContent=formatTimeRange(selection.start,selection.end);
+  onRange?.(selection);
   renderPlayhead();renderLock();onView({...view},{animating:zooming,target:zoomTarget??view});
  }
  function stopZoom(){
@@ -103,10 +103,10 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
  track.addEventListener('pointerup',finish);track.addEventListener('pointercancel',finish);track.addEventListener('lostpointercapture',finish);
  track.addEventListener('wheel',e=>{if(locked||!loaded()||drag)return;e.preventDefault();stopZoom();const r=track.getBoundingClientRect();view=e.shiftKey||Math.abs(e.deltaX)>Math.abs(e.deltaY)?panWindow(view,total,(e.deltaX||e.deltaY)/r.width*(view.end-view.start),min):zoomWindow(view,total,Math.exp(e.deltaY*.005),(e.clientX-r.left)/r.width,min);render();},{passive:false});
  function handleKeyDown(e){
-  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||isEditing(e)||!['ArrowLeft','ArrowRight'].includes(e.key)||locked||!loaded()||drag)return;
+  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||isEditing(e)||!(e.key in STEP_KEYS)||locked||!loaded()||drag)return;
   e.preventDefault();e.stopPropagation();
   const type=e.target.closest('[data-handle]')?.dataset.handle||'playhead';
-  const delta=e.key==='ArrowRight'?KEYBOARD_STEP:-KEYBOARD_STEP;
+  const size=e.key.startsWith('Arrow')?(e.shiftKey?SHIFT_STEP:KEYBOARD_STEP):FINE_STEP,delta=STEP_KEYS[e.key]*size;
   onScrubStart?.();
   if(type==='playhead'){
    current=clamp(current+delta,min,total);
@@ -125,5 +125,5 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   if(whole)selection={start:min,end};
   render();if(whole)onSelection({...selection});return true;
  }
- return {handleKeyDown,extend,isInteracting:()=>Boolean(drag||zooming),reset(bounds,next){const range=typeof bounds==='number'?{start:0,end:bounds}:bounds;stopZoom();min=range.start;total=range.end;current=min;view={...range};setSelection(next??{...range});},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
+ return {handleKeyDown,extend,isInteracting:()=>Boolean(drag||zooming),reset(bounds,next){const range=typeof bounds==='number'?{start:0,end:bounds}:bounds;stopZoom();min=range.start;total=range.end;current=min;view={...range};setSelection(next??{...range});},setSelection,getSelection:()=>({...selection}),getBounds:()=>({start:min,end:total}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
 }

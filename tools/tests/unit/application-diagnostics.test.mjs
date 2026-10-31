@@ -53,7 +53,7 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   const scenario={loadVideo,export:exportWork,groups,plans:[],loads:[],extensions:[],selection:{start:2,end:8},thumbnailResumes:0,estimates:0,player:new Proxy({load:async(record,signal)=>{scenario.loads.push({record,signal});return {total,streams};},extend(parts){return {streams:parts,total:parts.at(-1).end_time-scenario.loads.at(-1).record.start,changed:true};},position:()=>0,isPaused:()=>true,seek:time=>seeks.push(time)},{get:(target,key)=>target[key]||(()=>{})})};
   scenario.timeline=new Proxy({getSelection:()=>({...scenario.selection}),getView:()=>({start:0,end:100}),isInteracting:()=>scenario.interacting,extend(end,options){scenario.extensions.push({end,...options});if(options.whole)scenario.selection.end=end;}},{get:(target,key)=>target[key]||(()=>{})});
   const timers=new Map();let timerId=0;
-  scenario.windowEvents=[];const context={scenario,document,window:{addEventListener(name){scenario.windowEvents.push(`+${name}`);},removeEventListener(name){scenario.windowEvents.push(`-${name}`);}},URL,AbortController,DOMException,
+  scenario.windowEvents=[];const context={scenario,document,window:{addEventListener(name,fn){scenario.windowEvents.push(`+${name}`);(scenario.windowListeners??={})[name]=fn;},removeEventListener(name){scenario.windowEvents.push(`-${name}`);}},URL,AbortController,DOMException,
     innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout(fn,delay){if(delay!==30000)return setTimeout(fn,delay);const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){if(!timers.delete(id))clearTimeout(id);}};
   runInNewContext(outputFiles[0].text,context);
   const requests=[];
@@ -107,7 +107,7 @@ test('缺少浏览器保存能力仍走统一失败入口，保留原有说明',
   await fixture.app.open();await fixture.$('download').onclick();
   assert.equal(fixture.requests.length,1);
   assert.equal(fixture.requests[0].context.stage,'select_destination');
-  assert.match(fixture.$('status').textContent,/浏览器未开放文件保存接口/);
+  assert.match(fixture.$('status').textContent,/浏览器不支持保存文件/);
 });
 
 test('已捕获的视频和直播加载错误仍上报，正常未开播不当错误', async () => {
@@ -143,8 +143,8 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
   await fixture.$('download').onclick();
   assert.equal(saves.length,2);assert.deepEqual(saves[1].groups.map(group=>group.streamIndex),[1]);
   assert.equal(names.length,2);assert.match(names[1],/_00-03-20-00-05-00_整场_第2段\.mp4$/);
-  assert.equal(fixture.$('downloads').children.length,1);assert.match(fixture.$('downloads').children[0].textContent,/^整场已保存/);
-  assert.equal(fixture.$('status').textContent,'整场下载完成。');
+  assert.equal(fixture.$('downloads').children.length,1);assert.match(fixture.$('downloads').children[0].textContent,/^已保存整场/);
+  assert.equal(fixture.$('status').textContent,'导出完成。');
 
   const single=start({url:'https://live.bilibili.com/123',current:async()=>record,total:300,streams:[{start_time:1000,end_time:1300,stream:'a'}]});
   await single.app.open();
@@ -185,6 +185,37 @@ test('打开失败的录像刷新时重新打开；回放地址更新不打断�
  f.scenario.player.load=async()=>{if(!clips++)throw new Error('network');return {total:100,streams:[{start_time:1000,end_time:1100,stream:'first'}]};};
  await f.app.open();assert.equal(clips,1);
  await f.$('refreshEditor').onclick();assert.equal(clips,2);
+});
+
+test('设为开始越过终点时选区延伸到录像边缘，手动输入时间校验后生效',async()=>{
+ const record={key:'replay',room:123,member:'成员',start:1000,end:1100,live:false};
+ const f=start({url:'https://live.bilibili.com/123',current:async()=>record,streams:[{start_time:1000,end_time:1100,stream:'first'}]});
+ await f.app.open();const sets=[];
+ f.scenario.timeline.setSelection=value=>{sets.push(value);};f.scenario.timeline.getBounds=()=>({start:0,end:100});f.scenario.timeline.getSelection=()=>({start:2,end:8});
+ f.scenario.player.position=()=>50;
+ f.$('markStart').onclick();assert.deepEqual({...sets.at(-1)},{start:50,end:100},'不能缩成一毫秒的选区');
+ f.scenario.player.position=()=>1;
+ f.$('markEnd').onclick();assert.deepEqual({...sets.at(-1)},{start:0,end:1});
+ f.$('selectionStart').value='0:05';f.$('selectionStart').onchange();assert.deepEqual({...sets.at(-1)},{start:5,end:8});
+ const count=sets.length;f.$('selectionEnd').value='abc';f.$('selectionEnd').onchange();assert.equal(sets.length,count);assert.match(f.$('status').textContent,/时间格式/);
+});
+
+test('编辑快捷键：空格播放、I / O 设起止点，输入框和整场模式下不触发',async()=>{
+ const record={key:'replay',room:123,member:'成员',start:1000,end:1100,live:false};
+ const f=start({url:'https://live.bilibili.com/123',current:async()=>record,streams:[{start_time:1000,end_time:1100,stream:'first'}]});
+ await f.app.open();const sets=[];f.scenario.timeline.setSelection=value=>{sets.push(value);};f.scenario.timeline.getBounds=()=>({start:0,end:100});f.scenario.player.position=()=>5;
+ const press=(key,extra={})=>{const event={key,target:{closest:()=>null},composedPath:()=>[],preventDefault(){this.defaultPrevented=true;},stopPropagation(){},...extra};f.$('editPage').listeners.keydown(event);return event;};
+ assert.equal(press('i').defaultPrevented,true);assert.equal(sets.length,1);
+ press('O');assert.equal(sets.length,2);
+ press('i',{ctrlKey:true});assert.equal(sets.length,2);
+ press('i',{target:{tagName:'INPUT',closest:()=>null}});assert.equal(sets.length,2);
+ f.$('wholeRecording').checked=true;press('i');assert.equal(sets.length,2);
+});
+
+test('页面进入前进后退缓存时保留面板，真正离开才销毁',async()=>{
+ const f=start({url:'https://www.bilibili.com/'}),destroyed=[];
+ f.scenario.player.destroy=()=>destroyed.push(true);
+ f.scenario.windowListeners.pagehide({persisted:true});assert.equal(destroyed.length,0);
 });
 
 test('导出期间拦截关闭页面，结束后解除；空间不足时不开始读取',async()=>{

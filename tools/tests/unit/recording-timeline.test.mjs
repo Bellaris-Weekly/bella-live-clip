@@ -33,5 +33,5 @@ test('resets shift every track by the same epoch and preserve the original audio
 
 test('genuine intra-segment GOP corruption is reported rather than sorting or dropping packets',()=>{
   const timeline=new RecordingTimeline();
-  assert.throws(()=>timeline.append([video([packet(0),packet(.12,'delta'),packet(.04)])]),/分片内部/);
+  assert.throws(()=>timeline.append([video([packet(0),packet(.12,'delta'),packet(.04)])]),/时间线异常/);
 });

@@ -7,6 +7,13 @@ export function formatTime(seconds, fractional = false) {
   return `${pad(h)}:${pad(m)}:${pad(s)}${fractional ? '.' + String(ms % 1000).padStart(3, '0') : ''}`;
 }
 
+// Accepts 1:02:03.5, 02:03 or plain seconds; anything else is null.
+export function parseTime(text) {
+  const match = /^(?:(?:(\d+):)?(\d+):)?(\d+(?:\.\d+)?)$/.exec(text.trim().replace('：', ':'));
+  if (!match) return null;
+  return Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3]);
+}
+
 export function formatTimeRange(start,end,separator=' — ') {
   const values=[start,end].map(value=>Math.floor(Math.max(0,value)));
   const hours=values.map(value=>Math.floor(value/3600));

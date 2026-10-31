@@ -81,17 +81,17 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
       let sourceStart=Infinity,sourceEnd=-Infinity;
       for(const track of await input.getTracks()){
         const key=`${track.type}:${track.number}`,codec=await track.getCodec();
-        if(!['video','audio'].includes(track.type)||!output.format.getSupportedCodecs().includes(codec))throw new Error('本场编码无法完整保存为 MP4，已停止下载，避免丢失声音或画面。');
+        if(!['video','audio'].includes(track.type)||!output.format.getSupportedCodecs().includes(codec))throw new Error('本场编码无法保存为 MP4，已停止，以免丢失声音或画面。');
         const config=await track.getDecoderConfig();
         let target=tracks.get(key);
         if(!target){
-          if(output.state!=='pending')throw new Error('录像中途新增了音视频轨道，无法保存到同一个 MP4。');
+          if(output.state!=='pending')throw new Error('录像中途音视频结构发生变化，无法保存到同一个 MP4。');
           const source=track.type==='video'?new EncodedVideoPacketSource(codec):new EncodedAudioPacketSource(codec);
           if(track.type==='video')output.addVideoTrack(source,{rotation:await track.getRotation()});
           else output.addAudioTrack(source);
           target={source,codec,needsKey:true,written:false};tracks.set(key,target);
         }
-        if(target.codec!==codec)throw new Error('录像中途更换了编码，无法保存到同一个 MP4。');
+        if(target.codec!==codec)throw new Error('录像中途音视频结构发生变化，无法保存到同一个 MP4。');
         const packets=[];
         for await(const original of new EncodedPacketSink(track).packets()){
           download.signal.throwIfAborted();
@@ -137,7 +137,7 @@ export async function saveRecording(api, groups, fileHandle, {signal,stopSignal,
     signal?.throwIfAborted();
     const stopped=Boolean(stopSignal?.aborted&&processed<1);
     if(stopped&&(!tracks.size||[...tracks.values()].some(track=>!track.written)))return {stopped:true,saved:false,bytes:0,duration:0};
-    if(!tracks.size||[...tracks.values()].some(track=>!track.written))throw new Error('录像轨道缺少可独立解码的关键帧，无法完整导出。');
+    if(!tracks.size||[...tracks.values()].some(track=>!track.written))throw new Error('这段录像缺少关键帧，无法导出。');
     phase='finalizing';report();
     for(const track of tracks.values())track.source.close();
     await output.finalize();signal?.throwIfAborted();await file.close();file=null;phase='saved';report(true);

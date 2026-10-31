@@ -28,12 +28,12 @@ export function createRequest(gmRequest) {
               retryable:response.status===0||response.status===408||response.status===429||response.status>=500&&response.status<=599})); return;
           }
           if (range && response.status !== 206) {
-            reject(new Error('视频服务器未按分片范围返回内容，已停止处理。')); return;
+            reject(new Error('视频服务器返回的数据不完整，请重试。')); return;
           }
           resolve({ data: type === 'text' ? response.responseText : response.response,
             url: response.finalUrl || url, headers: response.responseHeaders });
         },
-        onerror: () => fail(new RequestError('网络请求失败，请检查网络和油猴的站点访问权限。',{retryable:true})),
+        onerror: () => fail(new RequestError('网络请求失败，请检查网络和脚本管理器的站点权限。',{retryable:true})),
         onabort: () => fail(signal?.reason || new RequestError('网络连接已中断。',{retryable:true})),
         ontimeout: () => fail(new RequestError('请求超时，请重试。',{retryable:true})),
       });

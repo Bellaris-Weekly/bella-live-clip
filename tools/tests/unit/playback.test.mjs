@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {formatTimeRange} from '../../../src/shared/format.js';
 import {createPlayback,bindVideoControls} from '../../../src/media/playback.js';
 import {createTimeline} from '../../../src/ui/timeline.js';
 
@@ -58,7 +59,7 @@ test('播放位置与左右边界拖动均恢复原来的播放状态，覆盖�
    const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(k=>[k,new Element()]));
    elements.startHandle.dataset.handle='start';elements.endHandle.dataset.handle='end';
    let position;
-   const timeline=createTimeline({...elements,onPreview:t=>{video.pause();position=t;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
+   const timeline=createTimeline({...elements,onRange:({start,end})=>{elements.labels.textContent=formatTimeRange(start,end);},onPreview:t=>{video.pause();position=t;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
    timeline.reset(100,{start:10,end:80});
    timeline.setSelection({start:10.704,end:80.602});
    assert.equal(elements.labels.textContent,'00:10 — 01:20');
@@ -91,7 +92,7 @@ test('默认选区覆盖整场，两端直接位于时间轴起止位置',()=>{
  try{
   const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(k=>[k,new Element()]));
   let selected;
-  const timeline=createTimeline({...elements,onPreview(){},onSelection:value=>selected=value});
+  const timeline=createTimeline({...elements,onRange:({start,end})=>{elements.labels.textContent=formatTimeRange(start,end);},onPreview(){},onSelection:value=>selected=value});
   for(const duration of [24,4976,7200]){
    timeline.reset(duration);
    assert.deepEqual(timeline.getSelection(),{start:0,end:duration});
@@ -143,7 +144,7 @@ test('键盘调整播放位置和两个边界后保留播放或暂停状态',t=>
   const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(k=>[k,new Element()]));
   elements.startHandle.dataset.handle='start';elements.endHandle.dataset.handle='end';
   let position;
-  const timeline=createTimeline({...elements,onPreview:value=>{video.pause();position=value;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
+  const timeline=createTimeline({...elements,onRange:({start,end})=>{elements.labels.textContent=formatTimeRange(start,end);},onPreview:value=>{video.pause();position=value;},onScrubStart:()=>playback.begin(),onScrubEnd:()=>playback.end()});
   timeline.reset(100,{start:10,end:80});timeline.setCurrent(30);
   timeline.handleKeyDown({key:'ArrowRight',target:type==='playhead'?elements.track:elements[type+'Handle'],preventDefault(){},stopPropagation(){}});
   assert.equal(video.paused,paused);assert.equal(video.playCount,paused?0:1);

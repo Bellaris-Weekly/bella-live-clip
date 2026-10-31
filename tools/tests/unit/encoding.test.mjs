@@ -175,7 +175,7 @@ test('取消卡在背压中的编码立即退出并释放资源，下一次导�
 
 test('码率统计失败或预先取消不会启动编码', async t => {
   const native = webCodecs(t);
-  await assert.rejects(readVideoEncodingSettings(track({ fps: 0, bitrate: 0 }).video), /没有可用的视频码率或帧率/);
+  await assert.rejects(readVideoEncodingSettings(track({ fps: 0, bitrate: 0 }).video), /缺少码率或帧率/);
   const controller = new AbortController(); controller.abort();
   await assert.rejects(readVideoEncodingSettings(track().video, { signal: controller.signal }), { name: 'AbortError' });
   assert.equal(native.probes.length, 0);
@@ -234,5 +234,5 @@ test('精确模式整段回退仍没有解码画面时不能交付空视频',asy
  video.getCodec=async()=> 'vp9';video.canDecode=async()=>true;
  video.getLanguageCode=async()=> 'und';video.getName=async()=>null;video.getDisposition=async()=>({});video.getRotation=async()=>0;
  sampleStream(t,[]);
- await assert.rejects(trimPrecise({getTracks:async()=>[video]},{start:0,end:1}),/选区内没有可解码的画面/);
+ await assert.rejects(trimPrecise({getTracks:async()=>[video]},{start:0,end:1}),/选区内没有画面/);
 });

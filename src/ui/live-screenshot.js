@@ -1,6 +1,7 @@
 const FEEDBACK_SELECTOR = '.web-player-icon-feedback';
 const INSTALLED_ATTRIBUTE = 'data-bella-live-screenshot-installed';
 const SCREENSHOT_LABEL = '截图';
+const SCAN_DELAY = 200;
 const CAMERA_ICON = '<svg data-bella-screenshot-icon viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="display:block;margin:8px;pointer-events:none;filter:drop-shadow(0 1px 2px #000a)"><path fill="white" fill-rule="evenodd" d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M12 8a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9z"/></svg>';
 
 // Walk only this control's ancestors so another player/editor cannot supply the frame.
@@ -127,12 +128,13 @@ function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, downloa
     if (root.matches(FEEDBACK_SELECTOR)) enhance(root);
     root.querySelectorAll(FEEDBACK_SELECTOR).forEach(enhance);
   };
-  const observer = new view.MutationObserver((records) => {
-    for (const record of records) {
-      const control = record.target.closest?.(FEEDBACK_SELECTOR);
-      if (control) enhance(control);
-      record.addedNodes.forEach(scan);
-    }
+  // Danmaku adds nodes constantly. Coalesce them into a query a few times a second.
+  let scanning = null;
+  const observer = new view.MutationObserver(() => {
+    scanning ??= view.setTimeout(() => {
+      scanning = null;
+      scan(rootDocument.documentElement);
+    }, SCAN_DELAY);
   });
   // Also runs inside the player's iframe, before the main editor's top-window guard.
   observer.observe(rootDocument.documentElement, { childList: true, subtree: true });

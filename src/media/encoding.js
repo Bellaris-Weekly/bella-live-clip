@@ -23,7 +23,7 @@ export async function readVideoEncodingSettings(track, { signal } = {}) {
   signal?.throwIfAborted();
   const bitrate = Math.round(stats.averageBitrate), frameRate = stats.averagePacketRate;
   if (!(bitrate > 0 && Number.isFinite(bitrate) && frameRate > 0 && Number.isFinite(frameRate))) {
-    throw new Error('这段录像没有可用的视频码率或帧率信息，无法完成精确编码。');
+    throw new Error('这段录像缺少码率或帧率信息，请改用原画导出。');
   }
   const quality = new Quality({ bitrate, bitrateMode: 'variable' });
   const options = { codec: 'avc', quality, latencyMode: 'quality' };

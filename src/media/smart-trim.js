@@ -153,7 +153,7 @@ async function muxPackets(session, streams, { start, end, signal, onProgress, st
     await output.start();
     for (const stream of streams) {
       stream.next = await stream.iterator.next();
-      if (stream.next.done) throw new Error(stream.isVideo ? '选区内没有可解码的画面，请调整选区或使用原画导出。' : '选区内没有可读取的声音，已停止导出以避免丢失音轨。');
+      if (stream.next.done) throw new Error(stream.isVideo ? '选区内没有画面，请调整选区或改用原画导出。' : '选区内读不到声音，已停止，以免丢失音轨。');
     }
     while (streams.some(stream => !stream.next.done)) {
       signal?.throwIfAborted();
@@ -184,10 +184,10 @@ async function muxPackets(session, streams, { start, end, signal, onProgress, st
 
 async function encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }) {
   if (!tracks.some(track => track.type === 'video') || tracks.some(track => !['video', 'audio'].includes(track.type))) {
-    throw new Error('当前音视频轨道无法完整编码，请使用原画下载。');
+    throw new Error('这段录像无法精确导出，请改用原画导出。');
   }
   if ((await Promise.all(tracks.filter(track => track.type === 'audio').map(track => track.getCodec()))).some(codec => codec !== 'aac')) {
-    throw new Error('精确模式目前需要 AAC 音频，请使用原画下载以保留声音。');
+    throw new Error('精确导出需要 AAC 音频，请改用原画导出以保留声音。');
   }
   const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
   try {
@@ -196,7 +196,7 @@ async function encodeSelection(tracks, { start, end, signal, onProgress, onProce
       signal?.throwIfAborted();
       const options = { start, end, origin: start, signal };
       if (track.type === 'video') {
-        if (!await track.canDecode()) throw new Error('当前浏览器无法解码这段录像，请使用原画下载或更新 Chrome / Edge。');
+        if (!await track.canDecode()) throw new Error('当前浏览器无法解码这段录像，请改用原画导出或更新浏览器。');
         const source = new EncodedVideoPacketSource('avc');
         const settings = await readVideoEncodingSettings(track, { signal });
         output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
@@ -243,7 +243,7 @@ export async function trimCopyTracks(tracks, { start, end, signal, onProgress = 
     first = await sink.getKeyPacket(first.timestamp - tick, verified);
   }
   first ??= await sink.getFirstKeyPacket(verified);
-  if (!first || !normalizer.isIdr(first) || first.timestamp >= end) throw new Error('选区没有可独立解码的关键帧。');
+  if (!first || !normalizer.isIdr(first) || first.timestamp >= end) throw new Error('选区内没有关键帧，请调大选区或改用精确导出。');
   let last = await sink.getKeyPacket(end, verified);
   while (last && (last.timestamp < end - tick / 2 || !normalizer.isIdr(last))) {
     signal?.throwIfAborted();
