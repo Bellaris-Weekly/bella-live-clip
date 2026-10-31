@@ -253,3 +253,21 @@ test('分段范围限制拖动、方向键、缩放和选区，时间仍从直�
  assert.deepEqual(f.timeline.getView(),{start:40,end:100},'缩小最多显示整段');
  assert.throws(()=>f.timeline.setSelection({start:30,end:60}),/最早为 00:00:40/);
 });
+
+test('live extent grows the full view without changing an existing selection or playhead',t=>{
+ const f=fixture(t);f.timeline.reset({start:40,end:100});f.timeline.setSelection({start:50,end:90});f.timeline.setCurrent(70);
+ const selectionEvents=f.selections.length;
+ assert.equal(f.timeline.extend(130),true);assert.deepEqual(f.timeline.getView(),{start:40,end:130});assert.deepEqual(f.timeline.getSelection(),{start:50,end:90});
+ assert.equal(f.selections.length,selectionEvents);assert.equal(f.endHandle.attributes['aria-valuemax'],130);assert.equal(f.playhead.style.left,`${30/90*100}%`);
+ arrow(f,f.track);assert.equal(f.previews.at(-1),75);assert.equal(f.timeline.extend(120),false);
+});
+test('live growth preserves zoomed views; whole mode alone expands selection and dragging defers growth',t=>{
+ const f=fixture(t);f.timeline.reset(100);
+ f.track.handlers.wheel({deltaY:Math.log(.5)/.005,deltaX:0,clientX:50,shiftKey:false,preventDefault(){}});
+ const view=f.timeline.getView();f.timeline.extend(130,{whole:true});assert.deepEqual(f.timeline.getView(),view);assert.deepEqual(f.timeline.getSelection(),{start:0,end:130});
+ f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
+ assert.equal(f.timeline.isInteracting(),true);assert.equal(f.timeline.extend(160),false);
+ f.track.handlers.pointerup({pointerId:1});assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(160),true);
+ f.timeline.setSelection({start:20,end:40},true);assert.equal(f.timeline.isInteracting(),true);assert.equal(f.timeline.extend(180),false);
+ f.advance(0);f.advance(500);assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(180),true);
+});

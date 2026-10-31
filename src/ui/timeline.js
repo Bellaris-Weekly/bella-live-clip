@@ -118,5 +118,12 @@ export function createTimeline({track,startHandle,endHandle,selectionElement,pla
   onPreview(current);onScrubEnd?.(current);
  }
  // reset() takes a duration (0..duration) or explicit {start,end} bounds.
- return {handleKeyDown,reset(bounds,next){const range=typeof bounds==='number'?{start:0,end:bounds}:bounds;stopZoom();min=range.start;total=range.end;current=min;view={...range};setSelection(next??{...range});},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
+ function extend(end,{whole=false}={}){
+  if(drag||zooming||!Number.isFinite(end)||end<=total)return false;
+  const fullView=view.start===min&&view.end===total;
+  total=end;if(fullView)view={start:min,end};
+  if(whole)selection={start:min,end};
+  render();if(whole)onSelection({...selection});return true;
+ }
+ return {handleKeyDown,extend,isInteracting:()=>Boolean(drag||zooming),reset(bounds,next){const range=typeof bounds==='number'?{start:0,end:bounds}:bounds;stopZoom();min=range.start;total=range.end;current=min;view={...range};setSelection(next??{...range});},setSelection,getSelection:()=>({...selection}),getView:()=>({...view}),setCurrent(t){if(!drag){current=t;renderPlayhead();}},lock(value){locked=value;if(value&&zooming){stopZoom();render();}renderLock();},stop(){if(zooming){stopZoom();render();}}};
 }

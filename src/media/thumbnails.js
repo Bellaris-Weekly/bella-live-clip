@@ -89,5 +89,6 @@ export function createThumbnails({container,request,api,metadataRequest,readFram
   if(suspended)pendingWork=work;else work();
  }
  return {load(next,parts,{defer=false}={}){clear();record=next;streams=parts;suspended=defer;source=createThumbnailSource({record,api,request,metadataRequest,readFrame});},
+  setStreams(parts){streams=parts;viewKey='';if(currentView)update(currentView);},
   resume(){suspended=false;const work=pendingWork;pendingWork=null;work?.();},update,clear};
 }

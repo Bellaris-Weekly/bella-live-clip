@@ -55,3 +55,42 @@ test('切换场次取消整场播放器旧请求，不写入旧数据',async()=>
  const loader=new Loader();loader.load({url:'https://media.example/list',responseType:'text'},{},{onSuccess(){delivered=true;},onError(){delivered=true;}});
  loader.abort();finish({url:'https://media.example/list',data:'old'});await new Promise(r=>setImmediate(r));assert.equal(aborted,true);assert.equal(delivered,false);
 });
+
+test('refreshing a live record fetches its growing range again and replaces the old stream',async t=>{
+ let now=1100;
+ t.mock.method(Date,'now',()=>now*1000);
+ const record={key:'same-live',start:1000,end:1100,live:true},calls=[];
+ const f=playerFixture(async(owner,start,end)=>{
+  calls.push({key:owner.key,start,end});
+  return [{start_time:1000,end_time:now,stream:`stream-${now}`}];
+ });
+ const signal=new AbortController().signal;
+ assert.equal((await f.player.load(record,signal)).total,100);f.player.seek(85);
+ now=1200;
+ assert.equal((await f.player.load(record,signal)).total,200);f.player.seek(185);
+ assert.deepEqual(calls,[{key:'same-live',start:0,end:100},{key:'same-live',start:0,end:200}]);
+ assert.equal(f.instances[0].destroyed,true);assert.equal(f.instances[1].url,'stream-1200');assert.equal(f.instances[1].config.startPosition,185);
+ f.player.destroy();
+});
+
+test('live growth keeps the active decoder and playhead, but newly recorded positions use a fresh stream snapshot',async()=>{
+ const record={key:'live',start:1000,end:1100,live:true};
+ const f=playerFixture(async()=>[{start_time:1000,end_time:1100,stream:'old'}]);
+ await f.player.load(record,new AbortController().signal);f.player.seek(85);f.video.currentTime=85;
+ const update=f.player.extend([{start_time:1000,end_time:1200,stream:'fresh'}]);
+ assert.equal(update.total,200);assert.equal(f.instances.length,1);assert.equal(f.instances[0].destroyed,undefined);assert.equal(f.player.position(),85);
+ f.player.seek(90);assert.equal(f.instances.length,1);
+ f.player.seek(150);assert.equal(f.instances.length,2);assert.equal(f.instances[0].destroyed,true);assert.equal(f.instances[1].url,'fresh');assert.equal(f.instances[1].config.startPosition,150);
+ const reconnect=f.player.extend([{start_time:1000,end_time:1200,stream:'fresh-2'},{start_time:1250,end_time:1300,stream:'reconnected'}]);
+ assert.equal(reconnect.total,300);assert.equal(f.instances.length,2);
+ f.player.seek(220);assert.equal(f.loading.textContent,'该位置没有录像');assert.equal(f.instances.length,2);
+ f.player.seek(260);assert.equal(f.instances.at(-1).url,'reconnected');assert.equal(f.instances.at(-1).config.startPosition,10);
+ f.player.destroy();
+});
+
+test('partial, reordered, overlapping or regressing live responses never shrink or relabel loaded segments',async()=>{
+ const parts=[{start_time:1000,end_time:1100,stream:'first'},{start_time:1200,end_time:1250,stream:'last'}];
+ const f=playerFixture(async()=>parts);await f.player.load({start:1000,live:true},new AbortController().signal);
+ for(const next of [[],[parts[1]],[parts[1],parts[0]],[parts[0],{...parts[1],end_time:1240}],[{...parts[0],end_time:1210},parts[1]],[parts[0],{...parts[1],stream:''}]])assert.equal(f.player.extend(next),null);
+ f.player.seek(220);assert.equal(f.instances.at(-1).url,'last');assert.equal(f.instances.at(-1).config.startPosition,20);f.player.destroy();
+});

@@ -12,6 +12,7 @@ import {constrainRect,resizeRect} from '../ui/panel-geometry.js';
 import {ScheduleService} from '../services/schedule.js';
 import {createDiagnosticReporter} from '../services/diagnostics.js';
 import {createLibraryLoader} from './library-loader.js';
+import {createLiveRecordingUpdater} from './live-recording-updater.js';
 import {createSubmissionService} from '../services/submission.js';
 import {createSubmissionStoryboard} from '../services/submission-storyboard.js';
 import {bindPageProgress} from '../ui/page-progress.js';
@@ -40,7 +41,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const isSubmission=()=>record?.kind==='submission';
  const metadata=readScriptMetadata(metadataText);
  const versionControl=createVersionControl({root,metadata,check:createUpdateChecker({request:api.request,metadata})});
- for(const [id,name]of[['close','close'],['refreshLibrary','refresh'],['togglePlayback','play']])$(id).innerHTML=icon(name);
+ for(const [id,name]of[['close','close'],['refreshLibrary','refresh'],['refreshEditor','refresh'],['togglePlayback','play']])$(id).innerHTML=icon(name);
  $('back').innerHTML=icon('back')+'<span>选择直播</span>';
  $('download').innerHTML='<span>导出</span>'+icon('download');
  $('launcher').innerHTML=icon('scissors')+'<span>片段</span>';
@@ -67,6 +68,8 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  bindVideoControls(video,playback,status);
  const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request,api,metadataRequest:submissionRequest});
  const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>activePlayback()?.end({commit:!canceled}),onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
+ const liveUpdater=createLiveRecordingUpdater({api,onUpdate:extendLiveRecording,
+  canRefresh:()=>ready&&record?.live&&page==='edit'&&!controller&&!$('panel').hidden&&!document.hidden&&!timeline.isInteracting()});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  function usePlayer(kind){
   if(playerKind===kind)return;
@@ -82,32 +85,46 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const syncPlayback=()=>{const paused=playerKind==='submission'?player.isPaused():video.paused||video.ended;if(paused===lastPlaybackPaused)return;lastPlaybackPaused=paused;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
  for(const event of ['play','pause','ended','emptied'])video.addEventListener(event,syncPlayback);
  function updateExportSummary(selection=timeline.getSelection()){
-  // A whole download covers every segment, not just the one on the timeline.
-  const whole=$('wholeRecording').checked&&!isSubmission()&&segments.length>1;
-  const range=whole?{start:0,end:playbackTotal}:selection;
-  $('selectionDuration').textContent=formatDuration(whole?segments.reduce((sum,s)=>sum+s.end-s.start,0):selection.end-selection.start);
+  // Both the timeline and the whole-download action refer to the active segment.
+  const whole=$('wholeRecording').checked&&!isSubmission();
+  const range=whole&&segments.length?segments[segmentIndex]:selection;
+  $('selectionDuration').textContent=formatDuration(range.end-range.start);
   if(isSubmission()){const rate=record.media.video.bandwidth+(record.media.audio?.bandwidth||0);$('estimatedSize').textContent=rate?`预计成品约 ${formatBytes(rate*(selection.end-selection.start)/8)}`:'大小暂不可用';return;}
   $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,range))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
- function startEstimate(plan,signal){
-  void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
+ function startEstimate(plan,signal,previous){
+  void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal,previous);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
  }
  function startBackgroundPreview(){
   if(backgroundStarted||!ready||isSubmission()||!recordingPlan)return;
   backgroundStarted=true;thumbnails.resume();startEstimate(recordingPlan,recordingController.signal);
+ }
+ function extendLiveRecording(parts){
+  const next=player.extend(parts);if(!next)return;
+  const previousEstimate=estimate;
+  recordingController?.abort();recordingController=new AbortController();
+  recordStreams=next.streams;playbackTotal=next.total;segments=segmentBounds(record,recordStreams,playbackTotal);
+  recordingPlan=new RecordingPlan(api,recordStreams,recordingController.signal);
+  estimate=null;estimateState='loading';
+  thumbnails.setStreams(recordStreams);
+  timeline.extend(segments[segmentIndex].end,{whole:$('wholeRecording').checked});
+  renderSegments();updateClock(player.position());updateExportSummary();
+  if(backgroundStarted)startEstimate(recordingPlan,recordingController.signal,previousEstimate);
  }
  const updateControls=createControls(root,timeline);
  function controls(){
   const route=parseSubmissionUrl(readPageUrl());
   $('currentVideo').hidden=!route||page==='edit'&&loadedRoute===route.key;
   $('wholeRecordingLabel').hidden=isSubmission();$('playSelection').hidden=!isSubmission();
-  $('refreshEditor').textContent=isSubmission()?'重新加载视频':'刷新录像';
+  const refreshLabel=isSubmission()?'重新加载视频':'刷新录像';
+  $('refreshEditor').setAttribute('aria-label',refreshLabel);$('refreshEditor').title=refreshLabel;
   updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,submission:isSubmission(),stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
+ async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;if(kind==='export')liveUpdater.stop();controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(kind==='export'&&record?.live&&ready&&!$('panel').hidden)liveUpdater.start(record);if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
  function clearDownloads(){$('downloads').replaceChildren();}
  function leavePage(){
+  liveUpdater.stop();
   scheduleController?.abort();scheduleController=null;$('scheduleNote').hidden=true;
   recordingController?.abort();recordingController=null;recordingPlan=null;previewDiagnostic=null;
   activePlayback()?.cancel();submissionThumbnails=false;
@@ -153,10 +170,12 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   recordStreams=streams;segments=segmentBounds(record,streams,total);
   thumbnails.load(record,streams,{defer:true});ready=true;selectSegment(record.live?segments.length-1:0);$('editPage').focus({preventScroll:true});
   status('按住时间轴预览；松开选区边界后自动适配视野。');
+  liveUpdater.start(record);
  }
  function segmentBounds(owner,streams,total){
-  // A live recording keeps growing past the last reported end.
-  return streams.map((stream,i)=>({start:clamp(stream.start_time-owner.start,0,total),end:owner.live&&i===streams.length-1?total:clamp(stream.end_time-owner.start,0,total)}));
+  // Only advertise generated footage, including when the last live segment
+  // lags behind wall time or a disconnect creates a new segment.
+  return streams.map(stream=>({start:clamp(stream.start_time-owner.start,0,total),end:clamp(stream.end_time-owner.start,0,total)}));
  }
  function renderSegments(){
   const container=$('segments');container.hidden=segments.length<2;
@@ -171,6 +190,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  function selectSegment(index){
   const bounds=segments[index],stream=recordStreams[index];
   segmentIndex=index;player.pause();timeline.reset(bounds);
+  clipSelection=$('wholeRecording').checked?{...bounds}:null;
   // Live recordings open near the newest picture; replays open at the segment start.
   seekTo(record.live&&index===segments.length-1?Math.max(bounds.start,stream.end_time-record.start-15):bounds.start);
   renderSegments();
@@ -255,11 +275,11 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
     if(member!==selected||page!=='library'||$('panel').hidden)return;
     renderCards();showScheduleResult(libraries.get(selected)||result);
    }).catch(()=>{});
-  }else if(page==='edit')enrichRecordType();}
- const close=()=>{timeline.stop();$('panel').hidden=true;scheduleController?.abort();if(playerKind==='submission'){player.suspend();thumbnails.clear();if(record)thumbnails.load(record,[]);submissionThumbnails=false;}else playback.cancel();};
+  }else if(page==='edit'){enrichRecordType();if(ready&&record?.live)liveUpdater.start(record);}}
+ const close=()=>{liveUpdater.stop();timeline.stop();$('panel').hidden=true;scheduleController?.abort();if(playerKind==='submission'){player.suspend();thumbnails.clear();if(record)thumbnails.load(record,[]);submissionThumbnails=false;}else playback.cancel();};
  $('close').onclick=close;
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
- $('currentVideo').onclick=()=>void currentVideo();$('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=()=>parseSubmissionUrl(readPageUrl())?currentVideo():currentRoom();$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>isSubmission()?currentVideo():record.live?currentRoom():enterRecord(record);
+ $('currentVideo').onclick=()=>void currentVideo();$('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=()=>parseSubmissionUrl(readPageUrl())?currentVideo():currentRoom();$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>isSubmission()?currentVideo():record?enterRecord(record):undefined;
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
  $('cancel').onclick=()=>{if(fullStopController){fullStopController.abort();controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
  $('wholeRecording').onchange=()=>{

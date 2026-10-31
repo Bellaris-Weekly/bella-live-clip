@@ -253,3 +253,10 @@ test('收尾期间页面硬取消仍中止事务，而正常收尾期间点击�
   else{const result=await promise;assert.equal(result.stopped,false);assert.equal(result.saved,true);assert.equal(result.duration,3);assert.equal(file.closed,true);}
  }
 });
+
+test('live growth updates estimate coverage while reusing existing segment rates without re-downloading sample media',async()=>{
+ const reads=[],api={request:async url=>{reads.push(url);return {data:new ArrayBuffer(1000)};}};
+ const first=await estimateRecordingRate(api,[{streamIndex:0,start:1000,segments:[{url:'old',duration:10}]}]);
+ const updated=await estimateRecordingRate(api,[{streamIndex:0,start:1000,segments:[{url:'signed-old',duration:10},{url:'new',duration:10}]},{streamIndex:1,start:1030,segments:[{url:'reconnected',duration:10}]}],undefined,first);
+ assert.deepEqual(reads,['old','reconnected']);assert.equal(estimateSelectionBytes(updated,1000,{start:0,end:40}),3000);
+});

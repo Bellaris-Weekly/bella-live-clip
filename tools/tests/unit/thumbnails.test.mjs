@@ -97,3 +97,12 @@ test('延迟期间连续换选区只生成最终目标的六张图',async()=>{
  assert.equal(reads.length,0);await wait();
  assert.deepEqual(reads,[40.5,41.5,42.5,43.5,44.5,45.5]);strip.clear();
 });
+
+test('live growth retains cached frames across signed URL changes and fills newly recorded positions',async()=>{
+ const container=new Element(),reads=[];
+ const strip=createThumbnails({container,readFrame:async(_,sample)=>{reads.push(sample.time);return `frame-${sample.time}`;}});
+ strip.load(record,[{start_time:1000,end_time:1010,stream:'old-signed-url'}]);strip.update({start:0,end:12});await wait();
+ assert.deepEqual(reads,[1,3,5,7,9]);assert.equal(container.children.at(-1).textContent,'无录像');
+ strip.setStreams([{start_time:1000,end_time:1020,stream:'new-signed-url'}]);await wait();
+ assert.deepEqual(reads,[1,3,5,7,9,11]);assert.equal(container.children.at(-1).children[0],'frame-11');strip.clear();
+});

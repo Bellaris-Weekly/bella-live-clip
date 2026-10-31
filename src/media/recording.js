@@ -2,10 +2,12 @@ import { Input, MP4, MPEG_TS, CustomPathedSource, CustomSource, BufferSource,
   Output, StreamTarget, Mp4OutputFormat, EncodedPacketSink, EncodedVideoPacketSource, EncodedAudioPacketSource } from 'mediabunny';
 import {createRecordingDownload} from './recording-download.js';
 import {RecordingTimeline,recordingTime} from './recording-timeline.js';
-export async function estimateRecordingRate(api, groups, signal) {
+export async function estimateRecordingRate(api, groups, signal, previous) {
   // Sample each uninterrupted part so quality changes are reflected in its estimate.
   const rates=[];
   for (const group of groups) {
+    const cached=previous?.groups.find(old=>old.start===group.start&&old.streamIndex===group.streamIndex);
+    if(cached){rates.push({...group,rate:cached.rate});continue;}
     const sample=group.segments[Math.floor(group.segments.length/2)];
     const size=sample.range?.length ?? (await api.request(sample.url,{type:'arraybuffer',signal})).data.byteLength;
     const rate=size/sample.duration;

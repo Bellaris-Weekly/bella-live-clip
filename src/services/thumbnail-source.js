@@ -19,7 +19,8 @@ export function createThumbnailSource({record,api,request,metadataRequest=reques
   const cache=new Map(),urls=new Map(),lifetime=new AbortController();
   let failed=false;
   const storyboard=record.kind==='submission' ? createStoryboard({submission:record,metadataRequest,mediaRequest:request}) : null;
-  const key=sample=>`${sample.stream?.stream||record.key}:${sample.local}`;
+  // Signed URLs change on each live refresh; a frame's session/time does not.
+  const key=sample=>`${sample.stream?.start_time??record.key}:${sample.local}`;
   function copy(source) {
     if(!source?.getContext)return source;
     const canvas=makeCanvas();canvas.width=160;canvas.height=90;
