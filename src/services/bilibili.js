@@ -4,10 +4,7 @@ import {RequestError} from './retry-request.js';
 const API = 'https://api.live.bilibili.com';
 
 export function createRequest(gmRequest) {
-  return (
-    url,
-    {auth = false, type = 'text', range = null, signal, form, referer = 'https://live.bilibili.com/'} = {},
-  ) =>
+  return (url, {auth = false, type = 'text', range = null, signal, referer = 'https://live.bilibili.com/'} = {}) =>
     new Promise((resolve, reject) => {
       if (signal?.aborted) {
         reject(signal.reason);
@@ -37,12 +34,10 @@ export function createRequest(gmRequest) {
       }, 45000);
       signal?.addEventListener('abort', abort, {once: true});
       const headers = {Referer: referer};
-      if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
       if (range) headers.Range = `bytes=${range.offset}-${range.offset + range.length - 1}`;
       try {
         request = gmRequest({
-          method: form ? 'POST' : 'GET',
-          data: form ? new URLSearchParams(form).toString() : undefined,
+          method: 'GET',
           url,
           headers,
           anonymous: !auth,
@@ -83,9 +78,8 @@ export function createRequest(gmRequest) {
 }
 
 export class BiliApi {
-  constructor(request, {csrf = () => ''} = {}) {
+  constructor(request) {
     this.request = request;
-    this.csrf = csrf;
   }
 
   async get(path, params, signal) {
@@ -111,21 +105,6 @@ export class BiliApi {
       throw new Error(messages[response.code] || `B 站返回 ${response.code}：${response.message || '请求未成功'}`);
     }
     return response.data;
-  }
-
-  async keyframes(record, times, signal) {
-    // Read-only image query from https://live.bilibili.com/web-cut/quick-publish.html.
-    const {data} = await this.request(`${API}/xlive/web-room/v1/videoService/GetAnchorVideoKeyFrame`, {
-      auth: true,
-      signal,
-      form: {
-        live_uid: record.uid,
-        live_key: record.key,
-        time_list: times.map(time => Math.round(record.start + time)).join(','),
-        csrf: this.csrf(),
-      },
-    });
-    return this.parse(data)?.list || [];
   }
 
   async history(member, signal) {

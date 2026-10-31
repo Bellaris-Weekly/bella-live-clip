@@ -13,9 +13,9 @@ export function isMediaUrl(value) {
   }
 }
 
-// Preview playlists are roughly one small fragment per second, so per-request
-// overhead dominates. Anonymous page fetches skip the userscript manager's
-// message channel, like the platform's own player; its CDN allows any origin.
+// Stills and fragments are many separate reads, so per-request overhead adds up.
+// Anonymous page fetches skip the userscript manager's message channel, like the
+// platform's own player; its CDN allows any origin.
 // Anything unexpected is retried once through the manager, and repeated
 // failures pause it for a while so a blocked network path costs little. The CDN
 // does not expose response headers to pages, so callers needing them stay on the
@@ -29,8 +29,8 @@ export function createMediaRequest({
 }) {
   let failures = 0,
     pausedUntil = 0;
-  const direct = (url, {auth, form, needHeaders}) => {
-    if (!pageFetch || auth || form || needHeaders || !isMediaUrl(url) || now() < pausedUntil) return false;
+  const direct = (url, {auth, needHeaders}) => {
+    if (!pageFetch || auth || needHeaders || !isMediaUrl(url) || now() < pausedUntil) return false;
     return true;
   };
   async function read(url, {type = 'text', range = null, signal}) {

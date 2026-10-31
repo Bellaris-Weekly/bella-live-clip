@@ -20,7 +20,7 @@ const stubs = {
   'preview-player': 'export const createPlayer=options=>{scenario.previewOptions=options;return scenario.player;};',
   playback: 'export const createPlayback=()=>({cancel(){}});export const bindVideoControls=()=>{};',
   thumbnails:
-    'export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},update(){}});',
+    'export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},sweep(){},update(){}});',
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
   export: 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan':

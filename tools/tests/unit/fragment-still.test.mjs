@@ -1,39 +1,52 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {firstMediaEnd} from '../../../src/media/fragment-still.js';
+import {openingLayout} from '../../../src/media/fragment-still.js';
 import {locateSegment} from '../../../src/media/playlist.js';
 import {drawFitted, fittedRect} from '../../../src/shared/fit.js';
 
-function boxes(...entries) {
-  const bytes = new Uint8Array(entries.reduce((sum, [, size]) => sum + Math.min(size, 16), 0));
-  const view = new DataView(bytes.buffer);
-  let offset = 0;
-  for (const [type, size] of entries) {
-    view.setUint32(offset, size);
-    for (let i = 0; i < 4; i++) bytes[offset + 4 + i] = type.charCodeAt(i);
-    offset += Math.min(size, 16);
-  }
-  return bytes;
-}
-
-test('the first media box is found from headers, wherever it ends', () => {
-  const header = new Uint8Array(1600),
-    view = new DataView(header.buffer);
+// ftyp, moov and a moof with audio first and a large keyframe, as real replays have.
+function fragment({moofBase = true, sampleSizes = true} = {}) {
+  const bytes = new Uint8Array(2000),
+    view = new DataView(bytes.buffer);
   const write = (offset, type, size) => {
     view.setUint32(offset, size);
-    for (let i = 0; i < 4; i++) header[offset + 4 + i] = type.charCodeAt(i);
+    for (let i = 0; i < 4; i++) bytes[offset + 4 + i] = type.charCodeAt(i);
   };
   write(0, 'ftyp', 32);
   write(32, 'moov', 1115);
-  write(1147, 'moof', 408);
-  write(1555, 'mdat', 511623);
-  assert.equal(firstMediaEnd(header), 1555 + 511623);
+  const moof = 1147,
+    traf = (offset, dataOffset, size) => {
+      write(offset, 'traf', 60);
+      write(offset + 8, 'tfhd', 16);
+      view.setUint32(offset + 16, moofBase ? 0x20002 : 2);
+      write(offset + 24, 'trun', 36);
+      view.setUint32(offset + 32, sampleSizes ? 0xb05 : 0x905);
+      view.setUint32(offset + 36, 12);
+      view.setInt32(offset + 40, dataOffset);
+      view.setUint32(offset + 48, sampleSizes ? size : 1);
+      view.setUint32(offset + 48 + 4, size);
+    };
+  write(moof, 'moof', 136);
+  traf(moof + 8, 416, 700);
+  traf(moof + 68, 8000, 400000);
+  write(moof + 136, 'mdat', 511623);
+  return bytes;
+}
+
+test('the first keyframe ends well before the first media box', () => {
+  assert.deepEqual(openingLayout(fragment()), {pictureEnd: 1147 + 8000 + 400000, mediaEnd: 1283 + 511623});
+});
+
+test('run tables that do not give positions fall back to the whole media box', () => {
+  assert.deepEqual(openingLayout(fragment({moofBase: false})), {pictureEnd: 1283 + 511623, mediaEnd: 1283 + 511623});
 });
 
 test('headers that do not reach a media box are reported rather than guessed', () => {
-  assert.equal(firstMediaEnd(boxes(['moov', 100000])), null);
-  assert.equal(firstMediaEnd(boxes(['ftyp', 4])), null);
-  assert.equal(firstMediaEnd(new Uint8Array(4)), null);
+  const only = new Uint8Array(16);
+  new DataView(only.buffer).setUint32(0, 100000);
+  only.set([109, 111, 111, 118], 4);
+  assert.equal(openingLayout(only), null);
+  assert.equal(openingLayout(new Uint8Array(4)), null);
 });
 
 test('a recording time maps to its fragment across groups and gaps', () => {

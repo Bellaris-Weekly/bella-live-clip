@@ -235,31 +235,31 @@ test('延迟期间连续换选区只生成最终目标的六张图', async () =>
   strip.clear();
 });
 
-test('platform stills do not wait for the first video frame; decoding does', async () => {
+test('fragment stills do not wait for the first video frame; starting a player does', async () => {
   const container = new Element(),
-    keyframes = [];
-  let decodes = 0;
+    stills = [];
+  let frames = 0;
   const strip = createThumbnails({
     container,
-    api: {
-      keyframes: async (_, times) => {
-        keyframes.push(times);
-        return [];
-      },
+    locate: async time => ({segment: {url: String(time)}, usable: time < 300}),
+    readStill: async (_, place) => {
+      if (!place.usable) throw new Error('mid-GOP');
+      stills.push(place.segment.url);
+      return 'still';
     },
     readFrame: async () => {
-      decodes++;
+      frames++;
       return 'frame';
     },
   });
   strip.load({start: 1000}, [{start_time: 1000, end_time: 1600, stream: 'a'}], {defer: true});
   strip.update({start: 0, end: 600});
   await wait();
-  assert.ok(keyframes.length > 0);
-  assert.equal(decodes, 0);
+  assert.equal(stills.length, 3);
+  assert.equal(frames, 0);
   strip.resume();
   await wait();
-  assert.equal(decodes, 6);
+  assert.equal(frames, 3);
   strip.clear();
 });
 
@@ -285,68 +285,144 @@ test('live growth retains cached frames across signed URL changes and fills newl
   strip.clear();
 });
 
-test('recording fragments supply stills without starting a player, and a player remains the fallback', async () => {
-  const container = new Element(),
-    located = [],
-    read = [];
-  let frames = 0;
+test('wide views land on shared times, so zooming and growth reuse pictures', async () => {
+  const read = [];
   const strip = createThumbnails({
-    container,
-    locate: async time => {
-      located.push(time);
-      return time < 30 ? {segment: {url: 'part'}} : null;
-    },
+    container: new Element(),
+    locate: async time => ({segment: {url: String(time)}}),
     readStill: async (_, place) => {
-      read.push(place.segment.url);
+      read.push(Number(place.segment.url));
       return 'still';
+    },
+  });
+  strip.load({start: 1000}, [{start_time: 1000, end_time: 10000, stream: 'a'}]);
+  strip.update({start: 0, end: 7200});
+  await wait();
+  assert.ok(read.length === 6 && read.every(time => time % 300 === 0), String(read));
+  const known = read.length;
+  strip.update({start: 0, end: 7300});
+  await wait();
+  assert.ok(read.length <= known + 2, 'most cells are already known');
+  strip.clear();
+});
+
+test('close up every cell gets its exact position', async () => {
+  const read = [];
+  const strip = createThumbnails({
+    container: new Element(),
+    locate: async time => ({segment: {url: String(time)}}),
+    readStill: async (_, place) => {
+      read.push(Number(place.segment.url));
+      return 'still';
+    },
+  });
+  strip.load({start: 1000}, [{start_time: 1000, end_time: 10000, stream: 'a'}]);
+  strip.update({start: 100, end: 160});
+  await wait();
+  assert.deepEqual(
+    read.sort((a, b) => a - b),
+    [105, 115, 125, 135, 145, 155],
+  );
+  strip.clear();
+});
+
+test('fragments that keep failing stop being tried, and a player takes over', async () => {
+  let attempts = 0,
+    frames = 0;
+  const strip = createThumbnails({
+    container: new Element(),
+    locate: async () => ({segment: {url: 'a'}}),
+    readStill: async () => {
+      attempts++;
+      throw new Error('mid-GOP');
     },
     readFrame: async () => {
       frames++;
       return 'frame';
     },
   });
-  strip.load(record, [{start_time: 1000, end_time: 1060, stream: 'a'}]);
+  strip.load({start: 1000}, [{start_time: 1000, end_time: 1060, stream: 'a'}]);
   strip.update({start: 0, end: 60});
   await wait();
-  assert.equal(read.length, 3);
-  assert.equal(frames, 3);
-  assert.deepEqual(container.children[0].children, ['still']);
-  assert.deepEqual(container.children[5].children, ['frame']);
+  assert.equal(frames, 6);
+  assert.ok(attempts <= 6);
+  const before = attempts;
+  strip.update({start: 10, end: 20});
+  await wait();
+  assert.equal(attempts, before);
   strip.clear();
 });
-test('a drag decodes only the newest position, two at a time, and never repeats one', async () => {
+
+test('a background sweep covers the recording from the current position, one read at a time', async () => {
+  const read = [];
+  let active = 0,
+    peak = 0;
+  const strip = createThumbnails({
+    container: new Element(),
+    locate: async time => ({segment: {url: String(time)}}),
+    readStill: async (_, place) => {
+      peak = Math.max(peak, ++active);
+      read.push(Number(place.segment.url));
+      await new Promise(resolve => setImmediate(resolve));
+      active--;
+      return 'still';
+    },
+  });
+  strip.load({start: 1000}, [{start_time: 1000, end_time: 4000, stream: 'a'}]);
+  strip.sweep(1800);
+  await wait();
+  assert.deepEqual(read.slice(0, 3), [1800, 1200, 2400]);
+  assert.equal(read.length, 5);
+  assert.equal(peak, 1);
+  strip.clear();
+});
+test('a drag decodes only the newest position, three at a time, and never repeats one', async () => {
   const reads = [],
     flush = async () => {
-      for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve));
+      for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
     };
   const strip = createThumbnails({
     container: new Element(),
-    api: {
-      keyframes: async () => {
-        throw new Error('权限不足');
-      },
-    },
-    readFrame: (_, sample) => new Promise(resolve => reads.push({sample, resolve})),
+    locate: async time => ({segment: {url: String(time)}}),
+    readStill: (_, place) => new Promise(resolve => reads.push({time: Number(place.segment.url), resolve})),
   });
   strip.load({start: 1000}, [{start_time: 1000, end_time: 9000, stream: 'a'}]);
-  await flush();
-  for (const time of [60, 120, 180, 240, 300]) strip.frameUrl(time);
+  for (const time of [60, 120, 180, 240, 300, 360]) strip.frameUrl(time);
   await flush();
   assert.deepEqual(
-    reads.map(read => read.sample.time),
-    [60, 120],
+    reads.map(read => read.time),
+    [60, 120, 180],
     'the path in between is skipped',
   );
   reads[0].resolve('frame');
   await flush();
   assert.deepEqual(
-    reads.map(read => read.sample.time),
-    [60, 120, 300],
+    reads.map(read => read.time),
+    [60, 120, 180, 360],
     'the free slot takes the newest position',
   );
   strip.frameUrl(60);
-  strip.frameUrl(300);
+  strip.frameUrl(360);
   await flush();
-  assert.equal(reads.length, 3);
+  assert.equal(reads.length, 4);
+  strip.clear();
+});
+
+test('a position whose grid point falls outside the recording still gets a picture', async () => {
+  const read = [];
+  const strip = createThumbnails({
+    container: new Element(),
+    locate: async time => ({segment: {url: String(time)}}),
+    readStill: async (_, place) => {
+      read.push(Number(place.segment.url));
+      return 'still';
+    },
+  });
+  strip.load({start: 1000}, [{start_time: 1038, end_time: 17000, stream: 'a'}]);
+  strip.update({start: 38, end: 16000});
+  strip.frameUrl(38);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(read.includes(38), String(read));
   strip.clear();
 });

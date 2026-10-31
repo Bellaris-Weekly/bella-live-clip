@@ -19,9 +19,7 @@ if (window.top === window && !document.getElementById('bella-live-clip-host')) {
   const request = createRequest(GM_xmlhttpRequest);
   const app = createApp({
     diagnostics,
-    api: new BiliApi(request, {
-      csrf: () => document.cookie.match(/(?:^|;\s*)bili_jct=([^;]*)/)?.[1] || '',
-    }),
+    api: new BiliApi(request),
     mediaRequest: createMediaRequest({pageFetch: unsafeWindow.fetch.bind(unsafeWindow), fallback: request}),
     submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
     // Native Window methods need the page window, not the userscript sandbox receiver.

@@ -27,6 +27,7 @@ import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
 import {createPlayback, bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
+import {sharePlaylists} from '../services/shared-playlists.js';
 import {estimateRecordingRate, estimateSelectionBytes} from '../media/recording-estimate.js';
 import {MEMBERS, roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
@@ -180,16 +181,16 @@ export function createApp({
     }
     return {...storyboard.reader, dispose() {}};
   }
+  const playlists = sharePlaylists(mediaRequest);
+  const mediaApi = {request: playlists.request};
   const thumbnails = createThumbnails({
     container: $('thumbnails'),
-    request: mediaRequest,
-    api,
+    request: mediaApi.request,
     metadataRequest: submissionRequest,
     createStoryboard: ({submission}) => storyboardFor(submission),
     locate: async (time, signal) =>
       recordingPlan ? locateSegment(await recordingPlan.load(signal), record.start + time) : null,
   });
-  const mediaApi = {request: mediaRequest};
   const timeline = createTimeline({
     track: $('timeline'),
     startHandle: $('startHandle'),
@@ -329,6 +330,7 @@ export function createApp({
     if (backgroundStarted || !ready || isSubmission() || !recordingPlan) return;
     backgroundStarted = true;
     thumbnails.resume();
+    thumbnails.sweep(player.position());
     startEstimate(recordingPlan, recordingController.signal);
   }
   function applyStreams(parts) {
@@ -348,7 +350,7 @@ export function createApp({
     recordingPlan = new RecordingPlan(mediaApi, recordStreams, recordingController.signal);
     estimate = null;
     estimateState = 'loading';
-    thumbnails.setStreams(recordStreams, player.position());
+    thumbnails.setStreams(recordStreams);
     timeline.extend(segments[segmentIndex].end, {whole: $('wholeRecording').checked});
     renderSegments();
     updateClock(player.position());
@@ -449,6 +451,7 @@ export function createApp({
     timeline.stop();
     player?.clear();
     thumbnails.clear();
+    playlists.clear();
     storyboard?.reader.dispose?.();
     storyboard = null;
     clearDownloads();
@@ -546,15 +549,14 @@ export function createApp({
     updateClock(0);
     recordingController = new AbortController();
     recordingPlan = new RecordingPlan(mediaApi, streams, recordingController.signal);
+    // Stills need the playlist as soon as the player does; they share one copy.
+    void recordingPlan.load().catch(() => {});
     recordStreams = streams;
     segments = segmentBounds(record, streams, total);
-    thumbnails.load(record, streams, {
-      defer: true,
-      center: record.live ? total : 0,
-      onFrames: () => player.refreshStill?.(),
-    });
+    thumbnails.load(record, streams, {defer: true, onFrames: () => player.refreshStill?.()});
     ready = true;
     selectSegment(record.live ? segments.length - 1 : 0);
+    player.refreshStill?.();
     $('editPage').focus({preventScroll: true});
     updater.start(record);
   }

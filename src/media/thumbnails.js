@@ -1,5 +1,5 @@
 import {loadHls, makeHlsLoader} from './preview-player.js';
-import {createThumbnailSource, FRAME_INTERVAL} from '../services/thumbnail-source.js';
+import {createThumbnailSource} from '../services/thumbnail-source.js';
 import {drawFitted} from '../shared/fit.js';
 
 export function thumbnailSamples(record, streams, view, count = 6) {
@@ -76,18 +76,31 @@ export async function readThumbnail(request, sample, signal) {
   }
 }
 
-const DEMAND_LIMIT = 2;
+const DEMAND_LIMIT = 3,
+  STRIP_READS = 4,
+  PLAYER_READS = 2,
+  // Three failures in a row mean this recording's fragments are not usable.
+  FRAGMENT_FAILURES = 3,
+  // A sparse pass covers the whole recording, so a drag has a picture anywhere.
+  SWEEP_STEP = 600,
+  DRAG_STEP = 10;
 
-const readFragment = (...args) => import('./fragment-still.js').then(module => module.readFragmentStill(...args));
+// Cells landing on shared times can be reused across zooming and live growth.
+// Close up every position differs, so the exact time is worth its own picture.
+function snapStep(view) {
+  const cell = (view.end - view.start) / 6;
+  return cell >= 300 ? 300 : cell >= 60 ? 60 : cell >= 30 ? 30 : 0;
+}
+
+const decodeFragment = (...args) => import('./fragment-still.js').then(module => module.readFragmentStill(...args));
 
 export function createThumbnails({
   container,
   request,
-  api,
   metadataRequest,
   createStoryboard,
   locate,
-  readStill = readFragment,
+  readStill = decodeFragment,
   readFrame = readThumbnail,
 }) {
   let record,
@@ -101,7 +114,8 @@ export function createThumbnails({
     moving = false,
     ready,
     decoding = Promise.resolve(),
-    release = () => {};
+    release = () => {},
+    fragmentFailures = 0;
   function cancel() {
     clearTimeout(timer);
     ready = null;
@@ -114,6 +128,7 @@ export function createThumbnails({
     demands = new AbortController();
     wanted = null;
     seen.clear();
+    fragmentFailures = 0;
     source?.dispose();
     source = null;
     record = null;
@@ -125,8 +140,25 @@ export function createThumbnails({
     release();
     container.replaceChildren();
   }
-  // Video extraction competes with the main picture; platform images do not.
-  async function decode(reader, sample, signal) {
+  const fragmentsWork = () => locate && fragmentFailures < FRAGMENT_FAILURES;
+  function sampleAt(time) {
+    const stream = streams.find(part => time >= part.start_time - record.start && time < part.end_time - record.start);
+    return stream ? {time, stream, local: time - (stream.start_time - record.start)} : null;
+  }
+  async function readFragment(reader, sample, signal) {
+    const place = await Promise.resolve(locate(sample.time, signal)).catch(() => null);
+    if (!place) return null;
+    try {
+      const canvas = await readStill(reader, place, {signal});
+      fragmentFailures = 0;
+      return canvas;
+    } catch (error) {
+      signal.throwIfAborted();
+      fragmentFailures++;
+      return null;
+    }
+  }
+  async function afterFirstFrame(signal) {
     let abort;
     try {
       await Promise.race([
@@ -140,43 +172,38 @@ export function createThumbnails({
       signal.removeEventListener('abort', abort);
     }
     signal.throwIfAborted();
-    // Reading one fragment's opening is far cheaper than starting a player.
-    const place =
-      sample.stream?.kind === 'submission'
-        ? null
-        : await Promise.resolve(locate?.(sample.time, signal)).catch(() => null);
-    if (place)
-      try {
-        return await readStill(reader, place, {signal});
-      } catch (error) {
-        signal.throwIfAborted();
-      }
+  }
+  // A fragment's opening is cheap enough to fetch alongside the main picture.
+  // Starting a second player is not, so that waits for the first frame.
+  async function decode(reader, sample, signal) {
+    if (sample.stream.kind !== 'submission' && fragmentsWork()) {
+      const canvas = await readFragment(reader, sample, signal);
+      if (canvas) return canvas;
+    }
+    if (sample.fragmentOnly) throw new Error('这个位置无法快速生成预览图。');
+    await afterFirstFrame(signal);
     return readFrame(reader, sample, signal);
   }
-  // Without platform images a drag decodes the position under the pointer. Newer
-  // positions replace older ones so a fast drag does not queue up its whole path.
+  // A drag decodes the position under the pointer. Newer positions replace older
+  // ones so a fast drag does not queue up its whole path.
   let wanted = null,
     demanding = 0,
     demands = new AbortController();
   const seen = new Set();
   function pump() {
     while (demanding < DEMAND_LIMIT && wanted !== null) {
-      const slot = wanted,
-        time = slot * FRAME_INTERVAL,
+      const time = wanted,
         reader = source,
-        {signal} = demands;
+        {signal} = demands,
+        sample = sampleAt(time);
       wanted = null;
-      if (seen.has(slot)) continue;
-      const stream = streams.find(
-        part => time >= part.start_time - record.start && time < part.end_time - record.start,
-      );
-      if (!stream) continue;
-      seen.add(slot);
+      if (seen.has(time) || !sample) continue;
+      seen.add(time);
       demanding++;
       void reader
-        .read({time, stream, local: time - (stream.start_time - record.start)}, signal)
+        .read({...sample, fragmentOnly: true}, signal)
         .catch(() => {
-          if (!signal.aborted) seen.delete(slot);
+          if (!signal.aborted) seen.delete(time);
         })
         .finally(() => {
           demanding--;
@@ -187,18 +214,45 @@ export function createThumbnails({
   function frameUrl(time) {
     if (!source) return null;
     const url = source.frameUrl(time);
-    if (source.decodes() && !source.hasFrame(time)) {
-      wanted = Math.round(time / FRAME_INTERVAL);
-      pump();
+    if (fragmentsWork()) {
+      const step = (currentView && snapStep(currentView)) || DRAG_STEP,
+        nearby = Math.round(time / step) * step,
+        // A recording can start after the grid point closest to its first frame.
+        position = sampleAt(nearby) ? nearby : time;
+      if (!source.hasFrame(position)) {
+        wanted = position;
+        pump();
+      }
     }
     return url;
   }
-  async function render(samples, own, cells) {
+  async function sweep(center) {
+    const reader = source,
+      {signal} = demands;
+    const times = streams
+      .flatMap(part => {
+        const first = Math.ceil((part.start_time - record.start) / SWEEP_STEP),
+          last = Math.floor((part.end_time - record.start) / SWEEP_STEP);
+        return Array.from({length: Math.max(0, last - first + 1)}, (_, i) => (first + i) * SWEEP_STEP);
+      })
+      .sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+    for (const time of times) {
+      if (signal.aborted || !fragmentsWork()) return;
+      const sample = sampleAt(time);
+      if (!sample || seen.has(time)) continue;
+      seen.add(time);
+      await reader.read({...sample, fragmentOnly: true}, signal).catch(() => seen.delete(time));
+    }
+  }
+  function snapped(sample, step) {
+    if (!step || !sample.stream || sample.stream.kind === 'submission') return sample;
+    return sampleAt(Math.round(sample.time / step) * step) ?? sample;
+  }
+  async function render(samples, own, cells, step) {
     const reader = source;
-    await reader.prepare(samples, own.signal);
     let cursor = 0;
     await Promise.all(
-      Array.from({length: 2}, async () => {
+      Array.from({length: fragmentsWork() ? STRIP_READS : PLAYER_READS}, async () => {
         while (cursor < samples.length && !own.signal.aborted) {
           const i = cursor++,
             sample = samples[i];
@@ -207,7 +261,7 @@ export function createThumbnails({
             continue;
           }
           try {
-            const canvas = await reader.read(sample, own.signal);
+            const canvas = await reader.read(snapped(sample, step), own.signal);
             if (own.signal.aborted) return;
             cells[i].replaceChildren(canvas);
           } catch (error) {
@@ -265,15 +319,15 @@ export function createThumbnails({
     timer = setTimeout(async () => {
       ready = {cells, view: {...target}};
       try {
-        await render(samples, own, cells);
+        await render(samples, own, cells, snapStep(target));
       } catch (error) {
         if (own.signal.aborted) return;
       }
       if (!own.signal.aborted) publish();
-    }, 200);
+    }, 80);
   }
   return {
-    load(next, parts, {defer = false, onFrames, center = 0} = {}) {
+    load(next, parts, {defer = false, onFrames} = {}) {
       clear();
       record = next;
       streams = parts;
@@ -284,20 +338,20 @@ export function createThumbnails({
         : Promise.resolve();
       source = createThumbnailSource({
         record,
-        api,
         request,
         metadataRequest,
         createStoryboard,
         readFrame: decode,
         onFrames,
       });
-      void source.warm(parts, center).catch(() => {});
     },
-    setStreams(parts, center = 0) {
+    setStreams(parts) {
       streams = parts;
       viewKey = '';
-      void source?.warm(parts, center).catch(() => {});
       if (currentView) update(currentView);
+    },
+    sweep(center = 0) {
+      if (source) void sweep(center);
     },
     frameUrl,
     resume() {

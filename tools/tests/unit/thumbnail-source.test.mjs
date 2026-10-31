@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createThumbnailSource, thumbnailImageUrl} from '../../../src/services/thumbnail-source.js';
+import {createThumbnailSource} from '../../../src/services/thumbnail-source.js';
 
 const record = {key: '742106027349433696', start: 1000, uid: 123};
 const sample = time => ({time, local: time, stream: {stream: 'media', start_time: 1000, end_time: 100000}});
@@ -10,290 +10,109 @@ const makeCanvas = () => ({
   height: 0,
   args: [],
   getContext() {
-    return {drawImage: (...args) => this.args.push(args)};
+    return {drawImage: (...args) => this.args.push(args), fillRect() {}};
   },
 });
-const deferred = () => {
-  let resolve;
-  return {
-    promise: new Promise(yes => {
-      resolve = yes;
-    }),
-    resolve,
-  };
-};
-const image = () => ({
-  closed: false,
-  close() {
-    this.closed = true;
-  },
-});
+const decoded = () => ({...makeCanvas(), width: 320, height: 180, toBlob: callback => callback({size: 1})});
+
 function fixture(overrides = {}) {
-  const requests = [],
-    batches = [],
-    images = [],
-    loads = [];
-  let fallbacks = 0;
+  const reads = [],
+    urls = [],
+    revoked = [];
+  const original = {create: URL.createObjectURL, revoke: URL.revokeObjectURL};
+  URL.createObjectURL = () => {
+    urls.push(`blob:${urls.length}`);
+    return urls.at(-1);
+  };
+  URL.revokeObjectURL = url => revoked.push(url);
   const source = createThumbnailSource({
     record,
     makeCanvas,
-    api: {
-      keyframes: async (owner, times) => {
-        assert.equal(owner, record);
-        batches.push(times);
-        return times.map(time => ({ts: 1000 + Math.round(time), url: `https://i0.hdslb.com/${Math.round(time)}.jpg`}));
-      },
-    },
-    load: async url => {
-      loads.push(url);
-      const item = image();
-      images.push(item);
-      return item;
-    },
-    request: async (url, options) => {
-      requests.push({url, options});
-      return {data: new ArrayBuffer(1)};
-    },
-    decode: async () => {
-      const item = image();
-      images.push(item);
-      return item;
-    },
-    readFrame: async () => {
-      fallbacks++;
-      return 'decoded-frame';
+    request: async () => {},
+    readFrame: async (_, item) => {
+      reads.push(item.time);
+      return decoded();
     },
     ...overrides,
   });
   return {
     source,
-    requests,
-    batches,
-    images,
-    loads,
-    get fallbacks() {
-      return fallbacks;
+    reads,
+    urls,
+    revoked,
+    restore() {
+      URL.createObjectURL = original.create;
+      URL.revokeObjectURL = original.revoke;
     },
   };
 }
 
-test('live stills are indexed on a fixed grid, so nearby views reuse one query and one image', async () => {
+test('a decoded picture is reused and copied rather than moved out of the strip', async t => {
   const f = fixture(),
-    samples = [sample(61), sample(182)],
     s = signal();
-  await f.source.prepare(samples, s);
-  assert.deepEqual(f.batches, [[60, 180]]);
-  const first = await f.source.read(samples[0], s),
-    second = await f.source.read(samples[1], s);
-  assert.equal(f.fallbacks, 0);
-  assert.equal(f.loads.length, 2);
-  assert.equal(f.requests.length, 0, 'images skip the userscript manager');
-  assert.ok(f.images.every(item => item.closed));
-  assert.equal(first.width, 160);
-  assert.equal(second.height, 90);
-  const again = await f.source.read(sample(70), s);
+  t.after(f.restore);
+  const first = await f.source.read(sample(60), s),
+    again = await f.source.read(sample(60), s);
+  assert.deepEqual(f.reads, [60]);
   assert.notEqual(first, again, 'cached canvases must not be moved out of the visible strip');
-  await f.source.prepare([sample(65), sample(175)], s);
-  assert.equal(f.batches.length, 1);
-  assert.equal(f.loads.length, 2);
+  assert.equal(first.width, 160);
+  assert.equal(first.height, 90);
   f.source.dispose();
 });
 
-test('stills are matched by request position: the service may snap timestamps or leave gaps, as on B 站', async () => {
-  const f = fixture({
-      api: {
-        keyframes: async () => [
-          {ts: 1057, url: 'https://i0.hdslb.com/snapped.jpg'},
-          {ts: 1120, url: ''},
-          {ts: 1180, url: 'https://i0.hdslb.com/third.jpg'},
-        ],
-      },
-    }),
-    s = signal();
-  await f.source.prepare([sample(60), sample(120), sample(180)], s);
-  assert.equal(f.source.frameUrl(60), 'https://i0.hdslb.com/snapped.jpg');
-  assert.equal(
-    f.source.frameUrl(120),
-    'https://i0.hdslb.com/snapped.jpg',
-    'an empty position shows the previous image',
-  );
-  assert.equal(f.source.frameUrl(180), 'https://i0.hdslb.com/third.jpg');
-  f.source.dispose();
-});
-
-test('missing or unsafe platform images use a nearby still and decode only when none is close', async () => {
-  const f = fixture({
-    api: {
-      keyframes: async () => [
-        {ts: 1060, url: 'https://i0.hdslb.com/good.jpg'},
-        {ts: 1120, url: 'https://evil.example/frame.jpg'},
-        {ts: 9999, url: 'https://i0.hdslb.com/wrong-time.jpg'},
-      ],
-    },
-  });
-  const samples = [sample(60), sample(120), sample(180)],
-    s = signal();
-  await f.source.prepare(samples, s);
-  for (const item of samples) await f.source.read(item, s);
-  assert.equal(f.fallbacks, 0);
-  assert.deepEqual([...new Set(f.loads)], ['https://i0.hdslb.com/good.jpg']);
-  assert.equal(f.source.frameUrl(180), 'https://i0.hdslb.com/good.jpg');
-  assert.equal(f.source.frameUrl(3600), null);
-  await f.source.prepare([sample(3600)], s);
-  await f.source.read(sample(3600), s);
-  assert.equal(f.fallbacks, 1);
-  f.source.dispose();
-  assert.equal(thumbnailImageUrl('//i0.hdslb.com/frame.jpg'), 'https://i0.hdslb.com/frame.jpg');
-  for (const url of ['https://hdslb.com.evil.example/a', 'data:image/png;base64,a', 'javascript:alert(1)'])
-    assert.throws(() => thumbnailImageUrl(url));
-});
-
-test('never asks for a still beyond the available footage', async () => {
+test('a drag finds the nearest decoded picture, within reason', async t => {
   const f = fixture(),
     s = signal();
-  await f.source.prepare([{time: 170, local: 170, stream: {start_time: 1000, end_time: 1175}}], s);
-  assert.deepEqual(f.batches, [[120]]);
-  f.source.dispose();
+  t.after(f.restore);
+  for (const time of [600, 60, 1200]) await f.source.read(sample(time), s);
+  assert.equal(f.source.frameUrl(100), 'blob:1');
+  assert.equal(f.source.frameUrl(590), 'blob:0');
+  assert.equal(f.source.frameUrl(1000), 'blob:2');
+  assert.equal(f.source.frameUrl(1600), null, 'a picture from far away would mislead');
+  assert.equal(f.source.hasFrame(600), true);
+  assert.equal(f.source.hasFrame(601), false);
 });
 
-test('the background index covers every part in bounded chronological batches, nearest first', async () => {
-  const f = fixture();
-  await f.source.warm([{start_time: 1000, end_time: 1000 + 7200}], 7200);
-  assert.ok(f.batches.every(batch => batch.length <= 30 && batch.every((time, i) => !i || time > batch[i - 1])));
-  assert.equal(f.batches.flat().length, 121);
-  assert.ok(f.batches[0].includes(7200), 'live sessions fill from the newest picture');
-  const calls = f.batches.length;
-  await f.source.warm([{start_time: 1000, end_time: 1000 + 7200}], 0);
-  assert.equal(f.batches.length, calls);
-  await f.source.warm([{start_time: 1000, end_time: 1000 + 7260}], 7260);
-  assert.deepEqual(f.batches.at(-1), [7260], 'live growth only asks for new positions');
-  f.source.dispose();
-});
-
-test('failed or timed out image metadata does not repeatedly block extraction for the same record', async () => {
-  for (const pending of [false, true]) {
-    let calls = 0;
-    const f = fixture({
-        timeout: 10,
-        api: {
-          keyframes: async () => {
-            calls++;
-            if (pending) return new Promise(() => {});
-            throw new Error('login required');
-          },
-        },
-      }),
-      s = signal();
-    await f.source.prepare([sample(60)], s);
-    assert.equal(await f.source.read(sample(60), s), 'decoded-frame');
-    await f.source.prepare([sample(120)], s);
-    assert.equal(await f.source.read(sample(120), s), 'decoded-frame');
-    await f.source.warm([{start_time: 1000, end_time: 2000}]);
-    assert.equal(calls, 1);
-    assert.equal(f.fallbacks, 2);
-    f.source.dispose();
-  }
-});
-
-test('cancelled views stop waiting but keep the shared batch for the next view', async () => {
-  let calls = 0;
-  const wait = deferred();
-  const f = fixture({
-    api: {
-      keyframes: async () => {
-        calls++;
-        return wait.promise;
-      },
-    },
-  });
-  const controller = new AbortController(),
-    pending = f.source.prepare([sample(60)], controller.signal);
-  controller.abort();
-  await assert.rejects(pending, {name: 'AbortError'});
-  const s = signal(),
-    next = f.source.prepare([sample(60)], s);
-  wait.resolve([{ts: 1060, url: 'https://i0.hdslb.com/new.jpg'}]);
-  await next;
+test('each new picture is announced, and leaving releases them all', async t => {
+  let announced = 0;
+  const f = fixture({onFrames: () => announced++}),
+    s = signal();
+  t.after(f.restore);
   await f.source.read(sample(60), s);
-  assert.equal(calls, 1);
-  assert.deepEqual(f.loads, ['https://i0.hdslb.com/new.jpg']);
-  assert.equal(f.fallbacks, 0);
+  await f.source.read(sample(120), s);
+  assert.equal(announced, 2);
   f.source.dispose();
+  assert.deepEqual(f.revoked, ['blob:0', 'blob:1']);
+  assert.equal(f.source.frameUrl(60), null);
 });
 
-test('images blocked for the page are fetched through the userscript manager', async () => {
-  const f = fixture({
-      load: async () => {
-        throw new Error('blocked');
-      },
-    }),
-    s = signal();
-  await f.source.prepare([sample(60)], s);
-  await f.source.read(sample(60), s);
-  assert.equal(f.requests.length, 1);
-  assert.equal(f.requests[0].options.auth, undefined);
-  assert.equal(f.requests[0].options.type, 'arraybuffer');
-  assert.equal(f.fallbacks, 0);
-  f.source.dispose();
-});
-
-test('a stalled image download is aborted before falling back to frame extraction', async () => {
-  let imageSignal;
-  const f = fixture({
-      timeout: 10,
-      load: (_, signal) => {
-        imageSignal = signal;
-        return new Promise(() => {});
-      },
-      request: async () => {
-        throw new Error('offline');
-      },
-    }),
-    s = signal();
-  await f.source.prepare([sample(60)], s);
-  assert.equal(await f.source.read(sample(60), s), 'decoded-frame');
-  assert.equal(imageSignal.aborted, true);
-  assert.equal(f.fallbacks, 1);
-  f.source.dispose();
-});
-
-test('disposing during image decoding closes the bitmap and prevents late canvas publication', async () => {
-  const decoded = deferred(),
-    started = deferred();
-  const f = fixture({
-      load: () => {
-        started.resolve();
-        return decoded.promise;
-      },
-    }),
-    s = signal();
-  await f.source.prepare([sample(60)], s);
-  const read = f.source.read(sample(60), s);
-  const rejected = assert.rejects(read, {name: 'AbortError'});
-  await started.promise;
-  f.source.dispose();
-  decoded.resolve({close() {}});
-  await rejected;
-  assert.equal(f.fallbacks, 0);
-  await new Promise(resolve => setImmediate(resolve));
-});
-
-test('thumbnail cache is bounded across long timeline exploration', async () => {
+test('the picture cache is bounded across long timeline exploration', async t => {
   const f = fixture(),
     s = signal();
-  for (let slot = 0; slot < 301; slot++) {
-    await f.source.prepare([sample(slot * 60)], s);
-    await f.source.read(sample(slot * 60), s);
-  }
-  await f.source.read(sample(300 * 60), s);
-  assert.equal(f.loads.length, 301);
-  await f.source.prepare([sample(0)], s);
+  t.after(f.restore);
+  for (let time = 0; time < 301; time++) await f.source.read(sample(time), s);
+  await f.source.read(sample(300), s);
+  assert.equal(f.reads.length, 301);
   await f.source.read(sample(0), s);
-  assert.equal(f.loads.length, 302);
+  assert.equal(f.reads.length, 302);
   f.source.dispose();
 });
 
-test('submission strips use the platform storyboard and keep decoding as a fallback', async () => {
+test('cancelled reads and disposal publish nothing late', async t => {
+  let finish;
+  const f = fixture({readFrame: () => new Promise(resolve => (finish = resolve))}),
+    s = signal();
+  t.after(f.restore);
+  const pending = f.source.read(sample(60), s);
+  await Promise.resolve();
+  const rejected = assert.rejects(pending, {name: 'AbortError'});
+  f.source.dispose();
+  finish(decoded());
+  await rejected;
+  assert.equal(f.urls.length, 0);
+});
+
+test('submission strips use the platform storyboard and keep decoding as a fallback', async t => {
   let disposed = false,
     reads = 0;
   const f = fixture({
@@ -309,14 +128,13 @@ test('submission strips use the platform storyboard and keep decoding as a fallb
       },
     }),
   });
+  t.after(f.restore);
   const s = signal();
-  await f.source.prepare([sample(10), sample(20)], s);
   const frame = await f.source.read(sample(10), s);
   await f.source.read(sample(20), s);
   assert.equal(frame.args[0][0].args[0].length, 9);
   assert.equal(reads, 2);
-  assert.equal(f.fallbacks, 1);
-  assert.equal(f.batches.length, 0);
+  assert.deepEqual(f.reads, [20]);
   f.source.dispose();
   assert.equal(disposed, true);
 });

@@ -67,7 +67,7 @@ export function makeHlsLoader(request) {
 }
 
 // Only the settled position is decoded. Every seek restarts sequential fragment
-// loading, so a drag shows platform stills and seeks when the pointer rests.
+// loading, so a drag shows stills and seeks when the pointer rests.
 const SETTLE_MS = 160,
   UNSTILLED_SEEK_MS = 250;
 // A fragment's first frame sits slightly after its nominal start, and most

@@ -59,13 +59,12 @@ test('media is read without credentials and with the byte range', async () => {
   assert.deepEqual(init.headers, {Range: 'bytes=10-14'});
 });
 
-test('account requests, forms and other hosts stay on the userscript manager', async () => {
+test('account requests and other hosts stay on the userscript manager', async () => {
   const f = fixture(async () => ok('direct'));
   await f.request('https://share.bellaris.fans/x.js', {});
   await f.request(media, {auth: true});
-  await f.request(media, {form: {a: 1}});
   assert.equal(f.calls.length, 0);
-  assert.equal(f.fallbacks.length, 3);
+  assert.equal(f.fallbacks.length, 2);
 });
 
 test('a blocked or failed direct read falls back once and pauses after repeated failures', async () => {

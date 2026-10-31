@@ -1,19 +1,54 @@
 import {BufferSource, EncodedPacketSink, Input, MP4, VideoSampleSink} from 'mediabunny';
 import {drawFitted} from '../shared/fit.js';
 
-const PROBE_BYTES = 8192,
+// One request is worth more than a few kilobytes: latency dominates a still.
+// Observed keyframes stay under this, so the opening usually arrives in one read.
+const OPENING_BYTES = 480 * 1024,
   WIDTH = 320,
   HEIGHT = 180;
 
-// Byte length through the first media box, read from the box headers alone.
-export function firstMediaEnd(bytes) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  for (let offset = 0; offset + 8 <= bytes.length;) {
+function* boxes(view, start, end) {
+  for (let offset = start; offset + 8 <= end;) {
     let size = view.getUint32(offset);
-    if (size === 1 && offset + 16 <= bytes.length) size = Number(view.getBigUint64(offset + 8));
-    if (size < 8) return null;
-    if (String.fromCharCode(...bytes.subarray(offset + 4, offset + 8)) === 'mdat') return offset + size;
+    if (size === 1 && offset + 16 <= end) size = Number(view.getBigUint64(offset + 8));
+    if (size < 8) return;
+    const type = String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset + 4, 4));
+    yield {type, offset, size};
     offset += size;
+  }
+}
+
+// Where the first sample of every track has ended, from a moof's run tables.
+function firstSamplesEnd(view, moof) {
+  let end = 0;
+  for (const traf of boxes(view, moof.offset + 8, moof.offset + moof.size)) {
+    if (traf.type !== 'traf') continue;
+    const children = [...boxes(view, traf.offset + 8, traf.offset + traf.size)];
+    const header = children.find(box => box.type === 'tfhd'),
+      run = children.find(box => box.type === 'trun');
+    if (!header || !run || !(view.getUint32(header.offset + 8) & 0x20000)) return null;
+    const flags = view.getUint32(run.offset + 8) & 0xffffff;
+    if (!(flags & 0x1) || !(flags & 0x200)) return null;
+    let cursor = run.offset + 20;
+    const dataOffset = view.getInt32(run.offset + 16);
+    if (flags & 0x4) cursor += 4;
+    if (flags & 0x100) cursor += 4;
+    end = Math.max(end, moof.offset + dataOffset + view.getUint32(cursor));
+  }
+  return end || null;
+}
+
+// How much of a fragment's start a picture needs, read from its headers alone.
+// `pictureEnd` covers the first samples; `mediaEnd` closes their media box.
+export function openingLayout(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let pictureEnd = null;
+  for (const box of boxes(view, 0, bytes.length)) {
+    if (box.type === 'moof' && box.offset + box.size <= bytes.length) pictureEnd = firstSamplesEnd(view, box);
+    if (box.type === 'mdat') {
+      const mediaEnd = box.offset + box.size;
+      return {pictureEnd: Math.min(pictureEnd ?? mediaEnd, mediaEnd), mediaEnd};
+    }
   }
   return null;
 }
@@ -34,25 +69,27 @@ function join(...parts) {
   return result;
 }
 
-// A replay fragment opens on a keyframe and is a few megabytes, of which the
-// first media box is about a tenth. That box alone yields a picture, without a
-// player, a playlist parse or the rest of the fragment.
+// A replay fragment opens on a keyframe. That one frame, a tenth of the
+// fragment, yields a picture without a player or the rest of the download.
 export async function readFragmentStill(
   request,
   {segment, map},
   {signal, makeCanvas = () => document.createElement('canvas')},
 ) {
   signal.throwIfAborted();
-  const head = await readBytes(request, segment, 0, PROBE_BYTES, signal);
-  const end = firstMediaEnd(head);
-  if (!end) throw new Error('分片开头不是标准的媒体结构。');
-  const first =
-    end <= head.length
-      ? head.subarray(0, end)
-      : join(head, await readBytes(request, segment, head.length, end - head.length, signal));
-  const init = map ? await readBytes(request, map, 0, map.range?.length ?? PROBE_BYTES, signal) : null;
+  const head = await readBytes(request, segment, 0, OPENING_BYTES, signal);
+  const layout = openingLayout(head);
+  if (!layout) throw new Error('分片开头不是标准的媒体结构。');
+  const opening =
+    layout.pictureEnd <= head.length
+      ? head
+      : join(head, await readBytes(request, segment, head.length, layout.pictureEnd - head.length, signal));
+  // The demuxer needs its media box whole, but only ever reads the first sample.
+  const fragment = new Uint8Array(layout.mediaEnd);
+  fragment.set(opening.subarray(0, Math.min(opening.length, layout.mediaEnd)));
+  const init = map ? await readBytes(request, map, 0, map.range?.length ?? OPENING_BYTES, signal) : null;
   signal.throwIfAborted();
-  const input = new Input({source: new BufferSource(init ? join(init, first) : first), formats: [MP4]});
+  const input = new Input({source: new BufferSource(init ? join(init, fragment) : fragment), formats: [MP4]});
   let sample;
   try {
     const track = await input.getPrimaryVideoTrack();
