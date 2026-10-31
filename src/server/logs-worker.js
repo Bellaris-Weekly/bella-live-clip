@@ -1,6 +1,11 @@
 import {redactContext, redactText} from '../shared/log-redaction.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
+// The endpoint is anonymous: a runaway client must not be able to fill the database.
+const RATE_LIMIT = 60,
+  RATE_WINDOW_MS = 60 * 1000;
+const RETENTION_MS = 90 * 24 * 60 * 60 * 1000,
+  CLEANUP_CHANCE = 0.02;
 const fields = ['id', 'source', 'event', 'level', 'version', 'message', 'context'];
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +16,8 @@ const cors = {
 
 function json(status, value, extraHeaders = {}) {
   return new Response(JSON.stringify(value), {
-    status, headers: {...cors, 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders},
+    status,
+    headers: {...cors, 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders},
   });
 }
 
@@ -23,7 +29,8 @@ async function readBody(request) {
   if (!request.body) return '';
   const reader = request.body.getReader();
   const decoder = new TextDecoder('utf-8', {fatal: true});
-  let bytes = 0, text = '';
+  let bytes = 0,
+    text = '';
   try {
     while (true) {
       const {done, value} = await reader.read();
@@ -61,21 +68,43 @@ function validContext(value) {
 }
 
 function validLog(log) {
-  if (!object(log) || Object.keys(log).length !== fields.length ||
-      !fields.every(field => Object.hasOwn(log, field))) return false;
-  for (const [field, limit] of [['id', 128], ['source', 64], ['event', 96]]) {
-    if (typeof log[field] !== 'string' || log[field].length > limit ||
-        !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(log[field])) return false;
+  if (!object(log) || Object.keys(log).length !== fields.length || !fields.every(field => Object.hasOwn(log, field)))
+    return false;
+  for (const [field, limit] of [
+    ['id', 128],
+    ['source', 64],
+    ['event', 96],
+  ]) {
+    if (
+      typeof log[field] !== 'string' ||
+      log[field].length > limit ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(log[field])
+    )
+      return false;
   }
-  return ['error', 'warn', 'info'].includes(log.level) &&
-    typeof log.version === 'string' && log.version.length >= 1 && log.version.length <= 64 &&
+  return (
+    ['error', 'warn', 'info'].includes(log.level) &&
+    typeof log.version === 'string' &&
+    log.version.length >= 1 &&
+    log.version.length <= 64 &&
     /^[A-Za-z0-9][A-Za-z0-9._+:-]*$/.test(log.version) &&
-    typeof log.message === 'string' && log.message.trim().length > 0 && log.message.length <= 16384 &&
-    object(log.context) && validContext(log.context);
+    typeof log.message === 'string' &&
+    log.message.trim().length > 0 &&
+    log.message.length <= 16384 &&
+    object(log.context) &&
+    validContext(log.context)
+  );
+}
+
+function removeExpired(database) {
+  return database
+    .prepare('DELETE FROM logs WHERE received_at < ?')
+    .bind(new Date(Date.now() - RETENTION_MS).toISOString())
+    .run();
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, context) {
     if (new URL(request.url).pathname !== '/v1/logs') return error(404, 'not_found');
     if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});
     if (request.method !== 'POST') return error(405, 'method_not_allowed', {Allow: 'POST, OPTIONS'});
@@ -92,13 +121,33 @@ export default {
     }
     if (!validLog(log)) return error(400, 'invalid_log');
     try {
-      const result = await env.LOGS_DB.prepare(`
+      const recent = await env.LOGS_DB.prepare(
+        'SELECT COUNT(*) AS count FROM logs WHERE source = ? AND received_at > ?',
+      )
+        .bind(log.source, new Date(Date.now() - RATE_WINDOW_MS).toISOString())
+        .first();
+      if (recent?.count >= RATE_LIMIT) return error(429, 'rate_limited', {'Retry-After': '60'});
+      const result = await env.LOGS_DB.prepare(
+        `
         INSERT INTO logs (source, id, received_at, level, event, version, message, context)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source, id) DO NOTHING
-      `).bind(log.source, log.id, new Date().toISOString(), log.level, log.event,
-        log.version, redactText(log.message), JSON.stringify(redactContext(log.context))).run();
+      `,
+      )
+        .bind(
+          log.source,
+          log.id,
+          new Date().toISOString(),
+          log.level,
+          log.event,
+          log.version,
+          redactText(log.message),
+          JSON.stringify(redactContext(log.context)),
+        )
+        .run();
       if (!result.success) return error(503, 'storage_unavailable');
+      // Writes are rare, so an occasional sweep needs no scheduled job or extra permissions.
+      if (Math.random() < CLEANUP_CHANCE) context?.waitUntil?.(removeExpired(env.LOGS_DB));
       const duplicate = result.meta.changes === 0;
       return json(duplicate ? 200 : 201, {ok: true, duplicate});
     } catch {

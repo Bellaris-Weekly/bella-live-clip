@@ -1,17 +1,16 @@
-import {
-  EncodedAudioPacketSource, EncodedPacketSink, EncodedVideoPacketSource,
-} from 'mediabunny';
-import { createMediaOutput } from './file-output.js';
-import { encodeVideoRange, readVideoEncodingSettings } from './encoding.js';
-import { createAvcNormalizer, UnsupportedAvcError } from './avc-packets.js';
-import { createAvcSplicer } from './avc-parameter-sets.js';
+import {EncodedAudioPacketSource, EncodedPacketSink, EncodedVideoPacketSource} from 'mediabunny';
+import {createMediaOutput} from './file-output.js';
+import {encodeVideoRange, readVideoEncodingSettings} from './encoding.js';
+import {createAvcNormalizer, UnsupportedAvcError} from './avc-packets.js';
+import {createAvcSplicer} from './avc-parameter-sets.js';
 
-const verified = { verifyKeyPackets: true };
+const verified = {verifyKeyPackets: true};
 
 // Recovery-point keyframes may belong to open GOPs. Only IDR frames close all
 // references to the previous decoder configuration and permit a safe splice.
-export async function planVideoCut(track, { start, end, normalizer, signal }) {
-  const sink = new EncodedPacketSink(track), tick = 1 / await track.getTimeResolution();
+export async function planVideoCut(track, {start, end, normalizer, signal}) {
+  const sink = new EncodedPacketSink(track),
+    tick = 1 / (await track.getTimeResolution());
   async function previousIdr(time) {
     let packet = await sink.getKeyPacket(time, verified);
     while (packet && !normalizer.isIdr(packet)) {
@@ -26,22 +25,33 @@ export async function planVideoCut(track, { start, end, normalizer, signal }) {
     signal?.throwIfAborted();
     first = await sink.getNextKeyPacket(first, verified);
   }
-  const reachesEnd = end >= await track.computeDuration() - tick / 2;
+  const reachesEnd = end >= (await track.computeDuration()) - tick / 2;
   const last = reachesEnd ? undefined : await previousIdr(end);
   signal?.throwIfAborted();
   if (!first || first.timestamp >= end || (!reachesEnd && (!last || first.timestamp >= last.timestamp))) {
-    return { headEnd: end, tailStart: end, first: null, last: null };
+    return {headEnd: end, tailStart: end, first: null, last: null};
   }
-  return { headEnd: Math.max(start, first.timestamp), tailStart: reachesEnd ? end : Math.min(end, last.timestamp), first, last };
+  return {
+    headEnd: Math.max(start, first.timestamp),
+    tailStart: reachesEnd ? end : Math.min(end, last.timestamp),
+    first,
+    last,
+  };
 }
 
-async function* videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) {
+async function* videoPackets(track, {start, end, settings, normalizer, plan, signal, stats, onProcessingStart}) {
   const boundaries = [];
   try {
-    for (const [from, to] of [[start, plan.headEnd], [plan.tailStart, end]]) {
-      if (to <= from) { boundaries.push(null); continue; }
-      const iterator = encodeVideoRange(track, { start: from, end: to, origin: start, settings, signal });
-      const boundary = { iterator };
+    for (const [from, to] of [
+      [start, plan.headEnd],
+      [plan.tailStart, end],
+    ]) {
+      if (to <= from) {
+        boundaries.push(null);
+        continue;
+      }
+      const iterator = encodeVideoRange(track, {start: from, end: to, origin: start, settings, signal});
+      const boundary = {iterator};
       boundaries.push(boundary);
       boundary.next = await iterator.next();
       // A time interval need not contain a frame (offset track starts, gaps,
@@ -53,7 +63,12 @@ async function* videoPackets(track, { start, end, settings, normalizer, plan, si
       if (!boundary.normalizer.isIdr(value.packet)) throw new UnsupportedAvcError('边界编码没有生成独立关键帧');
     }
     const encoded = boundaries.filter(Boolean);
-    const splicer = plan.first ? createAvcSplicer(normalizer.decoderConfig, encoded.map(item => item.normalizer.decoderConfig)) : null;
+    const splicer = plan.first
+      ? createAvcSplicer(
+          normalizer.decoderConfig,
+          encoded.map(item => item.normalizer.decoderConfig),
+        )
+      : null;
     async function* encode(boundary) {
       if (!boundary) return;
       const index = encoded.indexOf(boundary);
@@ -62,7 +77,7 @@ async function* videoPackets(track, { start, end, settings, normalizer, plan, si
         let packet = boundary.normalizer.normalize(boundary.next.value.packet);
         if (splicer) packet = splicer.normalize(packet, index);
         stats.encodedFrames++;
-        yield { packet, decoderConfig: splicer?.decoderConfig ?? boundary.normalizer.decoderConfig };
+        yield {packet, decoderConfig: splicer?.decoderConfig ?? boundary.normalizer.decoderConfig};
         boundary.next = await boundary.iterator.next();
       }
     }
@@ -78,8 +93,10 @@ async function* videoPackets(track, { start, end, settings, normalizer, plan, si
           throw new UnsupportedAvcError('关键帧之间存在跨边界画面引用');
         }
         stats.copiedFrames++;
-        yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - start }),
-          decoderConfig: splicer.decoderConfig };
+        yield {
+          packet: normalizer.normalize(packet).clone({timestamp: packet.timestamp - start}),
+          decoderConfig: splicer.decoderConfig,
+        };
       }
     }
     yield* encode(boundaries[1]);
@@ -88,82 +105,112 @@ async function* videoPackets(track, { start, end, settings, normalizer, plan, si
   }
 }
 
-async function* audioPackets(track, { start, end, signal }) {
-  const sink = new EncodedPacketSink(track), decoderConfig = await track.getDecoderConfig();
-  let first = await sink.getKeyPacket(start) ?? await sink.getFirstKeyPacket();
+async function* audioPackets(track, {start, end, signal}) {
+  const sink = new EncodedPacketSink(track),
+    decoderConfig = await track.getDecoderConfig();
+  let first = (await sink.getKeyPacket(start)) ?? (await sink.getFirstKeyPacket());
   if (first && first.timestamp + first.duration <= start) first = await sink.getNextKeyPacket(first);
   // AAC overlap-add needs the preceding packet to reconstruct the first audible
   // samples. Its negative PTS is represented by the MP4 edit list, not by silence.
-  if (first) first = await sink.getKeyPacket(first.timestamp - 1 / await track.getTimeResolution()) ?? first;
+  if (first) first = (await sink.getKeyPacket(first.timestamp - 1 / (await track.getTimeResolution()))) ?? first;
   if (!first) return;
   for await (const packet of sink.packets(first)) {
     signal?.throwIfAborted();
     if (packet.timestamp >= end) break;
-    yield { packet: packet.clone({ timestamp: packet.timestamp - start,
-      duration: Math.min(packet.duration, end - packet.timestamp) }), decoderConfig };
+    yield {
+      packet: packet.clone({
+        timestamp: packet.timestamp - start,
+        duration: Math.min(packet.duration, end - packet.timestamp),
+      }),
+      decoderConfig,
+    };
   }
 }
 
 async function trackMetadata(track) {
   const [languageCode, name, disposition] = await Promise.all([
-    track.getLanguageCode(), track.getName(), track.getDisposition(),
+    track.getLanguageCode(),
+    track.getName(),
+    track.getDisposition(),
   ]);
-  return { languageCode, name: name ?? undefined, disposition };
+  return {languageCode, name: name ?? undefined, disposition};
 }
 
-async function smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }) {
-  const videos = tracks.filter(track => track.type === 'video'), audios = tracks.filter(track => track.type === 'audio');
-  if (videos.length !== 1 || tracks.length !== videos.length + audios.length
-    || await videos[0].getCodec() !== 'avc'
-    || (await Promise.all(audios.map(track => track.getCodec()))).some(codec => codec !== 'aac')) {
+async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle}) {
+  const videos = tracks.filter(track => track.type === 'video'),
+    audios = tracks.filter(track => track.type === 'audio');
+  if (
+    videos.length !== 1 ||
+    tracks.length !== videos.length + audios.length ||
+    (await videos[0].getCodec()) !== 'avc' ||
+    (await Promise.all(audios.map(track => track.getCodec()))).some(codec => codec !== 'aac')
+  ) {
     throw new UnsupportedAvcError('当前音视频格式不支持安全拼接');
   }
-  const track = videos[0], settings = await readVideoEncodingSettings(track, { signal });
+  const track = videos[0],
+    settings = await readVideoEncodingSettings(track, {signal});
   const firstPacket = await new EncodedPacketSink(track).getFirstKeyPacket(verified);
   if (!firstPacket) throw new UnsupportedAvcError('录像缺少可用关键帧');
   const normalizer = createAvcNormalizer(settings.sourceDecoderConfig, firstPacket);
-  const plan = await planVideoCut(track, { start, end, normalizer, signal });
+  const plan = await planVideoCut(track, {start, end, normalizer, signal});
   if (plan.first && (plan.headEnd > start || plan.tailStart < end) && !settings.canSplice) {
     throw new UnsupportedAvcError('浏览器无法编码与原片相同的 H.264 规格');
   }
-  const stats = { strategy: 'smart', encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate };
-  onProgress(0, { ...stats, message: plan.first ? '仅编码头尾，中间保留原画' : '选区较短，按原码率编码' });
+  const stats = {strategy: 'smart', encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate};
+  onProgress(0, {...stats, message: plan.first ? '仅编码头尾，中间保留原画' : '选区较短，按原码率编码'});
 
-  const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+  const session = await createMediaOutput({fileHandle, signal}),
+    {output} = session;
   try {
     const video = new EncodedVideoPacketSource('avc');
-    output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
-    const streams = [{ source: video, isVideo: true, iterator: videoPackets(track, { start, end, settings, normalizer, plan, signal, stats, onProcessingStart }) }];
+    output.addVideoTrack(video, {...(await trackMetadata(track)), rotation: await track.getRotation()});
+    const streams = [
+      {
+        source: video,
+        isVideo: true,
+        iterator: videoPackets(track, {start, end, settings, normalizer, plan, signal, stats, onProcessingStart}),
+      },
+    ];
     for (const audio of audios) {
       const source = new EncodedAudioPacketSource('aac');
       output.addAudioTrack(source, await trackMetadata(audio));
-      streams.push({ source, iterator: audioPackets(audio, { start, end, signal }) });
+      streams.push({source, iterator: audioPackets(audio, {start, end, signal})});
     }
-    return await muxPackets(session, streams, { start, end, signal, onProgress, stats });
-  } finally { await session.cancel(); }
+    return await muxPackets(session, streams, {start, end, signal, onProgress, stats});
+  } finally {
+    await session.cancel();
+  }
 }
 
-async function muxPackets(session, streams, { start, end, signal, onProgress, stats }) {
-  const { output } = session;
-  let progress = 0, canceling;
-  const cancel = () => { canceling ??= output.cancel(); void canceling.catch(() => {}); };
-  signal?.addEventListener('abort', cancel, { once: true });
+async function muxPackets(session, streams, {start, end, signal, onProgress, stats}) {
+  const {output} = session;
+  let progress = 0,
+    canceling;
+  const cancel = () => {
+    canceling ??= output.cancel();
+    void canceling.catch(() => {});
+  };
+  signal?.addEventListener('abort', cancel, {once: true});
   try {
     signal?.throwIfAborted();
     await output.start();
     for (const stream of streams) {
       stream.next = await stream.iterator.next();
-      if (stream.next.done) throw new Error(stream.isVideo ? '选区内没有画面，请调整选区或改用原画导出。' : '选区内读不到声音，已停止，以免丢失音轨。');
+      if (stream.next.done)
+        throw new Error(
+          stream.isVideo ? '选区内没有画面，请调整选区或改用原画导出。' : '选区内读不到声音，已停止，以免丢失音轨。',
+        );
     }
     while (streams.some(stream => !stream.next.done)) {
       signal?.throwIfAborted();
       // One pending packet per track preserves each track's decode order while
       // keeping audio/video reads near each other in the bounded source cache.
-      const stream = streams.filter(item => !item.next.done)
-        .reduce((a, b) => a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b);
-      const { packet, decoderConfig } = stream.next.value;
-      await stream.source.add(packet, { decoderConfig });
-      progress = Math.max(progress, Math.min(.99, (packet.timestamp + packet.duration) / (end - start)));
+      const stream = streams
+        .filter(item => !item.next.done)
+        .reduce((a, b) => (a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b));
+      const {packet, decoderConfig} = stream.next.value;
+      await stream.source.add(packet, {decoderConfig});
+      progress = Math.max(progress, Math.min(0.99, (packet.timestamp + packet.duration) / (end - start)));
       onProgress(progress, stats);
       stream.next = await stream.iterator.next();
       if (stream.next.done) stream.source.close();
@@ -182,68 +229,86 @@ async function muxPackets(session, streams, { start, end, signal, onProgress, st
   }
 }
 
-async function encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }) {
+async function encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle}) {
   if (!tracks.some(track => track.type === 'video') || tracks.some(track => !['video', 'audio'].includes(track.type))) {
     throw new Error('这段录像无法精确导出，请改用原画导出。');
   }
-  if ((await Promise.all(tracks.filter(track => track.type === 'audio').map(track => track.getCodec()))).some(codec => codec !== 'aac')) {
+  if (
+    (await Promise.all(tracks.filter(track => track.type === 'audio').map(track => track.getCodec()))).some(
+      codec => codec !== 'aac',
+    )
+  ) {
     throw new Error('精确导出需要 AAC 音频，请改用原画导出以保留声音。');
   }
-  const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+  const session = await createMediaOutput({fileHandle, signal}),
+    {output} = session;
   try {
     const streams = [];
     for (const track of tracks) {
       signal?.throwIfAborted();
-      const options = { start, end, origin: start, signal };
+      const options = {start, end, origin: start, signal};
       if (track.type === 'video') {
-        if (!await track.canDecode()) throw new Error('当前浏览器无法解码这段录像，请改用原画导出或更新浏览器。');
+        if (!(await track.canDecode())) throw new Error('当前浏览器无法解码这段录像，请改用原画导出或更新浏览器。');
         const source = new EncodedVideoPacketSource('avc');
-        const settings = await readVideoEncodingSettings(track, { signal });
-        output.addVideoTrack(source, { ...await trackMetadata(track), rotation: await track.getRotation() });
-        streams.push({ source, isVideo: true, iterator: encodeVideoRange(track, { ...options, settings }) });
+        const settings = await readVideoEncodingSettings(track, {signal});
+        output.addVideoTrack(source, {...(await trackMetadata(track)), rotation: await track.getRotation()});
+        streams.push({source, isVideo: true, iterator: encodeVideoRange(track, {...options, settings})});
       } else {
         const source = new EncodedAudioPacketSource('aac');
         output.addAudioTrack(source, await trackMetadata(track));
-        streams.push({ source, iterator: audioPackets(track, options) });
+        streams.push({source, iterator: audioPackets(track, options)});
       }
     }
     onProcessingStart();
-    return await muxPackets(session, streams, { start, end, signal, onProgress, stats: { strategy: 'full' } });
-  } finally { await session.cancel(); }
+    return await muxPackets(session, streams, {start, end, signal, onProgress, stats: {strategy: 'full'}});
+  } finally {
+    await session.cancel();
+  }
 }
 
-export async function trimPrecise(input, { start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle } = {}) {
+export async function trimPrecise(
+  input,
+  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle} = {},
+) {
   signal?.throwIfAborted();
   end ??= await input.computeDuration();
-  return trimPreciseTracks(await input.getTracks(), { start, end, signal, onProgress, onProcessingStart, fileHandle });
+  return trimPreciseTracks(await input.getTracks(), {start, end, signal, onProgress, onProcessingStart, fileHandle});
 }
 
-export async function trimPreciseTracks(tracks, { start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle } = {}) {
+export async function trimPreciseTracks(
+  tracks,
+  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle} = {},
+) {
   signal?.throwIfAborted();
-  try { return await smartTrim(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle }); }
-  catch (error) {
+  try {
+    return await smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle});
+  } catch (error) {
     if (signal?.aborted) throw signal.reason;
     if (!(error instanceof UnsupportedAvcError)) throw error;
-    onProgress(0, { strategy: 'full', message: '当前素材无法安全拼接，已改为按原码率整段编码' });
-    return encodeSelection(tracks, { start, end, signal, onProgress, onProcessingStart, fileHandle });
+    onProgress(0, {strategy: 'full', message: '当前素材无法安全拼接，已改为按原码率整段编码'});
+    return encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle});
   }
 }
 
 // Copy complete GOPs so B-frame references remain decodable at both boundaries.
 // Audio uses the same origin, preserving offsets across separate DASH inputs.
-export async function trimCopyTracks(tracks, { start, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle }) {
+export async function trimCopyTracks(
+  tracks,
+  {start, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle},
+) {
   signal?.throwIfAborted();
   const track = tracks.find(item => item.type === 'video');
   const sink = new EncodedPacketSink(track);
   const normalizer = createAvcNormalizer(await track.getDecoderConfig());
-  const tick = 1 / await track.getTimeResolution();
+  const tick = 1 / (await track.getTimeResolution());
   let first = await sink.getKeyPacket(start, verified);
   while (first && !normalizer.isIdr(first)) {
     signal?.throwIfAborted();
     first = await sink.getKeyPacket(first.timestamp - tick, verified);
   }
   first ??= await sink.getFirstKeyPacket(verified);
-  if (!first || !normalizer.isIdr(first) || first.timestamp >= end) throw new Error('选区内没有关键帧，请调大选区或改用精确导出。');
+  if (!first || !normalizer.isIdr(first) || first.timestamp >= end)
+    throw new Error('选区内没有关键帧，请调大选区或改用精确导出。');
   let last = await sink.getKeyPacket(end, verified);
   while (last && (last.timestamp < end - tick / 2 || !normalizer.isIdr(last))) {
     signal?.throwIfAborted();
@@ -252,25 +317,36 @@ export async function trimCopyTracks(tracks, { start, end, signal, onProgress = 
   // Expanding to GOP boundaries must never shrink the requested audio interval.
   // Tracks can start later or end earlier than one another. Keep their offsets.
   const origin = Math.min(start, first.timestamp);
-  const limit = Math.max(end, last?.timestamp ?? await track.computeDuration());
-  const session = await createMediaOutput({ fileHandle, signal }), { output } = session;
+  const limit = Math.max(end, last?.timestamp ?? (await track.computeDuration()));
+  const session = await createMediaOutput({fileHandle, signal}),
+    {output} = session;
   try {
     const video = new EncodedVideoPacketSource('avc');
-    output.addVideoTrack(video, { ...await trackMetadata(track), rotation: await track.getRotation() });
+    output.addVideoTrack(video, {...(await trackMetadata(track)), rotation: await track.getRotation()});
     async function* packets() {
       for await (const packet of sink.packets(first, last ?? undefined, verified)) {
         signal?.throwIfAborted();
-        yield { packet: normalizer.normalize(packet).clone({ timestamp: packet.timestamp - origin }), decoderConfig: normalizer.decoderConfig };
+        yield {
+          packet: normalizer.normalize(packet).clone({timestamp: packet.timestamp - origin}),
+          decoderConfig: normalizer.decoderConfig,
+        };
       }
     }
-    const streams = [{ source: video, isVideo: true, iterator: packets() }];
+    const streams = [{source: video, isVideo: true, iterator: packets()}];
     for (const audio of tracks.filter(item => item.type === 'audio')) {
       const source = new EncodedAudioPacketSource('aac');
       output.addAudioTrack(source, await trackMetadata(audio));
-      streams.push({ source, iterator: audioPackets(audio, { start: origin, end: limit, signal }) });
+      streams.push({source, iterator: audioPackets(audio, {start: origin, end: limit, signal})});
     }
     onProcessingStart();
-    return await muxPackets(session, streams, { start: origin, end: limit, signal, onProgress,
-      stats: { strategy: 'copy', message: '原画导出保留完整关键帧组，起止位置可能略有扩展' } });
-  } finally { await session.cancel(); }
+    return await muxPackets(session, streams, {
+      start: origin,
+      end: limit,
+      signal,
+      onProgress,
+      stats: {strategy: 'copy', message: '原画导出保留完整关键帧组，起止位置可能略有扩展'},
+    });
+  } finally {
+    await session.cancel();
+  }
 }

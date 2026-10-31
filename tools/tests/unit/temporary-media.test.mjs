@@ -4,25 +4,54 @@ import {createTemporaryMedia, ensureTemporarySpace, removeAbandonedMedia} from '
 
 const DAY = 24 * 60 * 60 * 1000;
 function directory(files) {
-  const items = new Map(Object.entries(files).map(([name, age]) => [name, age === 'dir' ? {kind: 'directory'}
-    : {kind: 'file', getFile: async () => ({lastModified: 1000 * DAY - age})}]));
-  return {removed: [],
-    async *entries() { yield* [...items]; },
-    async removeEntry(name) { this.removed.push(name); items.delete(name); },
-    async getFileHandle(name) { const handle = {name, kind: 'file'}; items.set(name, handle); return handle; }};
+  const items = new Map(
+    Object.entries(files).map(([name, age]) => [
+      name,
+      age === 'dir' ? {kind: 'directory'} : {kind: 'file', getFile: async () => ({lastModified: 1000 * DAY - age})},
+    ]),
+  );
+  return {
+    removed: [],
+    async *entries() {
+      yield* [...items];
+    },
+    async removeEntry(name) {
+      this.removed.push(name);
+      items.delete(name);
+    },
+    async getFileHandle(name) {
+      const handle = {name, kind: 'file'};
+      items.set(name, handle);
+      return handle;
+    },
+  };
 }
 
 test('abandoned temporary files are removed, recent ones and unrelated entries stay', async () => {
-  const root = directory({'bella-clip-old.mp4': 2 * DAY, 'bella-clip-new.mp4': DAY / 2, 'bella-clip-dir': 'dir', 'other.mp4': 9 * DAY});
+  const root = directory({
+    'bella-clip-old.mp4': 2 * DAY,
+    'bella-clip-new.mp4': DAY / 2,
+    'bella-clip-dir': 'dir',
+    'other.mp4': 9 * DAY,
+  });
   await removeAbandonedMedia(root, 1000 * DAY);
   assert.deepEqual(root.removed, ['bella-clip-old.mp4']);
 });
 
 test('a locked file or unreadable directory never stops an export', async () => {
   const root = directory({'bella-clip-old.mp4': 2 * DAY});
-  root.removeEntry = async () => { throw new Error('locked'); };
+  root.removeEntry = async () => {
+    throw new Error('locked');
+  };
   await removeAbandonedMedia(root, 1000 * DAY);
-  await removeAbandonedMedia({entries() { throw new Error('denied'); }}, 1000 * DAY);
+  await removeAbandonedMedia(
+    {
+      entries() {
+        throw new Error('denied');
+      },
+    },
+    1000 * DAY,
+  );
 });
 
 test('creating temporary media also cleans up and keeps its own file removable', async () => {
@@ -43,5 +72,12 @@ test('unknown sizes and unavailable estimates are not treated as a lack of space
   await ensureTemporarySpace({estimate: async () => ({quota: 1, usage: 1})}, 0);
   await ensureTemporarySpace({}, 1e12);
   await ensureTemporarySpace(undefined, 1e12);
-  await ensureTemporarySpace({estimate: async () => { throw new Error('denied'); }}, 1e12);
+  await ensureTemporarySpace(
+    {
+      estimate: async () => {
+        throw new Error('denied');
+      },
+    },
+    1e12,
+  );
 });

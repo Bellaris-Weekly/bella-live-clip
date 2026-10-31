@@ -16,13 +16,56 @@ let directory, server, browser, origin, boundaries, script;
 // fragments, so most begin mid-GOP. That layout is what hung the preview.
 async function createFixture() {
   directory = await mkdtemp(path.join(tmpdir(), 'bella-e2e-'));
-  await promisify(execFile)('ffmpeg', ['-hide_banner', '-loglevel', 'error',
-    '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=34', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=34',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'high', '-bf', '2', '-g', '125', '-keyint_min', '125',
-    '-sc_threshold', '0', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-f', 'hls', '-hls_time', '1',
-    '-hls_list_size', '0', '-hls_playlist_type', 'vod', '-hls_segment_type', 'fmp4', '-hls_flags', 'split_by_time',
-    '-hls_fmp4_init_filename', 'init.mp4', '-hls_segment_filename', path.join(directory, 'seg%03d.m4s'),
-    path.join(directory, 'v.m3u8')]);
+  await promisify(execFile)('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=size=320x180:rate=30:duration=34',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:duration=34',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-profile:v',
+    'high',
+    '-bf',
+    '2',
+    '-g',
+    '125',
+    '-keyint_min',
+    '125',
+    '-sc_threshold',
+    '0',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '64k',
+    '-f',
+    'hls',
+    '-hls_time',
+    '1',
+    '-hls_list_size',
+    '0',
+    '-hls_playlist_type',
+    'vod',
+    '-hls_segment_type',
+    'fmp4',
+    '-hls_flags',
+    'split_by_time',
+    '-hls_fmp4_init_filename',
+    'init.mp4',
+    '-hls_segment_filename',
+    path.join(directory, 'seg%03d.m4s'),
+    path.join(directory, 'v.m3u8'),
+  ]);
   const playlist = await readFile(path.join(directory, 'v.m3u8'), 'utf8');
   let time = 0;
   boundaries = [...playlist.matchAll(/^#EXTINF:([\d.]+),/gm)].map(match => {
@@ -59,8 +102,14 @@ async function respond(request, response) {
 
 before(async () => {
   await createFixture();
-  const {outputFiles} = await build({entryPoints: ['tools/tests/e2e/preview-page.js'], bundle: true, write: false,
-    format: 'iife', target: 'chrome110', logLevel: 'error'});
+  const {outputFiles} = await build({
+    entryPoints: ['tools/tests/e2e/preview-page.js'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    target: 'chrome110',
+    logLevel: 'error',
+  });
   script = outputFiles[0].text;
   server = createServer(respond);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -79,7 +128,10 @@ async function inPage(action, argument) {
   try {
     await page.goto(`${origin}/`);
     await page.addScriptTag({url: '/page.js'});
-    return await page.evaluate(([name, value]) => window[name](value), [action, {timeout: SETTLE_TIMEOUT, ...argument}]);
+    return await page.evaluate(
+      ([name, value]) => window[name](value),
+      [action, {timeout: SETTLE_TIMEOUT, ...argument}],
+    );
   } finally {
     await page.close();
   }
@@ -103,7 +155,7 @@ test('a drag shows stills, leaves the video alone and lands on the final positio
   assert.equal(result.stillShown, true);
   assert.notEqual(result.framedAt, null);
   assert.equal(result.stillAfter, false, 'the decoded frame replaces the still');
-  assert.ok(Math.abs(result.time - 28.3) < .2, `landed at ${result.time}`);
+  assert.ok(Math.abs(result.time - 28.3) < 0.2, `landed at ${result.time}`);
 });
 
 test('a fragment opening on a keyframe yields a real picture from its first media box', async () => {

@@ -2,11 +2,18 @@ const FEEDBACK_SELECTOR = '.web-player-icon-feedback';
 const INSTALLED_ATTRIBUTE = 'data-bella-live-screenshot-installed';
 const SCREENSHOT_LABEL = '截图';
 const SCAN_DELAY = 200;
-const CAMERA_ICON = '<svg data-bella-screenshot-icon viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="display:block;margin:8px;pointer-events:none;filter:drop-shadow(0 1px 2px #000a)"><path fill="white" fill-rule="evenodd" d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M12 8a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9z"/></svg>';
+// eslint-disable-next-line no-control-regex -- control characters are exactly what must go
+const UNSAFE_NAME = /[\\/:*?"<>|\u0000-\u001f]/g;
+const CAMERA_ICON =
+  '<svg data-bella-screenshot-icon viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="display:block;margin:8px;pointer-events:none;filter:drop-shadow(0 1px 2px #000a)"><path fill="white" fill-rule="evenodd" d="M8 5l1.5-2h5L16 5h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M12 8a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9z"/></svg>';
 
 // Walk only this control's ancestors so another player/editor cannot supply the frame.
 function findScreenshotVideo(control, selectVideo) {
-  for (let parent = control.parentElement; parent && parent !== control.ownerDocument?.body; parent = parent.parentElement) {
+  for (
+    let parent = control.parentElement;
+    parent && parent !== control.ownerDocument?.body;
+    parent = parent.parentElement
+  ) {
     if (parent.querySelector('video')) return selectVideo(parent);
   }
   return null;
@@ -21,10 +28,10 @@ function captureVideoPng(video, rootDocument) {
     const canvas = rootDocument.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    const context = canvas.getContext('2d', { alpha: false });
+    const context = canvas.getContext('2d', {alpha: false});
     if (!context) throw new Error('截图失败，请重试');
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(blob => {
       canvas.width = canvas.height = 0;
       if (blob) resolve(blob);
       else reject(new Error('截图失败，请重试'));
@@ -35,12 +42,12 @@ function captureVideoPng(video, rootDocument) {
 function formatScreenshotFileName(date, identity) {
   const pad = (value, length = 2) => String(value).padStart(length, '0');
   const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}_${pad(date.getMilliseconds(), 3)}`;
-  const source = String(identity.streamerName || identity.roomId || '直播间').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_');
+  const source = String(identity.streamerName || identity.roomId || '直播间').replace(UNSAFE_NAME, '_');
   return `${source}_${stamp}.png`;
 }
 
 // The live page and shadow-root editor share rendering, capture and feedback behavior.
-function createScreenshotControls({ rootDocument, getVideo, getIdentity, download }) {
+function createScreenshotControls({rootDocument, getVideo, getIdentity, download}) {
   const view = rootDocument.defaultView;
   const controls = new WeakSet();
   let notice = null;
@@ -59,12 +66,13 @@ function createScreenshotControls({ rootDocument, getVideo, getIdentity, downloa
     notice = rootDocument.createElement('div');
     notice.setAttribute('role', 'status');
     notice.textContent = message;
-    notice.style.cssText = 'position:absolute;top:44px;right:12px;z-index:101;max-width:calc(100% - 24px);padding:8px 12px;border-radius:6px;background:#000c;color:#fff;font:13px/1.5 sans-serif;pointer-events:none;';
+    notice.style.cssText =
+      'position:absolute;top:44px;right:12px;z-index:101;max-width:calc(100% - 24px);padding:8px 12px;border-radius:6px;background:#000c;color:#fff;font:13px/1.5 sans-serif;pointer-events:none;';
     control.parentElement.appendChild(notice);
     noticeTimer = view.setTimeout(clearNotice, 3500);
   };
 
-  const enhance = (control) => {
+  const enhance = control => {
     if (!control.querySelector('[data-bella-screenshot-icon]')) control.innerHTML = CAMERA_ICON;
     control.title = SCREENSHOT_LABEL;
     control.setAttribute('aria-label', SCREENSHOT_LABEL);
@@ -73,7 +81,7 @@ function createScreenshotControls({ rootDocument, getVideo, getIdentity, downloa
     if (controls.has(control)) return;
     controls.add(control);
     let busy = false;
-    const capture = async (event) => {
+    const capture = async event => {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (busy) return;
@@ -86,9 +94,7 @@ function createScreenshotControls({ rootDocument, getVideo, getIdentity, downloa
         const blob = await captureVideoPng(video, rootDocument);
         await download(blob, fileName);
       } catch (error) {
-        showNotice(control, error.name === 'SecurityError'
-          ? '浏览器不允许截图'
-          : error.message);
+        showNotice(control, error.name === 'SecurityError' ? '浏览器不允许截图' : error.message);
       } finally {
         busy = false;
         control.removeAttribute('aria-busy');
@@ -96,34 +102,46 @@ function createScreenshotControls({ rootDocument, getVideo, getIdentity, downloa
     };
     // Capture phase prevents the site's original feedback click from firing.
     control.addEventListener('click', capture, true);
-    control.addEventListener('dblclick', (event) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }, true);
-    control.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      if (event.repeat) {
+    control.addEventListener(
+      'dblclick',
+      event => {
         event.preventDefault();
         event.stopImmediatePropagation();
-        return;
-      }
-      capture(event);
-    }, true);
+      },
+      true,
+    );
+    control.addEventListener(
+      'keydown',
+      event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.repeat) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        capture(event);
+      },
+      true,
+    );
   };
 
   return enhance;
 }
 
-function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, download }) {
+function installLiveScreenshot({rootDocument, selectVideo, getIdentity, download}) {
   // DOM attributes are shared across userscript sandboxes; globals are not.
   // Claim synchronously before observing or binding any controls. Each iframe owns its document.
   const root = rootDocument.documentElement;
   if (root.hasAttribute(INSTALLED_ATTRIBUTE)) return false;
   root.setAttribute(INSTALLED_ATTRIBUTE, '');
-  const enhance = createScreenshotControls({rootDocument,
-    getVideo: control => findScreenshotVideo(control, selectVideo), getIdentity, download});
+  const enhance = createScreenshotControls({
+    rootDocument,
+    getVideo: control => findScreenshotVideo(control, selectVideo),
+    getIdentity,
+    download,
+  });
   const view = rootDocument.defaultView;
-  const scan = (root) => {
+  const scan = root => {
     if (root.nodeType !== 1) return;
     if (root.matches(FEEDBACK_SELECTOR)) enhance(root);
     root.querySelectorAll(FEEDBACK_SELECTOR).forEach(enhance);
@@ -137,9 +155,15 @@ function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, downloa
     }, SCAN_DELAY);
   });
   // Also runs inside the player's iframe, before the main editor's top-window guard.
-  observer.observe(rootDocument.documentElement, { childList: true, subtree: true });
+  observer.observe(rootDocument.documentElement, {childList: true, subtree: true});
   scan(rootDocument.documentElement);
   return true;
 }
 
-export { createScreenshotControls, captureVideoPng, findScreenshotVideo, formatScreenshotFileName, installLiveScreenshot };
+export {
+  createScreenshotControls,
+  captureVideoPng,
+  findScreenshotVideo,
+  formatScreenshotFileName,
+  installLiveScreenshot,
+};

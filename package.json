@@ -9,19 +9,25 @@
     "test": "node --test tools/tests/unit/*.test.mjs",
     "serve": "node tools/scripts/dev-server.mjs",
     "check": "node --check bella-live-clip.user.js",
-    "verify": "npm run build && npm run check && npm run check:version && npm test",
+    "verify": "npm run lint && npm run build && npm run check && npm run check:version && npm test",
     "check:version": "node tools/scripts/check-version.mjs",
     "logs:deploy": "node tools/scripts/deploy-log-service.mjs",
-    "test:e2e": "node --test tools/tests/e2e/*.e2e.mjs"
+    "test:e2e": "node --test tools/tests/e2e/*.e2e.mjs",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write ."
   },
   "dependencies": {
     "hls.js": "1.6.16",
     "mediabunny": "1.56.1"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
     "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "globals": "16.5.0",
     "jsdom": "26.1.0",
     "playwright-core": "1.64.1",
+    "prettier": "3.9.10",
     "wrangler": "4.151.1"
   },
   "license": "MIT",

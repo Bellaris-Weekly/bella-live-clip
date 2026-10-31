@@ -8,7 +8,8 @@ function rig() {
   const video = document.createElement('video');
   video.muted = true;
   document.body.append(video);
-  const loading = document.createElement('div'), still = document.createElement('img');
+  const loading = document.createElement('div'),
+    still = document.createElement('img');
   still.hidden = true;
   document.body.append(still);
   const counts = new Map();
@@ -18,7 +19,12 @@ function rig() {
     return {data: type === 'arraybuffer' ? await response.arrayBuffer() : await response.text(), url: response.url};
   };
   const player = createPlayer({
-    video, loading, still, frameUrl: time => `/still.svg?t=${Math.round(time)}`, status() {}, onTime() {},
+    video,
+    loading,
+    still,
+    frameUrl: time => `/still.svg?t=${Math.round(time)}`,
+    status() {},
+    onTime() {},
     api: {request, clips: async () => [{start_time: 1000, end_time: 1034, stream: `${location.origin}/v.m3u8`}]},
   });
   return {video, loading, still, player, counts};
@@ -33,12 +39,12 @@ async function settled({video, loading}, timeout) {
   return null;
 }
 
-const load = (r) => r.player.load({key: 'k', start: 1000, end: 1034, live: false}, new AbortController().signal);
+const load = r => r.player.load({key: 'k', start: 1000, end: 1034, live: false}, new AbortController().signal);
 
 window.seekTo = async ({target, timeout}) => {
   const r = rig();
   await load(r);
-  r.player.seek(.4);
+  r.player.seek(0.4);
   await settled(r, timeout);
   r.player.seek(target);
   const framedAt = await settled(r, timeout);
@@ -55,15 +61,16 @@ window.openAt = async ({target, timeout}) => {
 window.drag = async ({timeout}) => {
   const r = rig();
   await load(r);
-  r.player.seek(.4);
+  r.player.seek(0.4);
   await settled(r, timeout);
   await sleep(300);
-  const loads = () => [...r.counts.values()].reduce((sum, value) => sum + value, 0), before = loads();
+  const loads = () => [...r.counts.values()].reduce((sum, value) => sum + value, 0),
+    before = loads();
   let seeks = 0;
   r.video.addEventListener('seeking', () => seeks++);
   r.player.beginScrub();
   for (let i = 0; i < 40; i++) {
-    r.player.scrub(1 + i * .7);
+    r.player.scrub(1 + i * 0.7);
     await sleep(16);
   }
   const during = {seeks, stillShown: !r.still.hidden};
@@ -73,7 +80,10 @@ window.drag = async ({timeout}) => {
 };
 
 const ranged = async (url, {range, signal}) => {
-  const response = await fetch(url, {signal, headers: {Range: `bytes=${range.offset}-${range.offset + range.length - 1}`}});
+  const response = await fetch(url, {
+    signal,
+    headers: {Range: `bytes=${range.offset}-${range.offset + range.length - 1}`},
+  });
   if (response.status !== 206) throw new Error(`range ignored: ${response.status}`);
   return {data: await response.arrayBuffer()};
 };
@@ -86,11 +96,20 @@ window.fragmentStill = async ({segment}) => {
     return result;
   };
   try {
-    const canvas = await readFragmentStill(request, {segment: {url: segment}, map: {url: '/init.mp4'}}, {signal: new AbortController().signal});
+    const canvas = await readFragmentStill(
+      request,
+      {segment: {url: segment}, map: {url: '/init.mp4'}},
+      {signal: new AbortController().signal},
+    );
     const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     let total = 0;
     for (let i = 0; i < pixels.length; i += 4) total += pixels[i] + pixels[i + 1] + pixels[i + 2];
-    return {width: canvas.width, height: canvas.height, brightness: total / (pixels.length / 4) / 3, bytes: bytes.reduce((a, b) => a + b, 0)};
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      brightness: total / (pixels.length / 4) / 3,
+      bytes: bytes.reduce((a, b) => a + b, 0),
+    };
   } catch (error) {
     return {error: error.message};
   }

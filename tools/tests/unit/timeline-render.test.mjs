@@ -1,285 +1,533 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {formatTimeRange} from '../../../src/shared/format.js';
-import {createTimeline,fitSelection} from '../../../src/ui/timeline.js';
+import {createTimeline, fitSelection} from '../../../src/ui/timeline.js';
 
 class Element {
-  writes=0; children=[]; attributes={}; handlers={}; dataset={};
-  classList={add(){},remove(){}};
-  style=new Proxy({setProperty(key,value){this[key]=value;}}, {set:(target,key,value)=>{this.writes++;target[key]=value;return true;}});
-  set textContent(value){this.writes++;this.text=value;}
-  get textContent(){return this.text;}
-  setAttribute(key,value){this.writes++;this.attributes[key]=value;}
-  replaceChildren(...children){this.writes++;this.children=children;}
-  append(...children){this.writes++;this.children.push(...children);}
-  addEventListener(name,handler){this.handlers[name]=handler;}
-  getBoundingClientRect(){return {left:0,width:100};}
-  focus(){this.focused=true;}
- closest(){return this.dataset.handle?this:null;}
-  setPointerCapture(){this.captured=true;}
-  hasPointerCapture(){return this.captured;}
-  releasePointerCapture(){this.captured=false;}
-}
-
-function fixture(t){
-  let id=0;const frames=new Map();
-  for(const [key,value] of [['document',{createElement:()=>new Element()}],['cancelAnimationFrame',id=>frames.delete(id)],['requestAnimationFrame',fn=>{frames.set(++id,fn);return id;}],['matchMedia',()=>({matches:false})]]){
-    const saved=Object.getOwnPropertyDescriptor(globalThis,key);
-    globalThis[key]=value;
-    t.after(()=>{if(saved)Object.defineProperty(globalThis,key,saved);else delete globalThis[key];});
+  writes = 0;
+  children = [];
+  attributes = {};
+  handlers = {};
+  dataset = {};
+  classList = {add() {}, remove() {}};
+  style = new Proxy(
+    {
+      setProperty(key, value) {
+        this[key] = value;
+      },
+    },
+    {
+      set: (target, key, value) => {
+        this.writes++;
+        target[key] = value;
+        return true;
+      },
+    },
+  );
+  set textContent(value) {
+    this.writes++;
+    this.text = value;
   }
-  const elements=Object.fromEntries(['track','startHandle','endHandle','selectionElement','playhead','ticks','labels'].map(key=>[key,new Element()]));
-  elements.startHandle.dataset.handle='start';elements.endHandle.dataset.handle='end';
-  const previews=[],selections=[],views=[];
-  const timeline=createTimeline({...elements,onRange:({start,end})=>{elements.labels.textContent=formatTimeRange(start,end);},onPreview:value=>previews.push(value),onSelection:value=>selections.push(value),onView:(view,motion)=>views.push({view,motion})});
-  const staticElements=[elements.startHandle,elements.endHandle,elements.selectionElement,elements.labels,elements.ticks,...elements.ticks.children];
-  return {...elements,timeline,previews,selections,views,frames,advance(now){const callbacks=[...frames.values()];frames.clear();callbacks.forEach(fn=>fn(now));},staticWrites:()=>staticElements.map(el=>el.writes)};
+  get textContent() {
+    return this.text;
+  }
+  setAttribute(key, value) {
+    this.writes++;
+    this.attributes[key] = value;
+  }
+  replaceChildren(...children) {
+    this.writes++;
+    this.children = children;
+  }
+  append(...children) {
+    this.writes++;
+    this.children.push(...children);
+  }
+  addEventListener(name, handler) {
+    this.handlers[name] = handler;
+  }
+  getBoundingClientRect() {
+    return {left: 0, width: 100};
+  }
+  focus() {
+    this.focused = true;
+  }
+  closest() {
+    return this.dataset.handle ? this : null;
+  }
+  setPointerCapture() {
+    this.captured = true;
+  }
+  hasPointerCapture() {
+    return this.captured;
+  }
+  releasePointerCapture() {
+    this.captured = false;
+  }
 }
 
-test('播放进度与点击预览只更新指针，短片和长场均不重写刻度或选区',t=>{
-  const f=fixture(t);
-  for(const duration of [24,7200]){
+function fixture(t) {
+  let id = 0;
+  const frames = new Map();
+  for (const [key, value] of [
+    ['document', {createElement: () => new Element()}],
+    ['cancelAnimationFrame', id => frames.delete(id)],
+    [
+      'requestAnimationFrame',
+      fn => {
+        frames.set(++id, fn);
+        return id;
+      },
+    ],
+    ['matchMedia', () => ({matches: false})],
+  ]) {
+    const saved = Object.getOwnPropertyDescriptor(globalThis, key);
+    globalThis[key] = value;
+    t.after(() => {
+      if (saved) Object.defineProperty(globalThis, key, saved);
+      else delete globalThis[key];
+    });
+  }
+  const elements = Object.fromEntries(
+    ['track', 'startHandle', 'endHandle', 'selectionElement', 'playhead', 'ticks', 'labels'].map(key => [
+      key,
+      new Element(),
+    ]),
+  );
+  elements.startHandle.dataset.handle = 'start';
+  elements.endHandle.dataset.handle = 'end';
+  const previews = [],
+    selections = [],
+    views = [];
+  const timeline = createTimeline({
+    ...elements,
+    onRange: ({start, end}) => {
+      elements.labels.textContent = formatTimeRange(start, end);
+    },
+    onPreview: value => previews.push(value),
+    onSelection: value => selections.push(value),
+    onView: (view, motion) => views.push({view, motion}),
+  });
+  const staticElements = [
+    elements.startHandle,
+    elements.endHandle,
+    elements.selectionElement,
+    elements.labels,
+    elements.ticks,
+    ...elements.ticks.children,
+  ];
+  return {
+    ...elements,
+    timeline,
+    previews,
+    selections,
+    views,
+    frames,
+    advance(now) {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach(fn => fn(now));
+    },
+    staticWrites: () => staticElements.map(el => el.writes),
+  };
+}
+
+test('播放进度与点击预览只更新指针，短片和长场均不重写刻度或选区', t => {
+  const f = fixture(t);
+  for (const duration of [24, 7200]) {
     f.timeline.reset(duration);
-    const writes=f.staticWrites(),selectionCount=f.selections.length;
-    for(const fraction of [.1,.5,.9]){
-      f.timeline.setCurrent(duration*fraction);
-      assert.ok(Math.abs(parseFloat(f.playhead.style.left)-fraction*100)<1e-9);
-      assert.equal(f.playhead.hidden,false);
+    const writes = f.staticWrites(),
+      selectionCount = f.selections.length;
+    for (const fraction of [0.1, 0.5, 0.9]) {
+      f.timeline.setCurrent(duration * fraction);
+      assert.ok(Math.abs(parseFloat(f.playhead.style.left) - fraction * 100) < 1e-9);
+      assert.equal(f.playhead.hidden, false);
     }
-    f.track.handlers.pointerdown({button:0,clientX:75,pointerId:1,target:f.track,preventDefault(){}});
-    assert.equal(f.previews.at(-1),duration*.75);
-    assert.equal(f.playhead.style.left,'75%');
+    f.track.handlers.pointerdown({button: 0, clientX: 75, pointerId: 1, target: f.track, preventDefault() {}});
+    assert.equal(f.previews.at(-1), duration * 0.75);
+    assert.equal(f.playhead.style.left, '75%');
     f.timeline.setCurrent(0);
-    assert.equal(f.playhead.style.left,'75%','拖动中忽略播放器的旧进度');
-    f.track.handlers.pointerup({pointerId:1});
-    assert.deepEqual(f.staticWrites(),writes);
-    assert.equal(f.selections.length,selectionCount);
-    assert.deepEqual(f.timeline.getSelection(),{start:0,end:duration});
+    assert.equal(f.playhead.style.left, '75%', '拖动中忽略播放器的旧进度');
+    f.track.handlers.pointerup({pointerId: 1});
+    assert.deepEqual(f.staticWrites(), writes);
+    assert.equal(f.selections.length, selectionCount);
+    assert.deepEqual(f.timeline.getSelection(), {start: 0, end: duration});
   }
 });
 
-test('缩放和选区调整复用刻度节点，锁定只改变边界可用状态',t=>{
-  const f=fixture(t);
+test('缩放和选区调整复用刻度节点，锁定只改变边界可用状态', t => {
+  const f = fixture(t);
   f.timeline.reset(100);
-  const nodes=[...f.ticks.children];
-  assert.deepEqual(nodes.map(el=>el.textContent),['00:00:00','00:00:25','00:00:50','00:01:15','00:01:40']);
-  f.track.handlers.wheel({deltaY:Math.log(.5)/.005,deltaX:0,clientX:50,shiftKey:false,preventDefault(){}});
-  assert.deepEqual(f.timeline.getView(),{start:25,end:75});
-  assert.deepEqual(nodes.map(el=>el.textContent),['00:00:25','00:00:37','00:00:50','00:01:02','00:01:15']);
-  f.timeline.setCurrent(10);assert.equal(f.playhead.hidden,true);
-  f.timeline.setCurrent(50);assert.equal(f.playhead.hidden,false);assert.equal(f.playhead.style.left,'50%');
-  f.timeline.setSelection({start:30,end:70});
-  assert.equal(f.startHandle.style.left,'10%');assert.equal(f.endHandle.style.left,'90%');
-  assert.equal(f.labels.textContent,'00:30 — 01:10');
-  assert.equal(f.startHandle.attributes['aria-valuenow'],'30.000');
-  const writes=f.staticWrites();
-  for(const locked of [true,false]){
+  const nodes = [...f.ticks.children];
+  assert.deepEqual(
+    nodes.map(el => el.textContent),
+    ['00:00:00', '00:00:25', '00:00:50', '00:01:15', '00:01:40'],
+  );
+  f.track.handlers.wheel({deltaY: Math.log(0.5) / 0.005, deltaX: 0, clientX: 50, shiftKey: false, preventDefault() {}});
+  assert.deepEqual(f.timeline.getView(), {start: 25, end: 75});
+  assert.deepEqual(
+    nodes.map(el => el.textContent),
+    ['00:00:25', '00:00:37', '00:00:50', '00:01:02', '00:01:15'],
+  );
+  f.timeline.setCurrent(10);
+  assert.equal(f.playhead.hidden, true);
+  f.timeline.setCurrent(50);
+  assert.equal(f.playhead.hidden, false);
+  assert.equal(f.playhead.style.left, '50%');
+  f.timeline.setSelection({start: 30, end: 70});
+  assert.equal(f.startHandle.style.left, '10%');
+  assert.equal(f.endHandle.style.left, '90%');
+  assert.equal(f.labels.textContent, '00:30 — 01:10');
+  assert.equal(f.startHandle.attributes['aria-valuenow'], '30.000');
+  const writes = f.staticWrites();
+  for (const locked of [true, false]) {
     f.timeline.lock(locked);
-    assert.equal(f.startHandle.disabled,locked);assert.equal(f.endHandle.disabled,locked);
-    assert.deepEqual(f.staticWrites(),writes);
+    assert.equal(f.startHandle.disabled, locked);
+    assert.equal(f.endHandle.disabled, locked);
+    assert.deepEqual(f.staticWrites(), writes);
   }
   f.timeline.reset(24);
-  assert.equal(f.endHandle.attributes['aria-valuemax'],24);
-  assert.deepEqual(f.ticks.children,nodes);
-  nodes.forEach((node,i)=>assert.equal(f.ticks.children[i],node));
+  assert.equal(f.endHandle.attributes['aria-valuemax'], 24);
+  assert.deepEqual(f.ticks.children, nodes);
+  nodes.forEach((node, i) => assert.equal(f.ticks.children[i], node));
 });
 
-
-test('左右边界松手后整条视野连续放大，刻度保留时间参照，选区不回弹',t=>{
- const f=fixture(t);
- for(const duration of [24,7200])for(const type of ['start','end']){
-  f.timeline.reset(duration,{start:duration*.2,end:duration*.8});
-  f.timeline.setCurrent(duration*.5);
-  const event={button:0,clientX:type==='start'?20:80,pointerId:1,target:f[type+'Handle'],preventDefault(){}};
-  f.track.handlers.pointerdown(event);
-  f.track.handlers.pointermove({...event,buttons:1,clientX:type==='start'?30:70});
-  f.track.handlers.pointerup(event);
-  const selected=f.timeline.getSelection(),before=f.timeline.getView(),ticks=f.ticks.children.map(el=>el.textContent);
-  assert.deepEqual(before,{start:0,end:duration},'松手当帧不跳到目标视野');
-  assert.equal(f.views.at(-1).motion.animating,true,'松手即通知目标视野，在动画期间开始生成倒计时');
-  assert.deepEqual(f.views.at(-1).motion.target,fitSelection(selected.start,selected.end,duration));
-  f.advance(0);f.advance(210);
-  const middle=f.timeline.getView(),target=fitSelection(selected.start,selected.end,duration);
-  assert.ok(middle.end-middle.start<duration);
-  assert.ok(middle.end-middle.start>target.end-target.start);
-  assert.deepEqual(f.ticks.children.map(el=>el.textContent),ticks,'缩放时原刻度随画面移动');
-  assert.ok(parseFloat(f.ticks.children[0].style.left)<0);
-  assert.equal(f.views.at(-1).motion.animating,true);
-  const expected=(selected[type]-middle.start)/(middle.end-middle.start)*100;
-  assert.ok(Math.abs(parseFloat(f.playhead.style.left)-expected)<1e-8);
-  f.advance(420);
-  assert.deepEqual(f.timeline.getView(),target);
-  assert.deepEqual(f.timeline.getSelection(),selected);
-  assert.equal(f.views.at(-1).motion.animating,false);
-  assert.equal(f.frames.size,0);
- }
+test('左右边界松手后整条视野连续放大，刻度保留时间参照，选区不回弹', t => {
+  const f = fixture(t);
+  for (const duration of [24, 7200])
+    for (const type of ['start', 'end']) {
+      f.timeline.reset(duration, {start: duration * 0.2, end: duration * 0.8});
+      f.timeline.setCurrent(duration * 0.5);
+      const event = {
+        button: 0,
+        clientX: type === 'start' ? 20 : 80,
+        pointerId: 1,
+        target: f[type + 'Handle'],
+        preventDefault() {},
+      };
+      f.track.handlers.pointerdown(event);
+      f.track.handlers.pointermove({...event, buttons: 1, clientX: type === 'start' ? 30 : 70});
+      f.track.handlers.pointerup(event);
+      const selected = f.timeline.getSelection(),
+        before = f.timeline.getView(),
+        ticks = f.ticks.children.map(el => el.textContent);
+      assert.deepEqual(before, {start: 0, end: duration}, '松手当帧不跳到目标视野');
+      assert.equal(f.views.at(-1).motion.animating, true, '松手即通知目标视野，在动画期间开始生成倒计时');
+      assert.deepEqual(f.views.at(-1).motion.target, fitSelection(selected.start, selected.end, duration));
+      f.advance(0);
+      f.advance(210);
+      const middle = f.timeline.getView(),
+        target = fitSelection(selected.start, selected.end, duration);
+      assert.ok(middle.end - middle.start < duration);
+      assert.ok(middle.end - middle.start > target.end - target.start);
+      assert.deepEqual(
+        f.ticks.children.map(el => el.textContent),
+        ticks,
+        '缩放时原刻度随画面移动',
+      );
+      assert.ok(parseFloat(f.ticks.children[0].style.left) < 0);
+      assert.equal(f.views.at(-1).motion.animating, true);
+      const expected = ((selected[type] - middle.start) / (middle.end - middle.start)) * 100;
+      assert.ok(Math.abs(parseFloat(f.playhead.style.left) - expected) < 1e-8);
+      f.advance(420);
+      assert.deepEqual(f.timeline.getView(), target);
+      assert.deepEqual(f.timeline.getSelection(), selected);
+      assert.equal(f.views.at(-1).motion.animating, false);
+      assert.equal(f.frames.size, 0);
+    }
 });
 
-test('动画被新交互、换场或锁定打断后没有旧帧回跳',t=>{
- const f=fixture(t);
- for(const action of ['pointer','wheel','keyboard','reset','lock','stop']){
-  f.timeline.lock(false);f.timeline.reset(100);
-  f.timeline.setSelection({start:20,end:60},true);f.advance(0);f.advance(120);
-  const middle=f.timeline.getView();
-  if(action==='pointer')f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
-  if(action==='wheel')f.track.handlers.wheel({deltaY:-20,deltaX:0,clientX:50,preventDefault(){}});
-  if(action==='keyboard')f.timeline.handleKeyDown({key:'ArrowRight',target:f.startHandle,preventDefault(){},stopPropagation(){}});
-  if(action==='reset')f.timeline.reset(24);
-  if(action==='lock')f.timeline.lock(true);
-  if(action==='stop')f.timeline.stop();
-  const interrupted=f.timeline.getView();
-  f.advance(1000);
-  assert.deepEqual(f.timeline.getView(),interrupted,'旧动画不能恢复');
-  if(action==='pointer'){
-   assert.deepEqual(interrupted,middle);f.track.handlers.pointerup({pointerId:1});
+test('动画被新交互、换场或锁定打断后没有旧帧回跳', t => {
+  const f = fixture(t);
+  for (const action of ['pointer', 'wheel', 'keyboard', 'reset', 'lock', 'stop']) {
+    f.timeline.lock(false);
+    f.timeline.reset(100);
+    f.timeline.setSelection({start: 20, end: 60}, true);
+    f.advance(0);
+    f.advance(120);
+    const middle = f.timeline.getView();
+    if (action === 'pointer')
+      f.track.handlers.pointerdown({button: 0, clientX: 50, pointerId: 1, target: f.track, preventDefault() {}});
+    if (action === 'wheel') f.track.handlers.wheel({deltaY: -20, deltaX: 0, clientX: 50, preventDefault() {}});
+    if (action === 'keyboard')
+      f.timeline.handleKeyDown({key: 'ArrowRight', target: f.startHandle, preventDefault() {}, stopPropagation() {}});
+    if (action === 'reset') f.timeline.reset(24);
+    if (action === 'lock') f.timeline.lock(true);
+    if (action === 'stop') f.timeline.stop();
+    const interrupted = f.timeline.getView();
+    f.advance(1000);
+    assert.deepEqual(f.timeline.getView(), interrupted, '旧动画不能恢复');
+    if (action === 'pointer') {
+      assert.deepEqual(interrupted, middle);
+      f.track.handlers.pointerup({pointerId: 1});
+    }
+    if (action === 'keyboard') {
+      f.advance(1420);
+      assert.ok(f.timeline.getSelection().start > 20);
+    }
+    if (action === 'reset') assert.deepEqual(interrupted, {start: 0, end: 24});
   }
-  if(action==='keyboard'){f.advance(1420);assert.ok(f.timeline.getSelection().start>20);}
-  if(action==='reset')assert.deepEqual(interrupted,{start:0,end:24});
- }
 });
 
-test('减少动态效果时直接聚焦且不安排动画帧',t=>{
- const f=fixture(t);globalThis.matchMedia=()=>({matches:true});
- f.timeline.reset(100);f.timeline.setSelection({start:30,end:40},true);
- assert.deepEqual(f.timeline.getView(),fitSelection(30,40,100));assert.equal(f.frames.size,0);
+test('减少动态效果时直接聚焦且不安排动画帧', t => {
+  const f = fixture(t);
+  globalThis.matchMedia = () => ({matches: true});
+  f.timeline.reset(100);
+  f.timeline.setSelection({start: 30, end: 40}, true);
+  assert.deepEqual(f.timeline.getView(), fitSelection(30, 40, 100));
+  assert.equal(f.frames.size, 0);
 });
 
-
-test('靠近首尾的细小选区在整个放大过程都留在视野内',t=>{
- const f=fixture(t);
- for(const selection of [{start:1,end:2},{start:98,end:99}]){
-  f.timeline.reset(100);f.timeline.setSelection(selection,true);
-  for(let now=0;now<=420;now+=21){
-   f.advance(now);const view=f.timeline.getView();
-   assert.ok(view.start<=selection.start&&view.end>=selection.end);
+test('靠近首尾的细小选区在整个放大过程都留在视野内', t => {
+  const f = fixture(t);
+  for (const selection of [
+    {start: 1, end: 2},
+    {start: 98, end: 99},
+  ]) {
+    f.timeline.reset(100);
+    f.timeline.setSelection(selection, true);
+    for (let now = 0; now <= 420; now += 21) {
+      f.advance(now);
+      const view = f.timeline.getView();
+      assert.ok(view.start <= selection.start && view.end >= selection.end);
+    }
   }
- }
 });
 
-function arrow(f,target,key='ArrowRight',extra={}){
- const event={target,key,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...extra};
- f.timeline.handleKeyDown(event);return event;
+function arrow(f, target, key = 'ArrowRight', extra = {}) {
+  const event = {
+    target,
+    key,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.stopped = true;
+    },
+    ...extra,
+  };
+  f.timeline.handleKeyDown(event);
+  return event;
 }
 
-test('左右键按五秒调整播放位置，连续按键累积且不改选区',t=>{
- const f=fixture(t);
- for(const duration of [24,7200]){
-  f.timeline.reset(duration);f.timeline.setCurrent(7);
-  const writes=f.staticWrites();
-  for(const [key,expected,extra]of [['ArrowRight',12,{}],['ArrowRight',17,{repeat:true}],['ArrowLeft',12,{}]]){
-   const event=arrow(f,f.track,key,extra);
-   assert.equal(f.previews.at(-1),expected);assert.equal(event.defaultPrevented,true);assert.equal(event.stopped,true);
+test('左右键按五秒调整播放位置，连续按键累积且不改选区', t => {
+  const f = fixture(t);
+  for (const duration of [24, 7200]) {
+    f.timeline.reset(duration);
+    f.timeline.setCurrent(7);
+    const writes = f.staticWrites();
+    for (const [key, expected, extra] of [
+      ['ArrowRight', 12, {}],
+      ['ArrowRight', 17, {repeat: true}],
+      ['ArrowLeft', 12, {}],
+    ]) {
+      const event = arrow(f, f.track, key, extra);
+      assert.equal(f.previews.at(-1), expected);
+      assert.equal(event.defaultPrevented, true);
+      assert.equal(event.stopped, true);
+    }
+    assert.deepEqual(f.timeline.getSelection(), {start: 0, end: duration});
+    assert.deepEqual(f.staticWrites(), writes);
+    f.timeline.setCurrent(duration - 2);
+    arrow(f, f.track);
+    assert.equal(f.previews.at(-1), duration);
+    f.timeline.setCurrent(2);
+    arrow(f, f.track, 'ArrowLeft');
+    assert.equal(f.previews.at(-1), 0);
   }
-  assert.deepEqual(f.timeline.getSelection(),{start:0,end:duration});assert.deepEqual(f.staticWrites(),writes);
-  f.timeline.setCurrent(duration-2);arrow(f,f.track);assert.equal(f.previews.at(-1),duration);
-  f.timeline.setCurrent(2);arrow(f,f.track,'ArrowLeft');assert.equal(f.previews.at(-1),0);
- }
 });
 
-test('点击任一边界会聚焦，缩放后与重复按键仍按五秒调整同一边界',t=>{
- const f=fixture(t);
- for(const duration of [24,7200])for(const type of ['start','end']){
-  f.timeline.reset(duration,{start:6,end:duration-6});
-  const handle=f[type+'Handle'];
-  f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:handle,preventDefault(){}});
-  f.track.handlers.pointerup({pointerId:1});assert.equal(handle.focused,true);
-  f.advance(0);f.advance(420);
-  const original=f.timeline.getSelection(),key=type==='start'?'ArrowLeft':'ArrowRight',expected=type==='start'?1:duration-1;
-  arrow(f,handle,key);assert.equal(f.timeline.getSelection()[type],expected);assert.equal(f.previews.at(-1),expected);
-  const other=type==='start'?'end':'start';assert.equal(f.timeline.getSelection()[other],original[other]);
-  arrow(f,handle,key,{repeat:true});assert.equal(f.timeline.getSelection()[type],type==='start'?0:duration);
-  const before=f.timeline.getSelection();
-  f.track.handlers.pointerdown({button:0,clientX:50,pointerId:2,target:f.track,preventDefault(){}});f.track.handlers.pointerup({pointerId:2});
-  assert.equal(f.track.focused,true);const position=f.previews.at(-1);
-  arrow(f,f.track,'ArrowLeft');assert.equal(f.previews.at(-1),Math.max(0,position-5));assert.deepEqual(f.timeline.getSelection(),before);
- }
+test('点击任一边界会聚焦，缩放后与重复按键仍按五秒调整同一边界', t => {
+  const f = fixture(t);
+  for (const duration of [24, 7200])
+    for (const type of ['start', 'end']) {
+      f.timeline.reset(duration, {start: 6, end: duration - 6});
+      const handle = f[type + 'Handle'];
+      f.track.handlers.pointerdown({button: 0, clientX: 50, pointerId: 1, target: handle, preventDefault() {}});
+      f.track.handlers.pointerup({pointerId: 1});
+      assert.equal(handle.focused, true);
+      f.advance(0);
+      f.advance(420);
+      const original = f.timeline.getSelection(),
+        key = type === 'start' ? 'ArrowLeft' : 'ArrowRight',
+        expected = type === 'start' ? 1 : duration - 1;
+      arrow(f, handle, key);
+      assert.equal(f.timeline.getSelection()[type], expected);
+      assert.equal(f.previews.at(-1), expected);
+      const other = type === 'start' ? 'end' : 'start';
+      assert.equal(f.timeline.getSelection()[other], original[other]);
+      arrow(f, handle, key, {repeat: true});
+      assert.equal(f.timeline.getSelection()[type], type === 'start' ? 0 : duration);
+      const before = f.timeline.getSelection();
+      f.track.handlers.pointerdown({button: 0, clientX: 50, pointerId: 2, target: f.track, preventDefault() {}});
+      f.track.handlers.pointerup({pointerId: 2});
+      assert.equal(f.track.focused, true);
+      const position = f.previews.at(-1);
+      arrow(f, f.track, 'ArrowLeft');
+      assert.equal(f.previews.at(-1), Math.max(0, position - 5));
+      assert.deepEqual(f.timeline.getSelection(), before);
+    }
 });
 
-test('方向键调整不能让起止点交叉，短于五秒的录像也保持有效选区',t=>{
- const f=fixture(t);
- for(const duration of [.0008,3,100]){
-  f.timeline.reset(duration,{start:0,end:Math.min(duration,3)});
-  arrow(f,f.startHandle);let selected=f.timeline.getSelection();assert.ok(selected.start>=0&&selected.start<selected.end);
-  arrow(f,f.endHandle,'ArrowLeft');selected=f.timeline.getSelection();assert.ok(selected.end<=duration&&selected.end>selected.start);
- }
+test('方向键调整不能让起止点交叉，短于五秒的录像也保持有效选区', t => {
+  const f = fixture(t);
+  for (const duration of [0.0008, 3, 100]) {
+    f.timeline.reset(duration, {start: 0, end: Math.min(duration, 3)});
+    arrow(f, f.startHandle);
+    let selected = f.timeline.getSelection();
+    assert.ok(selected.start >= 0 && selected.start < selected.end);
+    arrow(f, f.endHandle, 'ArrowLeft');
+    selected = f.timeline.getSelection();
+    assert.ok(selected.end <= duration && selected.end > selected.start);
+  }
 });
 
-test('未加载、锁定、拖动、编辑输入和系统组合键不会被方向键逻辑接管',t=>{
- const f=fixture(t);
- assert.equal(arrow(f,f.track).defaultPrevented,undefined);
- f.timeline.reset(100);f.timeline.lock(true);assert.equal(arrow(f,f.startHandle).defaultPrevented,undefined);f.timeline.lock(false);
- for(const extra of [{altKey:true},{ctrlKey:true},{metaKey:true},{isComposing:true},{defaultPrevented:true},{key:'ArrowUp'},{target:{tagName:'INPUT'}},{target:{isContentEditable:true}}]){
-  const count=f.previews.length;arrow(f,f.track,'ArrowRight',extra);assert.equal(f.previews.length,count);
- }
- f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
- assert.equal(arrow(f,f.track).defaultPrevented,undefined);f.track.handlers.pointerup({pointerId:1});
- f.timeline.setCurrent(90);f.timeline.reset(100);arrow(f,f.track);assert.equal(f.previews.at(-1),5,'换场清除上一场播放位置');
+test('未加载、锁定、拖动、编辑输入和系统组合键不会被方向键逻辑接管', t => {
+  const f = fixture(t);
+  assert.equal(arrow(f, f.track).defaultPrevented, undefined);
+  f.timeline.reset(100);
+  f.timeline.lock(true);
+  assert.equal(arrow(f, f.startHandle).defaultPrevented, undefined);
+  f.timeline.lock(false);
+  for (const extra of [
+    {altKey: true},
+    {ctrlKey: true},
+    {metaKey: true},
+    {isComposing: true},
+    {defaultPrevented: true},
+    {key: 'ArrowUp'},
+    {target: {tagName: 'INPUT'}},
+    {target: {isContentEditable: true}},
+  ]) {
+    const count = f.previews.length;
+    arrow(f, f.track, 'ArrowRight', extra);
+    assert.equal(f.previews.length, count);
+  }
+  f.track.handlers.pointerdown({button: 0, clientX: 50, pointerId: 1, target: f.track, preventDefault() {}});
+  assert.equal(arrow(f, f.track).defaultPrevented, undefined);
+  f.track.handlers.pointerup({pointerId: 1});
+  f.timeline.setCurrent(90);
+  f.timeline.reset(100);
+  arrow(f, f.track);
+  assert.equal(f.previews.at(-1), 5, '换场清除上一场播放位置');
 });
 
-test('页面外松开导致捕获丢失或松开事件未送达时结束拖动，回到时间轴不再跟随鼠标',t=>{
- for(const lost of ['lostpointercapture','released-move']){
-  const f=fixture(t);const ends=[];
-  const timeline=createTimeline({...f,onPreview:value=>f.previews.push(value),onScrubEnd:(time,options)=>ends.push([time,options])});
-  timeline.reset(100);
-  f.track.handlers.pointerdown({button:0,buttons:1,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
-  if(lost==='lostpointercapture')f.track.handlers.lostpointercapture({type:'lostpointercapture',pointerId:1});
-  else f.track.handlers.pointermove({type:'pointermove',buttons:0,clientX:70,pointerId:1});
-  assert.deepEqual(ends,[[50,{canceled:false}]],lost);
-  const count=f.previews.length;
-  f.track.handlers.pointermove({type:'pointermove',buttons:0,clientX:80,pointerId:1});f.advance(0);
-  assert.equal(f.previews.length,count,`${lost}: 未按键移动不预览`);
-  f.track.handlers.pointerup({type:'pointerup',pointerId:1});assert.equal(ends.length,1,`${lost}: 不重复结束`);
- }
+test('页面外松开导致捕获丢失或松开事件未送达时结束拖动，回到时间轴不再跟随鼠标', t => {
+  for (const lost of ['lostpointercapture', 'released-move']) {
+    const f = fixture(t);
+    const ends = [];
+    const timeline = createTimeline({
+      ...f,
+      onPreview: value => f.previews.push(value),
+      onScrubEnd: (time, options) => ends.push([time, options]),
+    });
+    timeline.reset(100);
+    f.track.handlers.pointerdown({
+      button: 0,
+      buttons: 1,
+      clientX: 50,
+      pointerId: 1,
+      target: f.track,
+      preventDefault() {},
+    });
+    if (lost === 'lostpointercapture') f.track.handlers.lostpointercapture({type: 'lostpointercapture', pointerId: 1});
+    else f.track.handlers.pointermove({type: 'pointermove', buttons: 0, clientX: 70, pointerId: 1});
+    assert.deepEqual(ends, [[50, {canceled: false}]], lost);
+    const count = f.previews.length;
+    f.track.handlers.pointermove({type: 'pointermove', buttons: 0, clientX: 80, pointerId: 1});
+    f.advance(0);
+    assert.equal(f.previews.length, count, `${lost}: 未按键移动不预览`);
+    f.track.handlers.pointerup({type: 'pointerup', pointerId: 1});
+    assert.equal(ends.length, 1, `${lost}: 不重复结束`);
+  }
 });
 
-test('分段范围限制拖动、方向键、缩放和选区，时间仍从直播开始计算',t=>{
- const f=fixture(t);
- f.timeline.reset({start:40,end:100});
- assert.deepEqual(f.timeline.getSelection(),{start:40,end:100});assert.deepEqual(f.timeline.getView(),{start:40,end:100});
- assert.equal(f.startHandle.style.left,'0%');assert.equal(f.startHandle.attributes['aria-valuemin'],40);
- f.track.handlers.pointerdown({button:0,buttons:1,clientX:0,pointerId:1,target:f.track,preventDefault(){}});
- f.track.handlers.pointerup({type:'pointerup',pointerId:1});
- assert.equal(f.previews.at(-1),40,'时间轴左端对应分段开头');
- f.track.handlers.pointerdown({button:0,buttons:1,clientX:10,pointerId:1,target:f.startHandle,preventDefault(){}});
- f.track.handlers.pointermove({buttons:1,clientX:-50,pointerId:1});f.advance(0);
- f.track.handlers.pointerup({type:'pointerup',pointerId:1});
- assert.equal(f.timeline.getSelection().start,40,'起点不能拖出分段');
- f.timeline.handleKeyDown({key:'ArrowLeft',target:f.startHandle,preventDefault(){},stopPropagation(){}});
- assert.equal(f.timeline.getSelection().start,40);
- f.timeline.stop();
- f.track.handlers.wheel({deltaY:-200,deltaX:0,clientX:0,shiftKey:false,preventDefault(){}});
- f.track.handlers.wheel({deltaY:-30,deltaX:0,clientX:0,shiftKey:true,preventDefault(){}});
- assert.ok(f.timeline.getView().start>=40,'平移不越过分段开头');
- f.track.handlers.wheel({deltaY:2000,deltaX:0,clientX:0,shiftKey:false,preventDefault(){}});
- assert.deepEqual(f.timeline.getView(),{start:40,end:100},'缩小最多显示整段');
- assert.throws(()=>f.timeline.setSelection({start:30,end:60}),/最早为 00:00:40/);
+test('分段范围限制拖动、方向键、缩放和选区，时间仍从直播开始计算', t => {
+  const f = fixture(t);
+  f.timeline.reset({start: 40, end: 100});
+  assert.deepEqual(f.timeline.getSelection(), {start: 40, end: 100});
+  assert.deepEqual(f.timeline.getView(), {start: 40, end: 100});
+  assert.equal(f.startHandle.style.left, '0%');
+  assert.equal(f.startHandle.attributes['aria-valuemin'], 40);
+  f.track.handlers.pointerdown({button: 0, buttons: 1, clientX: 0, pointerId: 1, target: f.track, preventDefault() {}});
+  f.track.handlers.pointerup({type: 'pointerup', pointerId: 1});
+  assert.equal(f.previews.at(-1), 40, '时间轴左端对应分段开头');
+  f.track.handlers.pointerdown({
+    button: 0,
+    buttons: 1,
+    clientX: 10,
+    pointerId: 1,
+    target: f.startHandle,
+    preventDefault() {},
+  });
+  f.track.handlers.pointermove({buttons: 1, clientX: -50, pointerId: 1});
+  f.advance(0);
+  f.track.handlers.pointerup({type: 'pointerup', pointerId: 1});
+  assert.equal(f.timeline.getSelection().start, 40, '起点不能拖出分段');
+  f.timeline.handleKeyDown({key: 'ArrowLeft', target: f.startHandle, preventDefault() {}, stopPropagation() {}});
+  assert.equal(f.timeline.getSelection().start, 40);
+  f.timeline.stop();
+  f.track.handlers.wheel({deltaY: -200, deltaX: 0, clientX: 0, shiftKey: false, preventDefault() {}});
+  f.track.handlers.wheel({deltaY: -30, deltaX: 0, clientX: 0, shiftKey: true, preventDefault() {}});
+  assert.ok(f.timeline.getView().start >= 40, '平移不越过分段开头');
+  f.track.handlers.wheel({deltaY: 2000, deltaX: 0, clientX: 0, shiftKey: false, preventDefault() {}});
+  assert.deepEqual(f.timeline.getView(), {start: 40, end: 100}, '缩小最多显示整段');
+  assert.throws(() => f.timeline.setSelection({start: 30, end: 60}), /最早为 00:00:40/);
 });
 
-test('live extent grows the full view without changing an existing selection or playhead',t=>{
- const f=fixture(t);f.timeline.reset({start:40,end:100});f.timeline.setSelection({start:50,end:90});f.timeline.setCurrent(70);
- const selectionEvents=f.selections.length;
- assert.equal(f.timeline.extend(130),true);assert.deepEqual(f.timeline.getView(),{start:40,end:130});assert.deepEqual(f.timeline.getSelection(),{start:50,end:90});
- assert.equal(f.selections.length,selectionEvents);assert.equal(f.endHandle.attributes['aria-valuemax'],130);assert.equal(f.playhead.style.left,`${30/90*100}%`);
- arrow(f,f.track);assert.equal(f.previews.at(-1),75);assert.equal(f.timeline.extend(120),false);
+test('live extent grows the full view without changing an existing selection or playhead', t => {
+  const f = fixture(t);
+  f.timeline.reset({start: 40, end: 100});
+  f.timeline.setSelection({start: 50, end: 90});
+  f.timeline.setCurrent(70);
+  const selectionEvents = f.selections.length;
+  assert.equal(f.timeline.extend(130), true);
+  assert.deepEqual(f.timeline.getView(), {start: 40, end: 130});
+  assert.deepEqual(f.timeline.getSelection(), {start: 50, end: 90});
+  assert.equal(f.selections.length, selectionEvents);
+  assert.equal(f.endHandle.attributes['aria-valuemax'], 130);
+  assert.equal(f.playhead.style.left, `${(30 / 90) * 100}%`);
+  arrow(f, f.track);
+  assert.equal(f.previews.at(-1), 75);
+  assert.equal(f.timeline.extend(120), false);
 });
-test('live growth preserves zoomed views; whole mode alone expands selection and dragging defers growth',t=>{
- const f=fixture(t);f.timeline.reset(100);
- f.track.handlers.wheel({deltaY:Math.log(.5)/.005,deltaX:0,clientX:50,shiftKey:false,preventDefault(){}});
- const view=f.timeline.getView();f.timeline.extend(130,{whole:true});assert.deepEqual(f.timeline.getView(),view);assert.deepEqual(f.timeline.getSelection(),{start:0,end:130});
- f.track.handlers.pointerdown({button:0,clientX:50,pointerId:1,target:f.track,preventDefault(){}});
- assert.equal(f.timeline.isInteracting(),true);assert.equal(f.timeline.extend(160),false);
- f.track.handlers.pointerup({pointerId:1});assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(160),true);
- f.timeline.setSelection({start:20,end:40},true);assert.equal(f.timeline.isInteracting(),true);assert.equal(f.timeline.extend(180),false);
- f.advance(0);f.advance(500);assert.equal(f.timeline.isInteracting(),false);assert.equal(f.timeline.extend(180),true);
+test('live growth preserves zoomed views; whole mode alone expands selection and dragging defers growth', t => {
+  const f = fixture(t);
+  f.timeline.reset(100);
+  f.track.handlers.wheel({deltaY: Math.log(0.5) / 0.005, deltaX: 0, clientX: 50, shiftKey: false, preventDefault() {}});
+  const view = f.timeline.getView();
+  f.timeline.extend(130, {whole: true});
+  assert.deepEqual(f.timeline.getView(), view);
+  assert.deepEqual(f.timeline.getSelection(), {start: 0, end: 130});
+  f.track.handlers.pointerdown({button: 0, clientX: 50, pointerId: 1, target: f.track, preventDefault() {}});
+  assert.equal(f.timeline.isInteracting(), true);
+  assert.equal(f.timeline.extend(160), false);
+  f.track.handlers.pointerup({pointerId: 1});
+  assert.equal(f.timeline.isInteracting(), false);
+  assert.equal(f.timeline.extend(160), true);
+  f.timeline.setSelection({start: 20, end: 40}, true);
+  assert.equal(f.timeline.isInteracting(), true);
+  assert.equal(f.timeline.extend(180), false);
+  f.advance(0);
+  f.advance(500);
+  assert.equal(f.timeline.isInteracting(), false);
+  assert.equal(f.timeline.extend(180), true);
 });
 
-test('Shift 按 1 秒、逗号句号按 0.1 秒移动，其他修饰键不处理',t=>{
- const f=fixture(t);
- f.timeline.reset(100);f.timeline.setCurrent(10);
- arrow(f,f.track,'ArrowRight',{shiftKey:true});assert.equal(f.previews.at(-1),11);
- arrow(f,f.track,'ArrowLeft',{shiftKey:true});assert.equal(f.previews.at(-1),10);
- arrow(f,f.track,'.');assert.ok(Math.abs(f.previews.at(-1)-10.1)<1e-9);
- arrow(f,f.track,',');assert.ok(Math.abs(f.previews.at(-1)-10)<1e-9);
- const before=f.previews.length;arrow(f,f.track,'ArrowRight',{ctrlKey:true});assert.equal(f.previews.length,before);
- assert.deepEqual(f.timeline.getBounds(),{start:0,end:100});
+test('Shift 按 1 秒、逗号句号按 0.1 秒移动，其他修饰键不处理', t => {
+  const f = fixture(t);
+  f.timeline.reset(100);
+  f.timeline.setCurrent(10);
+  arrow(f, f.track, 'ArrowRight', {shiftKey: true});
+  assert.equal(f.previews.at(-1), 11);
+  arrow(f, f.track, 'ArrowLeft', {shiftKey: true});
+  assert.equal(f.previews.at(-1), 10);
+  arrow(f, f.track, '.');
+  assert.ok(Math.abs(f.previews.at(-1) - 10.1) < 1e-9);
+  arrow(f, f.track, ',');
+  assert.ok(Math.abs(f.previews.at(-1) - 10) < 1e-9);
+  const before = f.previews.length;
+  arrow(f, f.track, 'ArrowRight', {ctrlKey: true});
+  assert.equal(f.previews.length, before);
+  assert.deepEqual(f.timeline.getBounds(), {start: 0, end: 100});
 });

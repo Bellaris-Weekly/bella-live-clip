@@ -5,7 +5,8 @@ export function parseVersion(version) {
 }
 
 export function isNewerVersion(candidate, current) {
-  const next = parseVersion(candidate), installed = parseVersion(current);
+  const next = parseVersion(candidate),
+    installed = parseVersion(current);
   for (let i = 0; i < next.length; i++) {
     if (next[i] !== installed[i]) return next[i] > installed[i];
   }
@@ -18,12 +19,12 @@ export function readScriptMetadata(text) {
   const value = key => block.match(new RegExp(`^// @${key}\\s+(\\S+)`, 'm'))?.[1];
   const version = value('version');
   parseVersion(version);
-  return { version, namespace: value('namespace'), updateURL: value('updateURL'), downloadURL: value('downloadURL') };
+  return {version, namespace: value('namespace'), updateURL: value('updateURL'), downloadURL: value('downloadURL')};
 }
 
-const METADATA_RANGE = { offset: 0, length: 8192 };
+const METADATA_RANGE = {offset: 0, length: 8192};
 
-export function createUpdateChecker({ request, metadata, now = Date.now }) {
+export function createUpdateChecker({request, metadata, now = Date.now}) {
   let pending;
   return function check() {
     if (pending) return pending;
@@ -33,16 +34,22 @@ export function createUpdateChecker({ request, metadata, now = Date.now }) {
         const url = new URL(metadata.updateURL);
         url.searchParams.set('_check', String(now()));
         // The script is a megabyte; its metadata block is the first few hundred bytes.
-        const { data } = await request(url.href, { auth: false, range: METADATA_RANGE })
-          .catch(() => request(url.href, { auth: false }));
+        const {data} = await request(url.href, {auth: false, range: METADATA_RANGE}).catch(() =>
+          request(url.href, {auth: false}),
+        );
         const latest = readScriptMetadata(data);
         if (latest.namespace !== metadata.namespace) throw new Error('更新源返回了其他脚本');
-        result = { status: isNewerVersion(latest.version, metadata.version) ? 'available' : 'current', version: latest.version };
+        result = {
+          status: isNewerVersion(latest.version, metadata.version) ? 'available' : 'current',
+          version: latest.version,
+        };
       } catch {
-        result = { status: 'error' };
+        result = {status: 'error'};
       }
       return result;
-    })().finally(() => { pending = null; });
+    })().finally(() => {
+      pending = null;
+    });
     return pending;
   };
 }

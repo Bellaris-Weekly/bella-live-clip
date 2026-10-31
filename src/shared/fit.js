@@ -3,7 +3,8 @@
 export function fittedRect(sourceWidth, sourceHeight, width, height) {
   if (!(sourceWidth > 0 && sourceHeight > 0)) return {x: 0, y: 0, width, height};
   const scale = Math.min(width / sourceWidth, height / sourceHeight);
-  const fittedWidth = sourceWidth * scale, fittedHeight = sourceHeight * scale;
+  const fittedWidth = sourceWidth * scale,
+    fittedHeight = sourceHeight * scale;
   return {x: (width - fittedWidth) / 2, y: (height - fittedHeight) / 2, width: fittedWidth, height: fittedHeight};
 }
 

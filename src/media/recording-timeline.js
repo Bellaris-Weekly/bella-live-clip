@@ -3,10 +3,16 @@ export const recordingTime = value => Math.round(value * 1e6) / 1e6;
 // One common epoch for all tracks. PTS may reorder inside a GOP: never clamp or
 // sort individual packets. Only a discontinuity/reset moves a complete segment.
 export class RecordingTimeline {
-  constructor() { this.offset = null; this.tracks = new Map(); this.end = 0; }
+  constructor() {
+    this.offset = null;
+    this.tracks = new Map();
+    this.end = 0;
+  }
 
   append(tracks, discontinuity = false) {
-    const starts = tracks.map(track => track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity));
+    const starts = tracks.map(track =>
+      track.packets.reduce((min, packet) => Math.min(min, packet.timestamp), Infinity),
+    );
     const first = Math.min(...starts);
     if (!Number.isFinite(first)) throw new Error('这段录像没有音视频数据。');
     if (this.offset === null || discontinuity) this.offset = recordingTime(this.end - first);
@@ -33,7 +39,8 @@ export class RecordingTimeline {
         state.max = Math.max(state.max, timestamp);
         state.end = Math.max(state.end, recordingTime(timestamp + packet.duration));
       }
-      this.tracks.set(track.key, state); this.end = Math.max(this.end, state.end);
+      this.tracks.set(track.key, state);
+      this.end = Math.max(this.end, state.end);
     }
     return this.offset;
   }

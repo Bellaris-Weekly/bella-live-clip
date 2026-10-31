@@ -2,7 +2,10 @@ const PARAMETER_SET_TYPES = new Set([7, 8, 13]);
 const EXTENDED_AVCC_PROFILES = new Set([100, 110, 122, 144]);
 
 export class UnsupportedAvcError extends Error {
-  constructor(message) { super(message); this.name = 'UnsupportedAvcError'; }
+  constructor(message) {
+    super(message);
+    this.name = 'UnsupportedAvcError';
+  }
 }
 
 function bytesOf(value) {
@@ -78,11 +81,10 @@ export function readAvcConfiguration(description) {
     offset += 3;
     group(description[offset++], 13);
   }
-  if (!parameterSets.some(unit => (unit[0] & 31) === 7)
-    || !parameterSets.some(unit => (unit[0] & 31) === 8)) {
+  if (!parameterSets.some(unit => (unit[0] & 31) === 7) || !parameterSets.some(unit => (unit[0] & 31) === 8)) {
     throw new UnsupportedAvcError('录像缺少完整的 AVC 参数集，无法安全复用原始视频。');
   }
-  return { lengthSize, parameterSets };
+  return {lengthSize, parameterSets};
 }
 
 // Only the SPS prefix is needed for avcC's chroma/bit-depth fields, not frame decoding.
@@ -107,13 +109,15 @@ function extendedSpsFields(sps) {
   unsignedExpGolomb(); // seq_parameter_set_id
   const chromaFormat = unsignedExpGolomb();
   if (chromaFormat === 3) nextBit(); // separate_colour_plane_flag
-  const lumaDepth = unsignedExpGolomb(), chromaDepth = unsignedExpGolomb();
+  const lumaDepth = unsignedExpGolomb(),
+    chromaDepth = unsignedExpGolomb();
   if (chromaFormat > 3 || lumaDepth > 7 || chromaDepth > 7) throw new Error('AVC SPS 色彩格式无效。');
   return [0xfc | chromaFormat, 0xf8 | lumaDepth, 0xf8 | chromaDepth];
 }
 
 export function createAvcConfiguration(units) {
-  const parameterSets = units.filter(unit => PARAMETER_SET_TYPES.has(unit[0] & 31))
+  const parameterSets = units
+    .filter(unit => PARAMETER_SET_TYPES.has(unit[0] & 31))
     .filter((unit, index, all) => all.findIndex(other => sameBytes(unit, other)) === index)
     .map(unit => unit.slice());
   const sps = parameterSets.filter(unit => (unit[0] & 31) === 7);
@@ -140,7 +144,7 @@ export function createAvcConfiguration(units) {
   } else if (extensions.length) {
     throw new UnsupportedAvcError('这段录像的 AVC 扩展参数无法安全复用。');
   }
-  return { description: Uint8Array.from(data), parameterSets };
+  return {description: Uint8Array.from(data), parameterSets};
 }
 
 export function joinAvcc(units) {
@@ -158,13 +162,14 @@ export function joinAvcc(units) {
 /** Owns one stable AVC decoder configuration. Inputs keep their original packet format. */
 export function createAvcNormalizer(decoderConfig, firstPacket) {
   let description = decoderConfig.description ? bytesOf(decoderConfig.description).slice() : null;
-  let lengthSize = 0, parameterSets;
+  let lengthSize = 0,
+    parameterSets;
   if (description?.byteLength) {
-    ({ lengthSize, parameterSets } = readAvcConfiguration(description));
+    ({lengthSize, parameterSets} = readAvcConfiguration(description));
     description[4] = (description[4] & 0xfc) | 3;
   } else {
     if (!firstPacket) throw new UnsupportedAvcError('需要录像首个关键帧才能读取 AVC 参数。');
-    ({ description, parameterSets } = createAvcConfiguration(annexBUnits(firstPacket.data)));
+    ({description, parameterSets} = createAvcConfiguration(annexBUnits(firstPacket.data)));
   }
   const config = {
     ...decoderConfig,
@@ -184,18 +189,20 @@ export function createAvcNormalizer(decoderConfig, firstPacket) {
       } else samples.push(unit);
       if (type === 5) idr = true;
     }
-    return { units, samples, idr };
+    return {units, samples, idr};
   }
   return {
     decoderConfig: config,
-    isIdr(packet) { return inspect(packet).idr; },
+    isIdr(packet) {
+      return inspect(packet).idr;
+    },
     normalize(packet) {
-      const { units, samples, idr } = inspect(packet);
+      const {units, samples, idr} = inspect(packet);
       const type = idr ? 'key' : 'delta';
       if (lengthSize === 4 && samples.length === units.length) {
-        return packet.type === type ? packet : packet.clone({ type });
+        return packet.type === type ? packet : packet.clone({type});
       }
-      return packet.clone({ data: joinAvcc(samples), type });
+      return packet.clone({data: joinAvcc(samples), type});
     },
   };
 }

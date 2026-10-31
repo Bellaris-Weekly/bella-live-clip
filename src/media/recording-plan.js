@@ -2,29 +2,50 @@ import {parsePlaylist} from './playlist.js';
 
 // One instance belongs to one loaded recording. Refreshing creates a new instance.
 export class RecordingPlan {
-  constructor(api,streams,signal){this.api=api;this.streams=streams;this.signal=signal;this.pending=null;}
+  constructor(api, streams, signal) {
+    this.api = api;
+    this.streams = streams;
+    this.signal = signal;
+    this.pending = null;
+  }
 
-  async read(){
-    const groups=[];
-    for(const [index,stream] of this.streams.entries()){
-      const response=await this.api.request(stream.stream,{signal:this.signal});
+  async read() {
+    const groups = [];
+    for (const [index, stream] of this.streams.entries()) {
+      const response = await this.api.request(stream.stream, {signal: this.signal});
       this.signal?.throwIfAborted();
-      const parsed=parsePlaylist(response.data,response.url);
-      for(const group of parsed.groups)groups.push({...group,start:stream.start_time+group.offset,streamEnd:stream.end_time,streamIndex:index});
+      const parsed = parsePlaylist(response.data, response.url);
+      for (const group of parsed.groups)
+        groups.push({
+          ...group,
+          start: stream.start_time + group.offset,
+          streamEnd: stream.end_time,
+          streamIndex: index,
+        });
     }
     return groups;
   }
 
-  async load(signal){
-    this.signal?.throwIfAborted();signal?.throwIfAborted();
-    this.pending??=this.read().catch(error=>{this.pending=null;throw error;});
-    if(!signal)return this.pending;
+  async load(signal) {
+    this.signal?.throwIfAborted();
+    signal?.throwIfAborted();
+    this.pending ??= this.read().catch(error => {
+      this.pending = null;
+      throw error;
+    });
+    if (!signal) return this.pending;
     // Cancel this caller's wait without canceling another consumer's shared read.
     let abort;
-    try{
-      return await Promise.race([this.pending,new Promise((_,reject)=>{
-        abort=()=>reject(signal.reason);signal.addEventListener('abort',abort,{once:true});
-      })]);
-    }finally{signal.removeEventListener('abort',abort);}
+    try {
+      return await Promise.race([
+        this.pending,
+        new Promise((_, reject) => {
+          abort = () => reject(signal.reason);
+          signal.addEventListener('abort', abort, {once: true});
+        }),
+      ]);
+    } finally {
+      signal.removeEventListener('abort', abort);
+    }
   }
 }

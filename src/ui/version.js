@@ -1,6 +1,7 @@
-export function createVersionControl({ root, metadata, check }) {
+export function createVersionControl({root, metadata, check}) {
   const version = root.getElementById('version');
-  let available = null, checking = false;
+  let available = null,
+    checking = false;
   version.textContent = `v${metadata.version}`;
   function describe(text) {
     version.title = text;
@@ -48,5 +49,5 @@ export function createVersionControl({ root, metadata, check }) {
       version.click();
     }
   };
-  return { refresh };
+  return {refresh};
 }
