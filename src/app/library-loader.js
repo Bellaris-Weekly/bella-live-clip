@@ -9,7 +9,7 @@ function waitFor(promise, signal) {
   });
 }
 
-export function createLibraryLoader({ api, schedules }) {
+export function createLibraryLoader({ api, schedules, backgroundEnrichment = false, onUpdate = () => {} }) {
   const cache = new Map();
   const requests = new Map();
   const controllers = new Set();
@@ -23,6 +23,9 @@ export function createLibraryLoader({ api, schedules }) {
     if (refresh) request?.controller.abort();
     if (!request || refresh) {
       const controller = new AbortController();
+      let resolveEarly, rejectEarly;
+      const early = new Promise((resolve, reject) => { resolveEarly = resolve; rejectEarly = reject; });
+      early.catch(() => {});
       const promise = (async () => {
         let records = cached?.records, liveFailed = false;
         if (refresh || !cached || cached.liveFailed) {
@@ -38,13 +41,18 @@ export function createLibraryLoader({ api, schedules }) {
           records = current ? [current, ...history.filter(record => record.key !== current.key)] : history;
         }
         controller.signal.throwIfAborted();
+        const base = { records, failed: false, liveFailed, ready: false, pending: true };
+        if (backgroundEnrichment) cache.set(id, base);
+        resolveEarly(base);
         const result = await schedules.enrich(records, { signal: controller.signal, refresh });
         controller.signal.throwIfAborted();
         const next = { records: result.records, failed: result.failed, liveFailed, ready: !result.failed && !liveFailed };
         cache.set(id, next);
+        if (backgroundEnrichment) onUpdate(member, next);
         return next;
       })();
-      request = { promise, controller };
+      promise.catch(rejectEarly);
+      request = { promise, early, controller };
       requests.set(id, request);
       controllers.add(controller);
       const cleanup = () => {
@@ -53,7 +61,7 @@ export function createLibraryLoader({ api, schedules }) {
       };
       promise.then(cleanup, cleanup);
     }
-    return waitFor(request.promise, signal);
+    return waitFor(backgroundEnrichment ? request.early : request.promise, signal);
   }
 
   function preload(member) {

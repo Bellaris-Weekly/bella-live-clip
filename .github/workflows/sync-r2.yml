@@ -32,7 +32,7 @@ jobs:
         run: npm run verify
 
       - name: Check built artifact is committed
-        run: git diff --exit-code -- bella-live-clip.user.js
+        run: git diff --exit-code -- bella-live-clip.user.js bella-live-clip.meta.js
 
   upload:
     needs: test
@@ -71,6 +71,12 @@ jobs:
             exit 0
           fi
           aws s3 cp bella-live-clip.user.js "s3://${R2_BUCKET}/bella-live-clip.user.js" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --content-type "application/javascript" \
+            --content-disposition "inline" \
+            --cache-control "no-cache, no-store, must-revalidate"
+          # Publish metadata last so clients never discover a version before its script is uploaded.
+          aws s3 cp bella-live-clip.meta.js "s3://${R2_BUCKET}/bella-live-clip.meta.js" \
             --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             --content-type "application/javascript" \
             --content-disposition "inline" \

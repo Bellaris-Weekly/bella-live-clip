@@ -16,6 +16,18 @@ test('请求窄时间段，保留所有录像部分',async()=>{
  assert.equal(url.searchParams.get('live_key'),'987654321098765432');assert.equal(url.searchParams.get('start_time'),'110');assert.equal(url.searchParams.get('end_time'),'121');assert.equal(result.length,2);assert.equal(result[0].start_time,110);
 });
 
+test('直播预览图批量请求匹配场次与绝对秒数，图片查询使用表单 POST',async()=>{
+ let seen;
+ const request=createRequest(options=>{seen=options;queueMicrotask(()=>options.onload({status:200,responseText:JSON.stringify({code:0,data:{list:[{ts:1011,url:'https://i0.hdslb.com/frame.jpg'}]}})}));return {abort(){}};});
+ const api=new BiliApi(request,{csrf:()=> 'fixture-csrf'}),signal=new AbortController().signal;
+ const frames=await api.keyframes({uid:'3537115310721781',key:'742106027349433696',start:1000},[10.7,20.2],signal);
+ assert.equal(seen.method,'POST');assert.equal(seen.anonymous,false);
+ assert.equal(new URL(seen.url).pathname,'/xlive/web-room/v1/videoService/GetAnchorVideoKeyFrame');
+ assert.equal(seen.headers['Content-Type'],'application/x-www-form-urlencoded');
+ assert.deepEqual(Object.fromEntries(new URLSearchParams(seen.data)),{live_uid:'3537115310721781',live_key:'742106027349433696',time_list:'1011,1020',csrf:'fixture-csrf'});
+ assert.equal(frames[0].ts,1011);
+});
+
 test('新增成员按配置查询回放并保留身份字段',async()=>{
  for(const member of MEMBERS.filter(({id})=>['xinyi','sinuo'].includes(id))){
   let requested;

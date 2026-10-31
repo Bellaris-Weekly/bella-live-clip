@@ -16,13 +16,13 @@ export function makeHlsLoader(request) {
  };
 }
 
-export function createPlayer({video,loading,api,status,onTime,onError=()=>{}}) {
- let hls,record,streams=[],index=0,generation=0,target=null;
+export function createPlayer({video,loading,api,status,onTime,onError=()=>{},onReady=()=>{},HlsClass=Hls}) {
+ let hls,record,streams=[],index=-1,generation=0,target=null,notified=false;
  const offset=()=>streams[index] ? streams[index].start_time-record.start : 0;
  function attach(part,time=0){
   const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;
   target=time;loading.hidden=false;
-  hls=new Hls({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:20,maxMaxBufferLength:40,backBufferLength:15,startPosition:time});
+  hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:20,maxMaxBufferLength:40,backBufferLength:15,startPosition:time});
   hls.on(Hls.Events.ERROR,(_,data)=>{if(token===generation&&data.fatal){onError(new Error(`录像预览失败：${data.type} / ${data.details}`));loading.textContent='预览暂不可用，请刷新重试';status('录像预览失败，请刷新重试。',true);}});
   hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
   hls.loadSource(streams[index].stream);hls.attachMedia(video);
@@ -35,13 +35,13 @@ export function createPlayer({video,loading,api,status,onTime,onError=()=>{}}) {
   if(found<0){target=NaN;loading.hidden=false;loading.textContent='该位置没有录像';return;}
   const local=clamp(time-(streams[found].start_time-record.start),0,Math.max(0,streams[found].end_time-streams[found].start_time-.001));
   loading.textContent='正在定位画面…';loading.hidden=false;
-  if(found!==index)attach(found,local);else{target=local;video.currentTime=local;}
+  if(!hls||found!==index)attach(found,local);else{target=local;video.currentTime=local;}
  }
- function ready(){if((target===null||Math.abs(video.currentTime-target)<.12)&&video.readyState>=2&&!video.seeking){target=null;loading.hidden=true;}}
+ function ready(){if(hls&&(target===null||Math.abs(video.currentTime-target)<.12)&&video.readyState>=2&&!video.seeking){target=null;loading.hidden=true;if(!notified){notified=true;onReady(record);}}}
  video.addEventListener('seeked',ready);video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
  video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
- function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];target=null;}
+ function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;}
  function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
- return {async load(nextRecord,signal){clear();record=nextRecord;const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;streams=await api.clips(record,0,total,signal);signal.throwIfAborted();attach(0);return {streams,total};},seek,clear,destroy,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
+ return {async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total};},seek,clear,destroy,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
 }

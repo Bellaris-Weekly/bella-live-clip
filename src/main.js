@@ -7,7 +7,9 @@ import {createSubmissionRequest} from './services/submission-request.js';
 if (!document.getElementById('bella-live-clip-host')) {
   const diagnostics = createDiagnosticReporter({endpoint: typeof __LOG_SERVICE_ENDPOINT__ === 'string' ? __LOG_SERVICE_ENDPOINT__ : '',
     request: GM_xmlhttpRequest, version: readScriptMetadata(metadataText).version, userAgent: navigator.userAgent});
-  const app = createApp({ diagnostics, api: new BiliApi(createRequest(GM_xmlhttpRequest)),
+  const app = createApp({ diagnostics, api: new BiliApi(createRequest(GM_xmlhttpRequest), {
+    csrf: () => document.cookie.match(/(?:^|;\s*)bili_jct=([^;]*)/)?.[1] || '',
+  }),
     submissionRequest: createSubmissionRequest(unsafeWindow.fetch.bind(unsafeWindow)),
     // Native Window methods need the page window, not the userscript sandbox receiver.
     saveFilePicker: typeof unsafeWindow.showSaveFilePicker === 'function' ? unsafeWindow.showSaveFilePicker.bind(unsafeWindow) : null,

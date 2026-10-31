@@ -4,7 +4,7 @@ import {RequestError} from './retry-request.js';
 const API = 'https://api.live.bilibili.com';
 
 export function createRequest(gmRequest) {
-  return (url, { auth = false, type = 'text', range = null, signal, referer = 'https://live.bilibili.com/' } = {}) => new Promise((resolve, reject) => {
+  return (url, { auth = false, type = 'text', range = null, signal, form, referer = 'https://live.bilibili.com/' } = {}) => new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(signal.reason); return; }
     if (auth && ![API, 'https://api.bilibili.com'].includes(new URL(url).origin)) { reject(new Error('账号请求只能发送至 B 站直播或视频接口。')); return; }
     let request;
@@ -15,10 +15,12 @@ export function createRequest(gmRequest) {
     const timer = setTimeout(() => { fail(new RequestError('请求超时，请重试。',{retryable:true})); request?.abort(); }, 45000);
     signal?.addEventListener('abort', abort, { once: true });
     const headers = { Referer: referer };
+    if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
     if (range) headers.Range = `bytes=${range.offset}-${range.offset + range.length - 1}`;
     try {
       request = gmRequest({
-        method: 'GET', url, headers, anonymous: !auth, responseType: type,
+        method: form ? 'POST' : 'GET', data: form ? new URLSearchParams(form).toString() : undefined,
+        url, headers, anonymous: !auth, responseType: type,
         onload(response) {
           cleanup();
           if (response.status < 200 || response.status >= 300) {
@@ -40,10 +42,14 @@ export function createRequest(gmRequest) {
 }
 
 export class BiliApi {
-  constructor(request) { this.request = request; }
+  constructor(request, { csrf = () => '' } = {}) { this.request = request; this.csrf = csrf; }
 
   async get(path, params, signal) {
     const { data: text } = await this.request(`${API}${path}?${new URLSearchParams(params)}`, { auth: true, signal });
+    return this.parse(text);
+  }
+
+  parse(text) {
     let response;
     try { response = JSON.parse(text); } catch { throw new Error('B 站没有返回接口数据，请刷新页面后重试。'); }
     if (response.code !== 0) {
@@ -54,6 +60,15 @@ export class BiliApi {
       throw new Error(messages[response.code] || `B 站返回 ${response.code}：${response.message || '请求未成功'}`);
     }
     return response.data;
+  }
+
+  async keyframes(record, times, signal) {
+    // Read-only image query from https://live.bilibili.com/web-cut/quick-publish.html.
+    const { data } = await this.request(`${API}/xlive/web-room/v1/videoService/GetAnchorVideoKeyFrame`, {
+      auth: true, signal, form: { live_uid: record.uid, live_key: record.key,
+        time_list: times.map(time => Math.round(record.start + time)).join(','), csrf: this.csrf() },
+    });
+    return this.parse(data)?.list || [];
   }
 
   async history(member, signal) {

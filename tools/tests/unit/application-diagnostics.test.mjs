@@ -16,13 +16,13 @@ const stubs = {
   'submission': 'export const createSubmissionService=()=>({load:()=>scenario.loadVideo()});',
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',
   'submission-player': 'export const createSubmissionPlayer=()=>scenario.player;',
-  'preview-player': 'export const createPlayer=()=>scenario.player;',
+  'preview-player': 'export const createPlayer=options=>{scenario.previewOptions=options;return scenario.player;};',
   'playback': 'export const createPlayback=()=>({cancel(){}});export const bindVideoControls=()=>{};',
-  'thumbnails': 'export const createThumbnails=()=>({clear(){},load(){},update(){}});',
+  'thumbnails': 'export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},resume(){scenario.thumbnailResumes++;},update(){}});',
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
   'export': 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan': 'export class RecordingPlan{async load(){return scenario.groups;}}',
-  'recording': 'export const estimateRecordingRate=async()=>null;export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
+  'recording': 'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
   'temporary-media': 'export const createTemporaryMedia=()=>{};',
 };
 const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle:true,write:false,format:'iife',globalName:'application',
@@ -49,7 +49,7 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   const document={createElement:()=>({...element(),attachShadow:()=>root}),createTextNode:text=>text,
     documentElement:element(),addEventListener(){},querySelector:()=>null};
   const seeks=[];
-  const scenario={loadVideo,export:exportWork,groups,player:new Proxy({load:async()=>({total,streams}),position:()=>0,isPaused:()=>true,seek:time=>seeks.push(time)},{get:(target,key)=>target[key]||(()=>{})})};
+  const scenario={loadVideo,export:exportWork,groups,thumbnailResumes:0,estimates:0,player:new Proxy({load:async()=>({total,streams}),position:()=>0,isPaused:()=>true,seek:time=>seeks.push(time)},{get:(target,key)=>target[key]||(()=>{})})};
   const context={scenario,document,window:{addEventListener(){},removeEventListener(){}},URL,AbortController,DOMException,
     innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout,clearTimeout};
   runInNewContext(outputFiles[0].text,context);
@@ -57,8 +57,18 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   const diagnostics=createDiagnosticReporter({endpoint:'https://logs.example.com/v1/logs',version:'1.2.3',online:()=>true,id:()=>crypto.randomUUID(),request:options=>{requests.push(JSON.parse(options.data));options.onload({status:201});}});
   const api={request:async()=>({data:''}),history:async()=>[],current};
   const app=context.application.createApp({api,diagnostics,pageUrl:()=>page,saveFilePicker:picker,storage:{getDirectory(){}}});
-  return {app,requests,seeks,$:id=>root.getElementById(id),navigate:value=>{page=value;}};
+  return {app,requests,seeks,scenario,$:id=>root.getElementById(id),navigate:value=>{page=value;}};
 }
+
+test('直播首帧前不启动缩略图或大小采样，日程换对象后仍只启动一次',async()=>{
+ const record={key:'live-key',uid:1,room:123,member:'成员',title:'直播',start:1000,end:1100,live:false};
+ const f=start({url:'https://live.bilibili.com/123',current:async()=>record,streams:[{start_time:1000,end_time:1100,stream:'a'}]});
+ await f.app.open();assert.equal(f.scenario.estimates,0);assert.equal(f.scenario.thumbnailResumes,0);assert.equal(f.scenario.thumbnailOptions.defer,true);
+ f.scenario.previewOptions.onReady({...record});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.scenario.estimates,1);assert.equal(f.scenario.thumbnailResumes,1);
+ f.scenario.previewOptions.onReady(record);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.scenario.estimates,1);assert.equal(f.scenario.thumbnailResumes,1);
+});
 
 test('实际导出失败在清理 abort 前上报，路由变更仍使用原始选区身份', async () => {
   let reject,started;

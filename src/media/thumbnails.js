@@ -1,6 +1,7 @@
 import Hls from 'hls.js';
 import {makeHlsLoader} from './preview-player.js';
 import {readSubmissionThumbnail} from './submission-thumbnail.js';
+import {createThumbnailSource} from '../services/thumbnail-source.js';
 
 export function thumbnailSamples(record,streams,view,count=6) {
  return Array.from({length:count},(_,i)=>{
@@ -38,19 +39,23 @@ export async function readThumbnail(request,sample,signal) {
  }
 }
 
-export function createThumbnails({container,request,readFrame=readThumbnail}) {
- let record,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready;
- function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
- function clear(){cancel();record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;container.replaceChildren();}
+export function createThumbnails({container,request,api,metadataRequest,readFrame=readThumbnail}) {
+ let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,suspended=false,pendingWork;
+ function cancel(){clearTimeout(timer);pendingWork=null;ready=null;controller?.abort();controller=null;}
+ function clear(){cancel();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;suspended=false;container.replaceChildren();}
  async function render(samples,own,cells){
-  await Promise.all(samples.map(async(sample,i)=>{
-   if(own.signal.aborted)return;
-   if(!sample.stream){cells[i].textContent='无录像';return;}
-   try{
-    const canvas=await readFrame(request,sample,own.signal);
-    if(own.signal.aborted)return;
-    cells[i].replaceChildren(canvas);
-   }catch(error){if(own.signal.aborted)return;cells[i].textContent='暂无预览';}
+  const reader=source;await reader.prepare(samples,own.signal);let cursor=0;
+  await Promise.all(Array.from({length:2},async()=>{
+   while(cursor<samples.length&&!own.signal.aborted){
+    const i=cursor++,sample=samples[i];
+    if(!sample.stream){cells[i].textContent='无录像';continue;}
+    try{
+     const canvas=await reader.read(sample,own.signal);
+     if(own.signal.aborted)return;
+     cells[i].replaceChildren(canvas);
+    }catch(error){if(own.signal.aborted)return;cells[i].textContent='暂无预览';}
+    publish();
+   }
   }));
  }
  function project(){
@@ -76,11 +81,13 @@ export function createThumbnails({container,request,readFrame=readThumbnail}) {
   const samples=thumbnailSamples(record,streams,target);
   const cells=samples.map(()=>{const cell=container.ownerDocument.createElement('div');cell.className='thumbnail';cell.textContent='…';return cell;});
   if(!displayView){container.replaceChildren(...cells);displayView={...target};project();}
-  timer=setTimeout(async()=>{
-   await render(samples,own,cells);
-   if(own.signal.aborted)return;
-   ready={cells,view:{...target}};publish();
-  },200);
+  const work=()=>{timer=setTimeout(async()=>{
+   ready={cells,view:{...target}};
+   try{await render(samples,own,cells);}catch(error){if(own.signal.aborted)return;}
+   if(!own.signal.aborted)publish();
+  },200);};
+  if(suspended)pendingWork=work;else work();
  }
- return {load(next,parts){clear();record=next;streams=parts;},update,clear};
+ return {load(next,parts,{defer=false}={}){clear();record=next;streams=parts;suspended=defer;source=createThumbnailSource({record,api,request,metadataRequest,readFrame});},
+  resume(){suspended=false;const work=pendingWork;pendingWork=null;work?.();},update,clear};
 }

@@ -32,6 +32,7 @@ test('each completed check requests fresh metadata, even within the same millise
   let latest = metadata.version;
   const f = fixture(async (url, options) => {
     assert.equal(new URL(url).origin,new URL(metadata.updateURL).origin);
+    assert.equal(new URL(url).pathname,'/bella-live-clip.meta.js');
     assert.ok(new URL(url).searchParams.has('_check'));
     assert.equal(options.auth,false);
     return {data:script(latest)};

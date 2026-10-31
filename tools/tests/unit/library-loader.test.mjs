@@ -9,6 +9,29 @@ const records=[{key:'one'}];
 
 function deferred(){let resolve,reject;const promise=new Promise((res,rej)=>{resolve=res;reject=rej;});return {promise,resolve,reject};}
 
+test('interactive library returns usable records before schedules or avatars finish',async()=>{
+ const enrichment=deferred(),updates=[];let calls=0;
+ const loader=createLibraryLoader({backgroundEnrichment:true,onUpdate:(member,result)=>updates.push(result),
+  api:{history:async()=>records,current:async()=>null},
+  schedules:{enrich:async value=>{calls++;return enrichment.promise;}}});
+ const early=await loader.load(member);assert.deepEqual(early.records,records);assert.equal(early.pending,true);assert.equal(calls,1);
+ assert.equal(await loader.load(member),early);assert.equal(updates.length,0);
+ enrichment.resolve({records:[{key:'one',schedule:{type:'单播'}}],failed:false});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(updates.length,1);assert.equal(updates[0].ready,true);assert.equal(loader.get(member),updates[0]);
+ assert.equal((await loader.load(member)).records[0].schedule.type,'单播');assert.equal(calls,1);
+});
+
+test('refresh cancels background enrichment and prevents stale schedule publication',async()=>{
+ const old=deferred(),updates=[];let calls=0;
+ const loader=createLibraryLoader({backgroundEnrichment:true,onUpdate:(_,result)=>updates.push(result),
+  api:{history:async()=>records,current:async()=>null},
+  schedules:{enrich:async value=>++calls===1?old.promise:{records:[{key:'fresh'}],failed:false}}});
+ await loader.load(member);await loader.load(member,{refresh:true});
+ await new Promise(resolve=>setImmediate(resolve));old.resolve({records:[{key:'stale'}],failed:false});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(updates.map(result=>result.records[0].key),['fresh']);assert.equal(loader.get(member).records[0].key,'fresh');
+});
+
 test('preload starts history and enriches before the consumer opens the library',async()=>{
  const history=deferred(),calls=[];
  const loader=createLibraryLoader({api:{current:async()=>null,history:async()=>{calls.push('history');return history.promise;}},schedules:{enrich:async value=>{calls.push(['enrich',value]);return {records:value.map(record=>({...record,schedule:null})),failed:false};}}});

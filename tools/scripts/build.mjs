@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { readFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +21,8 @@ export async function buildUserscript({ release = false, env = process.env, writ
     const connections = [...header.matchAll(/^\/\/ @connect\s+(\S+)\s*$/gm)].map((match) => match[1]);
     if (!connections.includes(domain)) header = header.replace('// ==/UserScript==', `// @connect      ${domain}\n// ==/UserScript==`);
   }
-  return build({
+  const metadata = `${header.match(/^\/\/ ==UserScript==\r?\n[\s\S]*?^\/\/ ==\/UserScript==/m)[0]}\n`;
+  const result = await build({
     absWorkingDir: root,
     entryPoints: ['src/main.js'],
     outfile: 'bella-live-clip.user.js',
@@ -28,14 +30,18 @@ export async function buildUserscript({ release = false, env = process.env, writ
     bundle: true,
     format: 'iife',
     target: 'chrome110',
-    minify: false,
+    minify: true,
     charset: 'utf8',
     loader: { '.txt': 'text', '.html': 'text', '.css': 'text' },
     define: { __LOG_SERVICE_ENDPOINT__: JSON.stringify(endpoint) },
     banner: { js: header },
-    legalComments: 'inline',
+    legalComments: 'eof',
     logLevel: 'silent',
   });
+  const metadataPath = path.join(root, 'bella-live-clip.meta.js');
+  if (write) await writeFile(metadataPath, metadata);
+  else result.outputFiles.push({ path: metadataPath, contents: Buffer.from(metadata), text: metadata });
+  return result;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
