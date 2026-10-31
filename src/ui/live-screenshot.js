@@ -38,12 +38,8 @@ function formatScreenshotFileName(date, identity) {
   return `${source}_${stamp}.png`;
 }
 
-function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, download }) {
-  // DOM attributes are shared across userscript sandboxes; globals are not.
-  // Claim synchronously before observing or binding any controls. Each iframe owns its document.
-  const root = rootDocument.documentElement;
-  if (root.hasAttribute(INSTALLED_ATTRIBUTE)) return false;
-  root.setAttribute(INSTALLED_ATTRIBUTE, '');
+// The live page and shadow-root editor share rendering, capture and feedback behavior.
+function createScreenshotControls({ rootDocument, getVideo, getIdentity, download }) {
   const view = rootDocument.defaultView;
   const controls = new WeakSet();
   let notice = null;
@@ -84,10 +80,10 @@ function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, downloa
       busy = true;
       control.setAttribute('aria-busy', 'true');
       try {
-        const video = findScreenshotVideo(control, selectVideo);
+        const video = getVideo(control);
         const fileName = formatScreenshotFileName(new Date(), getIdentity());
         const blob = await captureVideoPng(video, rootDocument);
-        download(blob, fileName);
+        await download(blob, fileName);
       } catch (error) {
         showNotice(control, error.name === 'SecurityError'
           ? '浏览器不允许截图'
@@ -114,6 +110,18 @@ function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, downloa
     }, true);
   };
 
+  return enhance;
+}
+
+function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, download }) {
+  // DOM attributes are shared across userscript sandboxes; globals are not.
+  // Claim synchronously before observing or binding any controls. Each iframe owns its document.
+  const root = rootDocument.documentElement;
+  if (root.hasAttribute(INSTALLED_ATTRIBUTE)) return false;
+  root.setAttribute(INSTALLED_ATTRIBUTE, '');
+  const enhance = createScreenshotControls({rootDocument,
+    getVideo: control => findScreenshotVideo(control, selectVideo), getIdentity, download});
+  const view = rootDocument.defaultView;
   const scan = (root) => {
     if (root.nodeType !== 1) return;
     if (root.matches(FEEDBACK_SELECTOR)) enhance(root);
@@ -132,4 +140,4 @@ function installLiveScreenshot({ rootDocument, selectVideo, getIdentity, downloa
   return true;
 }
 
-export { captureVideoPng, findScreenshotVideo, formatScreenshotFileName, installLiveScreenshot };
+export { createScreenshotControls, captureVideoPng, findScreenshotVideo, formatScreenshotFileName, installLiveScreenshot };

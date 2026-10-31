@@ -6,6 +6,8 @@ import css from '../ui/styles.css';
 import {createControls} from '../ui/controls.js';
 import {createRecordCard} from '../ui/record-card.js';
 import {icon} from '../ui/icons.js';
+import {createScreenshotControls} from '../ui/live-screenshot.js';
+import {downloadScreenshot} from './live-screenshot.js';
 import {createTimeline} from '../ui/timeline.js';
 import {DEFAULT_SHORTCUT,normalizeShortcut,formatShortcut,matchesShortcut,isEditing} from '../ui/shortcuts.js';
 import {constrainRect,resizeRect} from '../ui/panel-geometry.js';
@@ -62,6 +64,11 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
  let rect=constrainRect(get('windowV2',defaults()),viewport());
  const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
+ createScreenshotControls({rootDocument:document,
+  getVideo:()=>ready?player.getScreenshotVideo():null,
+  getIdentity:()=>({streamerName:isSubmission()?record.uploader||record.title:record?.member,roomId:record?.room}),
+  download:(blob,name)=>downloadScreenshot(document,blob,name),
+ })($('previewScreenshot'));
  const seekTo=t=>{player?.seek(t);timeline.setCurrent(t);updateClock(t);};
  const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player?.position()??0,seek:seekTo});
  const activePlayback=()=>playerKind==='submission'?player:playback;

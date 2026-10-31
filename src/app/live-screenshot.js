@@ -28,17 +28,19 @@ export function startLiveScreenshot(document) {
     rootDocument: document,
     selectVideo,
     getIdentity: () => getIdentity(document),
-    download(blob, name) {
-      const view = document.defaultView;
-      const url = view.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = name;
-      anchor.style.display = 'none';
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      view.setTimeout(() => view.URL.revokeObjectURL(url), 60000);
-    },
+    download: (blob, name) => downloadScreenshot(document, blob, name),
   });
+}
+
+export function downloadScreenshot(document, blob, name) {
+  const view = document.defaultView;
+  const url = view.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.style.display = 'none';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  view.setTimeout(() => view.URL.revokeObjectURL(url), 60000);
 }

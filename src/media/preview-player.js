@@ -56,5 +56,5 @@ export function createPlayer({video,loading,api,status,onTime,onError=()=>{},onR
   streams=next;
   return changed?{streams,total:availableTotal()}:null;
  }
- return {async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
+ return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
 }

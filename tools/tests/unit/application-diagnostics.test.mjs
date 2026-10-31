@@ -37,6 +37,7 @@ const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle
 function element() {
   return {dataset:{},style:{},hidden:false,children:[],classList:{toggle(){},add(){},remove(){}},
     append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},
+    querySelector:()=>null,
     get childElementCount(){return this.children.length;},focus(){},addEventListener(){},removeEventListener(){},
     setAttribute(name,value){this.attributes??={};this.attributes[name]=String(value);},getAttribute(name){return this.attributes?.[name]??null;},removeAttribute(){},getBoundingClientRect(){return {left:0,top:0,right:10,bottom:10};},
   };

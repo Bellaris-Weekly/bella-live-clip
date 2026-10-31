@@ -1,4 +1,5 @@
 import scriptMetadata from '../../../src/header.txt';
+import {observePreviewScreenshots} from './preview-screenshot.js';
 import { createApp } from '../../../src/app/application.js';
 import {MEMBERS} from '../../../src/domain/records.js';
 import {runCardChecks} from './cards.js';
@@ -42,6 +43,7 @@ const api={history:async member=>{preloadProbe.historyCalls++;preloadProbe.histo
 }};
 const app=createApp({api,pageUrl:query.has('live')?'https://live.bilibili.com/22632424':location.href,get:(key,fallback)=>key==='windowV2'&&(query.has('narrow')||query.has('medium'))?{left:20,top:20,width:query.has('medium')?480:360,height:780}:fallback});
 preloadProbe.openCalledAt=performance.now();app.open();
+if(query.has('screenshot'))observePreviewScreenshots(app);
 const cardTest=document.createElement('button');cardTest.textContent='验证场次卡片';cardTest.id='cardTest';document.getElementById('test').after(cardTest);
 cardTest.onclick=()=>runCardChecks(app,query,preloadProbe);
 const exportTest=document.createElement('button');exportTest.textContent='精确导出对比';cardTest.after(exportTest);

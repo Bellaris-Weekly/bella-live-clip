@@ -291,3 +291,42 @@ for (const embedded of [false, true]) {
     assert.equal(page.document.querySelector('a[download]'), null);
   });
 }
+
+import {createScreenshotControls} from '../../../src/ui/live-screenshot.js';
+import {downloadScreenshot} from '../../../src/app/live-screenshot.js';
+
+for (const [width, height] of [[3840,2160], [1080,1920], [3440,1440]]) {
+  test(`editor in a shadow root captures its active ${width}x${height} source independently of live ownership`, async t => {
+    const page = pageFixture(t);
+    const live = page.mount();
+    page.install(); // Another userscript may already own the native live button.
+    const host = page.document.createElement('div');page.document.body.append(host);
+    const root = host.attachShadow({mode:'open'});
+    root.innerHTML = '<div><video></video><canvas></canvas><button type="button"></button></div>';
+    const button = root.querySelector('button'), video = root.querySelector('video');
+    Object.defineProperties(video, {readyState:{value:2},videoWidth:{value:width},videoHeight:{value:height}});
+    let active = video;
+    const saved=[];
+    page.window.URL.createObjectURL = blob => {assert.equal(blob.type,'image/png');return 'blob:preview';};
+    page.window.HTMLAnchorElement.prototype.click = function(){saved.push(this.download);};
+    const enhance = createScreenshotControls({rootDocument:page.document,getVideo:()=>active,
+      getIdentity:()=>({streamerName:'预览主播'}),download:(blob,name)=>downloadScreenshot(page.document,blob,name)});
+    enhance(button);enhance(button);
+    assert.equal(button.title,'截图');assert.equal(button.querySelectorAll('svg').length,1);
+    button.click();button.click();
+    assert.deepEqual(page.frames,[{video,width,height}]);
+    page.finish();await flush();
+    assert.equal(saved.length,1);assert.match(saved[0],/^预览主播_\d{8}_\d{6}_\d{3}\.png$/);
+    assert.equal(page.downloads.length,0,'editor must not trigger the live-page handler');
+    assert.equal(root.querySelector('[role=status]'),null);
+    // Switching sources must be read at click time, including a page-backed mirror.
+    active=live.video;button.click();assert.equal(page.frames.at(-1).video,live.video);
+    page.finish();await flush();assert.equal(saved.length,2);
+    active=null;button.click();await flush();
+    assert.match(root.querySelector('[role=status]').textContent,/暂无画面/);
+    assert.equal(saved.length,2,'unavailable preview must not fall back to a nearby player');
+    active=video;button.dispatchEvent(new page.window.KeyboardEvent('keydown',{key:' ',bubbles:true}));
+    page.finish();await flush();assert.equal(saved.length,3);
+    assert.equal(root.querySelector('[role=status]'),null);
+  });
+}

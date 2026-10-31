@@ -139,3 +139,18 @@ test('late preview responses cannot paint after release or after a different dra
  pending[1].resolve({image:{preview:true},x:0,y:0,width:320,height:180});
  await Promise.resolve();assert.equal(f.draws.length,released);assert.equal(f.video.currentTime,81);f.player.destroy();
 });
+
+for(const [width,height] of [[3840,2160],[1080,1920]]){
+ test(`screenshot source preserves ${width}x${height} while rejecting storyboard and stale routes`,async()=>{
+  const f=fixture();Object.assign(f.video,{videoWidth:width,videoHeight:height});await f.load();
+  assert.equal(f.canvas.width,640);
+  assert.equal(f.player.getScreenshotVideo(),f.video);
+  assert.equal(f.player.getScreenshotVideo().videoWidth,width);
+  f.player.begin();await f.player.seek(90);assert.equal(f.player.getScreenshotVideo(),null);
+  f.player.end();assert.equal(f.player.getScreenshotVideo(),f.video);
+  const next=new PageVideo();f.replace(next);
+  assert.equal(f.player.getScreenshotVideo(),next,'read the new player even before a periodic refresh');
+  f.invalidate();assert.equal(f.player.getScreenshotVideo(),null);
+  f.player.suspend();assert.equal(f.player.getScreenshotVideo(),null);f.player.destroy();
+ });
+}
