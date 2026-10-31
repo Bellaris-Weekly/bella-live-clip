@@ -9,12 +9,14 @@ import {icon} from '../ui/icons.js';
 import {createScreenshotControls} from '../ui/live-screenshot.js';
 import {downloadScreenshot} from './live-screenshot.js';
 import {createTimeline} from '../ui/timeline.js';
-import {DEFAULT_SHORTCUT,normalizeShortcut,formatShortcut,matchesShortcut,isEditing} from '../ui/shortcuts.js';
-import {constrainRect,resizeRect} from '../ui/panel-geometry.js';
 import {ScheduleService} from '../services/schedule.js';
 import {createDiagnosticReporter} from '../services/diagnostics.js';
 import {createLibraryLoader} from './library-loader.js';
 import {createRecordingUpdater} from './recording-updater.js';
+import {createPanelWindow} from './panel-window.js';
+import {bindShortcut} from './shortcut-field.js';
+import {bindEditorInput} from './editor-input.js';
+import {createExportActions} from './export-actions.js';
 import {createSubmissionService} from '../services/submission.js';
 import {createSubmissionStoryboard} from '../services/submission-storyboard.js';
 import {bindPageProgress} from '../ui/page-progress.js';
@@ -25,15 +27,10 @@ import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
 import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
-import {createTemporaryMedia,ensureTemporarySpace} from '../media/temporary-media.js';
 import {estimateRecordingRate,estimateSelectionBytes} from '../media/recording-estimate.js';
-import {renderExportProgress} from '../ui/export-progress.js';
-import {fileName} from '../media/file-name.js';
 import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
-import {formatDuration,formatTimeRange,formatDate,formatBytes,parseTime} from '../shared/format.js';
-
-const NO_FILE_SAVING='当前浏览器不支持保存文件，请使用 Chrome 或 Edge。';
+import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
 export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,mediaRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,storage=globalThis.navigator?.storage}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
@@ -62,14 +59,10 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const exportModes={live:get('exportMode.live','copy'),submission:get('exportMode.submission','precise')};
  const modeKind=()=>isSubmission()?'submission':'live',exportMode=()=>exportModes[modeKind()];
  function renderExportMode(){root.querySelectorAll('[data-mode]').forEach(el=>el.setAttribute('aria-pressed',el.dataset.mode===exportMode()));}
- let shortcut=normalizeShortcut(get('shortcut',DEFAULT_SHORTCUT))||DEFAULT_SHORTCUT;
- let fullStopController=null,fullFinishing=false;
+ const panelWindow=createPanelWindow({root,get,set});
+ let exporter=null,editorInput=null;
  const status=(text,error=false)=>{$('status').textContent=text;$('status').dataset.error=error;updateFeedback();};
  function updateFeedback(){$('feedback').hidden=!controller&&$('status').dataset.error!=='true'&&!$('downloads').childElementCount;}
- const viewport=()=>({width:innerWidth,height:innerHeight});
- const defaults=()=>constrainRect({left:innerWidth-820,top:20,width:800,height:880},viewport());
- let rect=constrainRect(get('windowV2',defaults()),viewport());
- const applyRect=()=>Object.assign($('panel').style,Object.fromEntries(Object.entries(rect).map(([k,v])=>[k,`${v}px`])));applyRect();
  createScreenshotControls({rootDocument:document,
   getVideo:()=>ready?player.getScreenshotVideo():null,
   getIdentity:()=>({streamerName:isSubmission()?record.uploader||record.title:record?.member,roomId:record?.room}),
@@ -88,7 +81,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest,createStoryboard:({submission})=>storyboardFor(submission),
   locate:async(time,signal)=>recordingPlan?locateSegment(await recordingPlan.load(signal),record.start+time):null});
  const mediaApi={request:mediaRequest};
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),onRange:renderRange,onPreview:t=>{if(playerKind==='live')player.scrub(t);else player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(playerKind==='live')player.beginScrub();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>{if(playerKind==='live')player.endScrub();activePlayback()?.end({commit:!canceled});},onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),onRange:range=>editorInput?.renderRange(range),onPreview:t=>{if(playerKind==='live')player.scrub(t);else player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(playerKind==='live')player.beginScrub();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>{if(playerKind==='live')player.endScrub();activePlayback()?.end({commit:!canceled});},onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
  const updater=createRecordingUpdater({api,onUpdate:applyStreams,
   canRefresh:()=>ready&&record?.live&&page==='edit'&&!controller&&!$('panel').hidden&&!document.hidden&&!timeline.isInteracting()});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
@@ -134,21 +127,16 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   if(backgroundStarted)startEstimate(recordingPlan,recordingController.signal,previousEstimate);
  }
  const updateControls=createControls(root,timeline);
- function renderRange({start,end}){
-  const [from,to]=formatTimeRange(start,end).split(' — ');
-  if(root.activeElement!==$('selectionStart'))$('selectionStart').value=from;
-  if(root.activeElement!==$('selectionEnd'))$('selectionEnd').value=to;
- }
  function controls(){
   const route=parseSubmissionUrl(readPageUrl());
   $('currentVideo').hidden=!route||page==='edit'&&loadedRoute===route.key;
   $('wholeRecordingLabel').hidden=isSubmission();$('playSelection').hidden=!isSubmission();
   const refreshLabel=isSubmission()?'重新加载视频':'刷新录像';
   $('refreshEditor').setAttribute('aria-label',refreshLabel);$('refreshEditor').title=refreshLabel;
-  updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
+  updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,stopping:exporter.stopping()});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;if(kind==='export'){updater.stop();window.addEventListener('beforeunload',holdPage);}controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{window.removeEventListener('beforeunload',holdPage);controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(kind==='export'&&record?.live&&ready&&!$('panel').hidden)updater.start(record);if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
+ async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;if(kind==='export'){updater.stop();window.addEventListener('beforeunload',holdPage);}controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{window.removeEventListener('beforeunload',holdPage);controller=null;jobKind=null;exporter.reset();controls();if(kind==='export'&&record?.live&&ready&&!$('panel').hidden)updater.start(record);if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
  // Refreshing or closing the page cannot resume an export.
  function holdPage(event){event.preventDefault();event.returnValue='';}
  function clearDownloads(){$('downloads').replaceChildren();}
@@ -252,62 +240,6 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   if(controller){if(jobKind==='load'){pendingRoute=true;controller.abort();}return;}
   void currentVideo();
  }
- async function download(){
-  if(controller||!ready)return;
-  const submission=isSubmission();
-  const selection=timeline.getSelection();
-  await job(async (signal,diagnostic)=>{
-   diagnostic.stage('select_destination');
-   if(!saveFilePicker||!submission&&!storage?.getDirectory)throw new Error(NO_FILE_SAVING);
-   // Pick the destination before the first network await, while click activation
-   // is still live. A clip stays inside one segment, so it is always one file; a
-   // file picker also works in Downloads/Desktop, which Chrome refuses as directories.
-   const destination=await saveFilePicker({suggestedName:fileName(record,selection.start,selection.end),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
-   signal.throwIfAborted();if(submission)player.cancel();else player.pause();clearDownloads();status('正在导出…');
-   diagnostic.stage('preparing');
-   const onProgress=p=>{diagnostic.progress(p);renderExportProgress($('progress'),status,p,submission);if(submission&&p.estimatedBytes!==null)$('estimatedSize').textContent=`约 ${formatBytes(p.estimatedBytes)}`;};
-   const showSaved=output=>{const line=document.createElement('p');line.textContent=`已保存 ${output.name} · ${formatBytes(output.bytes)}`;$('downloads').append(line);};
-   if(submission){
-    const {exportSubmission}=await import('../media/submission-export.js');
-    const output=await exportSubmission(mediaRequest,record,selection,{signal,precise:exportMode()==='precise',onProgress,fileHandle:destination});
-    showSaved({...output,name:destination.name});
-   }else{
-    await ensureTemporarySpace(storage,estimate?estimateSelectionBytes(estimate,record.start,selection):0);
-    const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===segmentIndex);
-    const {exportSelection}=await import('../media/export.js');
-    await exportSelection(mediaApi,record,groups,selection,{signal,precise:exportMode()==='precise',onProgress,
-     createTemporary:options=>createTemporaryMedia({...options,storage}),
-     createFile:()=>({handle:destination,name:destination.name,remove:async()=>{}}),
-     onSaved:showSaved,
-    });
-   }
-   status('导出完成。');
-  },'export',{selection,mode:exportMode(),estimatedBytes:submission?(record.media.video.bandwidth+(record.media.audio?.bandwidth||0))*(selection.end-selection.start)/8:estimate?estimateSelectionBytes(estimate,record.start,selection):undefined});
- }
- async function downloadFull(){
-  // Keep the picker inside the click activation, before playlist/network work.
-  if(controller||!ready)return;
-  // Segments are separate recordings: only the selected one is saved, never spliced.
-  const bounds=segments[segmentIndex]??{start:0,end:playbackTotal},index=segmentIndex;
-  await job(async (signal,diagnostic)=>{
-   diagnostic.stage('select_destination');
-   if(!saveFilePicker)throw new Error(NO_FILE_SAVING);
-   const handle=await saveFilePicker({suggestedName:fileName(record,bounds.start,bounds.end,segments.length>1?`_整场_第${index+1}段`:'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
-   signal.throwIfAborted();player.pause();clearDownloads();status('正在导出整场…');
-   diagnostic.stage('preparing');const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
-   fullStopController=new AbortController();controls();
-   const {saveRecording}=await import('../media/recording.js');
-   const result=await saveRecording(mediaApi,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
-    diagnostic.progress(p);
-    if(p.progress!==undefined)$('progress').value=p.progress*100;
-    if(p.phase==='stopping'||p.phase==='finalizing'){fullFinishing=true;controls();status('正在保存…');}
-    else if(p.phase!=='saved')status(`${p.reconnecting?`网络波动，正在重连（第 ${p.attempt} 次）`:'导出整场'} · ${formatBytes(p.speed)}/秒 · 已写入 ${formatBytes(p.written)}`);
-   }});
-   if(!result.saved){status('已停止。');return;}
-   status(result.stopped?'已停止。':'导出完成。');
-   const message=document.createElement('p');message.textContent=`已保存${result.stopped?'已完成部分':'整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;$('downloads').append(message);
-  },'export',{action:'recording_download',selection:{...bounds},mode:'whole'});
- }
  async function open(){syncTheme();$('panel').hidden=false;if(playerKind==='submission')player.resume();void versionControl.refresh();const route=parseSubmissionUrl(readPageUrl());observedRoute=route?.key;if(route&&(!initialized||loadedRoute!==route.key)){initialized=true;await currentVideo();return;}if(!initialized){initialized=true;await(room?currentRoom():library());}else if(page==='library'){
    renderCards();const selected=member;void libraries.load(selected).then(result=>{
     if(member!==selected||page!=='library'||$('panel').hidden)return;
@@ -316,60 +248,23 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   }else if(page==='edit'){enrichRecordType();if(ready&&record?.live)updater.start(record);}}
  const close=()=>{updater.stop();timeline.stop();$('panel').hidden=true;scheduleController?.abort();if(playerKind==='submission'){player.suspend();thumbnails.clear();if(record)thumbnails.load(record,[]);submissionThumbnails=false;}else playback.cancel();};
  $('close').onclick=close;
- $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};
+ $('launcher').onclick=()=>{if(!panelWindow.launcherDragged())$('panel').hidden?void open():close();};
  $('currentVideo').onclick=()=>void currentVideo();$('back').onclick=()=>void library();$('browseHistory').onclick=()=>void library();$('retryCurrent').onclick=()=>parseSubmissionUrl(readPageUrl())?currentVideo():currentRoom();$('refreshLibrary').onclick=()=>void library(true);$('refreshEditor').onclick=()=>isSubmission()?currentVideo():refreshRecording();
  root.querySelectorAll('[data-member]').forEach(el=>el.onclick=()=>{member=MEMBERS.find(m=>m.id===el.dataset.member);set('member',member.id);libraryScroll=0;void library();});
- $('cancel').onclick=()=>{if(fullStopController){fullStopController.abort();controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=> $('wholeRecording').checked?downloadFull():download();
+ $('cancel').onclick=()=>{if(exporter.stopWhole()){controls();status('正在保存…');}else controller?.abort();};$('download').onclick=()=>$('wholeRecording').checked?exporter.exportWhole():exporter.exportSelected();
  $('wholeRecording').onchange=()=>{
   if($('wholeRecording').checked){clipSelection=timeline.getSelection();timeline.setSelection({...segments[segmentIndex]},true);}
   else{timeline.setSelection(clipSelection,true);clipSelection=null;}
   controls();
  };
  root.querySelectorAll('[data-mode]').forEach(button=>button.onclick=()=>{const kind=modeKind();exportModes[kind]=button.dataset.mode;set(`exportMode.${kind}`,button.dataset.mode);renderExportMode();updateExportSummary();});
- function applySelection(next,handle){try{timeline.setSelection(next,true);handle?.focus({preventScroll:true});status('');}catch(e){status(e.message,true);}}
- // Crossing the other end opens the range to the recording's edge instead of collapsing it.
- function markStart(){const s=timeline.getSelection(),t=player.position();applySelection({start:t,end:t<s.end?s.end:timeline.getBounds().end},$('startHandle'));}
- function markEnd(){const s=timeline.getSelection(),t=player.position();applySelection({start:t>s.start?s.start:timeline.getBounds().start,end:t},$('endHandle'));}
- $('markStart').onclick=markStart;$('markEnd').onclick=markEnd;
- for(const [id,edge]of[['selectionStart','start'],['selectionEnd','end']]){
-  $(id).onchange=()=>{const time=parseTime($(id).value),current=timeline.getSelection();
-   if(time===null)status('时间格式不对，例如 1:02:03 或 62.5。',true);else applySelection({...current,[edge]:time});
-   renderRange(timeline.getSelection());};
-  $(id).onkeydown=event=>{if(event.key==='Enter')$(id).blur();event.stopPropagation();};
- }
- const editorKeys={' ':()=>activePlayback()?.toggle(),i:markStart,o:markEnd};
- $('editPage').addEventListener('keydown',e=>{
-  if(!ready||controller||$('panel').hidden)return;
-  timeline.handleKeyDown(e);
-  const action=editorKeys[e.key.toLowerCase()];
-  if(!action||e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey||isEditing(e)||$('wholeRecording').checked||e.key===' '&&e.target.closest?.('button'))return;
-  e.preventDefault();e.stopPropagation();action();
- },{capture:true});
+ exporter=createExportActions({root,job,status,saveFilePicker,storage,mediaRequest,mediaApi,timeline,clearDownloads,refreshControls:controls,session:{
+  busy:()=>Boolean(controller),ready:()=>ready,record:()=>record,isSubmission,player:()=>player,plan:()=>recordingPlan,estimate:()=>estimate,
+  exportMode,segments:()=>segments,segmentIndex:()=>segmentIndex,total:()=>playbackTotal}});
+ editorInput=bindEditorInput({root,timeline,status,getPlayer:()=>player,togglePlayback:()=>activePlayback()?.toggle(),isActive:()=>ready&&!controller&&!$('panel').hidden});
+ bindShortcut({root,get,set,onPress:()=>$('panel').hidden?void open():close()});
  $('togglePlayback').onclick=()=>activePlayback()?.toggle();
  $('playSelection').onclick=()=>player.playSelection();
-  $('shortcut').value=formatShortcut(shortcut);
-  $('shortcut').onfocus=()=>{$('shortcut').classList.add('recording');$('shortcut').value='按下快捷键';};
-  $('shortcut').onblur=()=>{$('shortcut').classList.remove('recording');$('shortcut').value=formatShortcut(shortcut);};
-  $('shortcut').onkeydown=e=>{e.preventDefault();e.stopPropagation();if(e.key==='Escape')return $('shortcut').blur();const value=normalizeShortcut(e);if(value){shortcut=value;set('shortcut',value);$('shortcut').blur();}};
-  document.addEventListener('keydown', e => { if (!isEditing(e) && matchesShortcut(e,shortcut)) { e.preventDefault(); $('panel').hidden ? void open() : close(); } });
-  function drag(element,onMove,onEnd) {
-    element.addEventListener('pointerdown',e=>{
-      if(e.button!==0 || e.target.closest('button,input,select,a') && element!==$('launcher')) return;
-      const x=e.clientX,y=e.clientY, initial={...rect}; element.setPointerCapture(e.pointerId); e.preventDefault();
-      const move=ev=>onMove(ev.clientX-x,ev.clientY-y,initial);
-      const finish=()=>{ element.removeEventListener('pointermove',move); for(const name of ['pointerup','pointercancel','lostpointercapture']) element.removeEventListener(name,finish); onEnd?.(); };
-      element.addEventListener('pointermove',move); for(const name of ['pointerup','pointercancel','lostpointercapture']) element.addEventListener(name,finish);
-    });
-  }
-  drag($('header'),(dx,dy,r)=>{rect=constrainRect({...r,left:r.left+dx,top:r.top+dy},viewport()); applyRect();},()=>set('windowV2',rect));
-  root.querySelectorAll('[data-edge]').forEach(el=>drag(el,(dx,dy,r)=>{rect=resizeRect(r,el.dataset.edge,dx,dy,viewport()); applyRect();},()=>set('windowV2',rect)));
-  let launcherMoved=false, launcherStart;
-  const savedLauncher=get('launcher',null);
-  function moveLauncher(left,top) { Object.assign($('launcher').style,{left:`${clamp(left,0,innerWidth-58)}px`,top:`${clamp(top,0,innerHeight-62)}px`,right:'auto',bottom:'auto'}); }
-  if(savedLauncher) moveLauncher(savedLauncher.left,savedLauncher.top);
-  $('launcher').addEventListener('pointerdown',()=>{launcherMoved=false; launcherStart=$('launcher').getBoundingClientRect();});
-  drag($('launcher'),(dx,dy)=>{if(Math.abs(dx)+Math.abs(dy)>4) launcherMoved=true; if(launcherMoved) moveLauncher(launcherStart.left+dx,launcherStart.top+dy);},()=>{if(launcherMoved){const b=$('launcher').getBoundingClientRect();set('launcher',{left:b.left,top:b.top});}});
-  window.addEventListener('resize',()=>{rect=constrainRect(rect,viewport());applyRect();const b=$('launcher').getBoundingClientRect();if(b.right>innerWidth||b.bottom>innerHeight)moveLauncher(b.left,b.top);});
  const unbindPageProgress=bindPageProgress({document,getPlayer:()=>player,isActive:()=>playerKind==='submission'&&ready&&(!controller||jobKind==='export')&&!$('panel').hidden&&parseSubmissionUrl(readPageUrl())?.key===loadedRoute});
  const navigationTimer=setInterval(checkCurrentVideo,500);
  window.addEventListener('popstate',checkCurrentVideo);
