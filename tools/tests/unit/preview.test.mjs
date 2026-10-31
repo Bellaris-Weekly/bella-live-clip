@@ -203,3 +203,18 @@ test('replay addresses may change but the recording itself cannot',async()=>{
  const next=f.player.extend([{...parts[0],stream:'renewed'}]);assert.equal(next.changed,false);assert.equal(next.streams[0].stream,'renewed');
  assert.equal(f.player.extend([parts[0],{start_time:2100,end_time:2200,stream:'x'}]),null);f.player.destroy();
 });
+
+test('a paused preview buffers one fragment and playback buffers ahead',async()=>{
+ const f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}]);
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(10);
+ const {config}=f.instances[0];assert.equal(config.maxBufferLength,2);
+ f.video.dispatchEvent(new Event('play'));assert.equal(config.maxBufferLength,12);
+ f.video.dispatchEvent(new Event('pause'));assert.equal(config.maxBufferLength,2);f.player.destroy();
+});
+test('during a drag a decoded still appears as soon as it is ready',async()=>{
+ const image=still();let url=null;
+ const f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}],{still:image,frameUrl:()=>url});
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(0);f.player.beginScrub();
+ f.player.scrub(500);assert.equal(image.hidden,true);url='decoded';f.player.refreshStill();
+ assert.equal(image.getAttribute('src'),'decoded');assert.equal(image.hidden,false);f.player.destroy();
+});

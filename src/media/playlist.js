@@ -51,6 +51,19 @@ export function parsePlaylist(text, baseUrl) {
 
 export const segmentKey = segment => JSON.stringify([segment.url, segment.range ?? null]);
 
+// The fragment holding an absolute recording time, within its timed group.
+export function locateSegment(groups,time) {
+ for(const group of groups){
+  let cursor=group.start;
+  if(time<cursor)continue;
+  for(const segment of group.segments){
+   if(time<cursor+segment.duration)return {segment,map:group.map};
+   cursor+=segment.duration;
+  }
+ }
+ return null;
+}
+
 export function selectPlaylistRange(parsed,start,end) {
  const plans=[];
  for(const group of parsed.groups){

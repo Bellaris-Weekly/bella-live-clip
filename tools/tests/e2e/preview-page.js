@@ -1,5 +1,6 @@
 // Runs inside Chromium against the real player and hls.js.
 import {createPlayer} from '../../../src/media/preview-player.js';
+import {readFragmentStill} from '../../../src/media/fragment-still.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -69,4 +70,28 @@ window.drag = async ({timeout}) => {
   r.player.endScrub();
   const framedAt = await settled(r, timeout);
   return {...during, framedAt, stillAfter: !r.still.hidden, time: r.video.currentTime, loads: loads() - before};
+};
+
+const ranged = async (url, {range, signal}) => {
+  const response = await fetch(url, {signal, headers: {Range: `bytes=${range.offset}-${range.offset + range.length - 1}`}});
+  if (response.status !== 206) throw new Error(`range ignored: ${response.status}`);
+  return {data: await response.arrayBuffer()};
+};
+
+window.fragmentStill = async ({segment}) => {
+  const bytes = [];
+  const request = async (url, options) => {
+    const result = await ranged(url, options);
+    bytes.push(result.data.byteLength);
+    return result;
+  };
+  try {
+    const canvas = await readFragmentStill(request, {segment: {url: segment}, map: {url: '/init.mp4'}}, {signal: new AbortController().signal});
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let total = 0;
+    for (let i = 0; i < pixels.length; i += 4) total += pixels[i] + pixels[i + 1] + pixels[i + 2];
+    return {width: canvas.width, height: canvas.height, brightness: total / (pixels.length / 4) / 3, bytes: bytes.reduce((a, b) => a + b, 0)};
+  } catch (error) {
+    return {error: error.message};
+  }
 };

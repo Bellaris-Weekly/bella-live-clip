@@ -1,7 +1,9 @@
 import Hls from 'hls.js';
 import {makeHlsLoader} from './preview-player.js';
 import {readSubmissionThumbnail} from './submission-thumbnail.js';
-import {createThumbnailSource} from '../services/thumbnail-source.js';
+import {createThumbnailSource,FRAME_INTERVAL} from '../services/thumbnail-source.js';
+import {readFragmentStill} from './fragment-still.js';
+import {drawFitted} from '../shared/fit.js';
 
 export function thumbnailSamples(record,streams,view,count=6) {
  return Array.from({length:count},(_,i)=>{
@@ -26,7 +28,7 @@ export async function readThumbnail(request,sample,signal) {
    const ready=()=>{
     if(video.readyState<2||video.seeking||Math.abs(video.currentTime-sample.local)>.15)return;
     const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
-    try{canvas.getContext('2d').drawImage(video,0,0,160,90);resolve(canvas);}catch(error){reject(error);}
+    try{const context=canvas.getContext('2d');drawFitted(context,(x,y,width,height)=>context.drawImage(video,x,y,width,height),video.videoWidth,video.videoHeight,160,90);resolve(canvas);}catch(error){reject(error);}
    };
    for(const name of ['loadeddata','seeked','canplay'])video.addEventListener(name,ready);
    video.addEventListener('error',()=>reject(new Error('缩略图解码失败')),{once:true});
@@ -39,16 +41,42 @@ export async function readThumbnail(request,sample,signal) {
  }
 }
 
-export function createThumbnails({container,request,api,metadataRequest,createStoryboard,readFrame=readThumbnail}) {
+const DEMAND_LIMIT=2;
+
+export function createThumbnails({container,request,api,metadataRequest,createStoryboard,locate,readStill=readFragmentStill,readFrame=readThumbnail}) {
  let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,decoding=Promise.resolve(),release=()=>{};
  function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
- function clear(){cancel();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;release();container.replaceChildren();}
+ function clear(){cancel();demands.abort();demands=new AbortController();wanted=null;seen.clear();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;release();container.replaceChildren();}
  // Video extraction competes with the main picture; platform images do not.
  async function decode(reader,sample,signal){
   let abort;
   try{await Promise.race([decoding,new Promise((_,reject)=>{abort=()=>reject(signal.reason);signal.addEventListener('abort',abort,{once:true});})]);}
   finally{signal.removeEventListener('abort',abort);}
-  signal.throwIfAborted();return readFrame(reader,sample,signal);
+  signal.throwIfAborted();
+  // Reading one fragment's opening is far cheaper than starting a player.
+  const place=sample.stream?.kind==='submission'?null:await Promise.resolve(locate?.(sample.time,signal)).catch(()=>null);
+  if(place)try{return await readStill(reader,place,{signal});}catch(error){signal.throwIfAborted();}
+  return readFrame(reader,sample,signal);
+ }
+ // Without platform images a drag decodes the position under the pointer. Newer
+ // positions replace older ones so a fast drag does not queue up its whole path.
+ let wanted=null,demanding=0,demands=new AbortController();
+ const seen=new Set();
+ function pump(){
+  while(demanding<DEMAND_LIMIT&&wanted!==null){
+   const slot=wanted,time=slot*FRAME_INTERVAL,reader=source,{signal}=demands;wanted=null;
+   if(seen.has(slot))continue;
+   const stream=streams.find(part=>time>=part.start_time-record.start&&time<part.end_time-record.start);
+   if(!stream)continue;
+   seen.add(slot);demanding++;
+   void reader.read({time,stream,local:time-(stream.start_time-record.start)},signal).catch(()=>{if(!signal.aborted)seen.delete(slot);}).finally(()=>{demanding--;pump();});
+  }
+ }
+ function frameUrl(time){
+  if(!source)return null;
+  const url=source.frameUrl(time);
+  if(source.decodes()&&!source.hasFrame(time)){wanted=Math.round(time/FRAME_INTERVAL);pump();}
+  return url;
  }
  async function render(samples,own,cells){
   const reader=source;await reader.prepare(samples,own.signal);let cursor=0;
@@ -98,6 +126,6 @@ export function createThumbnails({container,request,api,metadataRequest,createSt
    decoding=defer?new Promise(resolve=>{release=resolve;}):Promise.resolve();
    source=createThumbnailSource({record,api,request,metadataRequest,createStoryboard,readFrame:decode,onFrames});void source.warm(parts,center).catch(()=>{});},
   setStreams(parts,center=0){streams=parts;viewKey='';void source?.warm(parts,center).catch(()=>{});if(currentView)update(currentView);},
-  frameUrl:time=>source?.frameUrl(time)??null,
+  frameUrl,
   resume(){release();},update,clear};
 }

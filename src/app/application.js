@@ -22,6 +22,7 @@ import {parseSubmissionUrl} from '../domain/submission.js';
 import {createSubmissionPlayer} from '../media/submission-player.js';
 import {exportSubmission} from '../media/submission-export.js';
 import {RecordingPlan} from '../media/recording-plan.js';
+import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
 import {createPlayback,bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
@@ -79,11 +80,12 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   if(storyboard?.key!==submission.key){storyboard?.reader.dispose?.();storyboard={key:submission.key,reader:createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest,submission})};}
   return {...storyboard.reader,dispose(){}};
  }
- const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest,createStoryboard:({submission})=>storyboardFor(submission)});
+ const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest,createStoryboard:({submission})=>storyboardFor(submission),
+  locate:async(time,signal)=>recordingPlan?locateSegment(await recordingPlan.load(signal),record.start+time):null});
  const mediaApi={request:mediaRequest};
  const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{if(playerKind==='live')player.scrub(t);else player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(playerKind==='live')player.beginScrub();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>{if(playerKind==='live')player.endScrub();activePlayback()?.end({commit:!canceled});},onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
  const updater=createRecordingUpdater({api,onUpdate:applyStreams,
-  canRefresh:()=>ready&&record&&!isSubmission()&&page==='edit'&&!controller&&!$('panel').hidden&&!document.hidden&&!timeline.isInteracting()});
+  canRefresh:()=>ready&&record?.live&&page==='edit'&&!controller&&!$('panel').hidden&&!document.hidden&&!timeline.isInteracting()});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  function usePlayer(kind){
   if(playerKind===kind)return;
@@ -136,7 +138,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   updateControls({busy:Boolean(controller),ready,page,whole:$('wholeRecording').checked,submission:isSubmission(),stopping:fullFinishing||Boolean(fullStopController?.signal.aborted)});updateFeedback();}
 
  function showPage(next){page=next;for(const [id,value]of[['library','library'],['editPage','edit'],['offline','offline']])$(id).hidden=next!==value;$('body').scrollTop=next==='library'?libraryScroll:0;controls();}
- async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;if(kind==='export'){updater.stop();window.addEventListener('beforeunload',holdPage);}controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{window.removeEventListener('beforeunload',holdPage);controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(kind==='export'&&record&&!isSubmission()&&ready&&!$('panel').hidden)updater.start(record);if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
+ async function job(action,kind='load',details={}){if(controller)return;const own=new AbortController();const diagnostic=diagnostics.begin(details.action||kind,{pageUrl:readPageUrl(),record,...details});controller=own;jobKind=kind;if(kind==='export'){updater.stop();window.addEventListener('beforeunload',holdPage);}controls();try{await action(own.signal,diagnostic);}catch(e){diagnostic.fail(e,own.signal);own.abort();status(e.name==='AbortError'?'已停止。':e.message,e.name!=='AbortError');}finally{window.removeEventListener('beforeunload',holdPage);controller=null;jobKind=null;fullStopController=null;fullFinishing=false;controls();if(kind==='export'&&record?.live&&ready&&!$('panel').hidden)updater.start(record);if(pendingRoute){pendingRoute=false;if(!$('panel').hidden)void currentVideo();}}}
  // Refreshing or closing the page cannot resume an export.
  function holdPage(event){event.preventDefault();event.returnValue='';}
  function clearDownloads(){$('downloads').replaceChildren();}
@@ -186,7 +188,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   recordingController=new AbortController();recordingPlan=new RecordingPlan(mediaApi,streams,recordingController.signal);
   recordStreams=streams;segments=segmentBounds(record,streams,total);
   thumbnails.load(record,streams,{defer:true,center:record.live?total:0,onFrames:()=>player.refreshStill?.()});ready=true;selectSegment(record.live?segments.length-1:0);$('editPage').focus({preventScroll:true});
-  updater.start(record,{fresh:true});
+  updater.start(record);
  }
  function segmentBounds(owner,streams,total){
   // Only advertise generated footage, including when the last live segment
@@ -260,7 +262,6 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
     showSaved({...output,name:destination.name});
    }else{
     await ensureTemporarySpace(storage,estimate?estimateSelectionBytes(estimate,record.start,selection):0);
-    await updater.ensureFresh(record,signal);signal.throwIfAborted();
     const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===segmentIndex);
     await exportSelection(mediaApi,record,groups,selection,{signal,precise:exportMode==='precise',onProgress,
      createTemporary:options=>createTemporaryMedia({...options,storage}),
@@ -281,7 +282,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
    if(!saveFilePicker)throw new Error('当前浏览器未开放文件保存接口，请在 Chrome 的 HTTPS 页面使用整场下载。');
    const handle=await saveFilePicker({suggestedName:fileName(record,bounds.start,bounds.end,segments.length>1?`_整场_第${index+1}段`:'_整场'),types:[{description:'MP4 视频',accept:{'video/mp4':['.mp4']}}]});
    signal.throwIfAborted();player.pause();clearDownloads();status('正在下载整场并写入文件…');
-   diagnostic.stage('preparing');await updater.ensureFresh(record,signal);signal.throwIfAborted();const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
+   diagnostic.stage('preparing');const groups=(await recordingPlan.load(signal)).filter(group=>group.streamIndex===index);signal.throwIfAborted();
    fullStopController=new AbortController();controls();
    const result=await saveRecording(mediaApi,groups,handle,{signal,stopSignal:fullStopController.signal,onProgress:p=>{
     diagnostic.progress(p);
@@ -299,7 +300,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
     if(member!==selected||page!=='library'||$('panel').hidden)return;
     renderCards();showScheduleResult(libraries.get(selected)||result);
    }).catch(()=>{});
-  }else if(page==='edit'){enrichRecordType();if(ready&&record&&!isSubmission())updater.start(record);}}
+  }else if(page==='edit'){enrichRecordType();if(ready&&record?.live)updater.start(record);}}
  const close=()=>{updater.stop();timeline.stop();$('panel').hidden=true;scheduleController?.abort();if(playerKind==='submission'){player.suspend();thumbnails.clear();if(record)thumbnails.load(record,[]);submissionThumbnails=false;}else playback.cancel();};
  $('close').onclick=close;
  $('launcher').onclick=()=>{if(!launcherMoved)$('panel').hidden?void open():close();};

@@ -54,7 +54,7 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   scenario.timeline=new Proxy({getSelection:()=>({...scenario.selection}),getView:()=>({start:0,end:100}),isInteracting:()=>scenario.interacting,extend(end,options){scenario.extensions.push({end,...options});if(options.whole)scenario.selection.end=end;}},{get:(target,key)=>target[key]||(()=>{})});
   const timers=new Map();let timerId=0;
   scenario.windowEvents=[];const context={scenario,document,window:{addEventListener(name){scenario.windowEvents.push(`+${name}`);},removeEventListener(name){scenario.windowEvents.push(`-${name}`);}},URL,AbortController,DOMException,
-    innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout(fn,delay){if(delay<30000)return setTimeout(fn,delay);const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){if(!timers.delete(id))clearTimeout(id);}};
+    innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout(fn,delay){if(delay!==30000)return setTimeout(fn,delay);const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){if(!timers.delete(id))clearTimeout(id);}};
   runInNewContext(outputFiles[0].text,context);
   const requests=[];
   const diagnostics=createDiagnosticReporter({endpoint:'https://logs.example.com/v1/logs',version:'1.2.3',online:()=>true,id:()=>crypto.randomUUID(),request:options=>{requests.push(JSON.parse(options.data));options.onload({status:201});}});

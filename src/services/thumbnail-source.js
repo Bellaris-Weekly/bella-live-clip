@@ -1,4 +1,5 @@
 import {createSubmissionStoryboard} from './submission-storyboard.js';
+import {drawFitted} from '../shared/fit.js';
 
 // The platform's own editor never asks for live stills closer than this.
 export const FRAME_INTERVAL = 60;
@@ -35,17 +36,22 @@ export function loadImage(url, signal) {
 export function createThumbnailSource({record,api,request,metadataRequest=request,readFrame,
   createStoryboard=createSubmissionStoryboard,decode=blob=>createImageBitmap(blob),load=loadImage,
   makeCanvas=()=>document.createElement('canvas'),timeout=5000,onFrames=()=>{}}) {
-  const cache=new Map(),urls=new Map(),pending=new Map(),lifetime=new AbortController();
+  const cache=new Map(),urls=new Map(),pending=new Map(),blobs=[],lifetime=new AbortController();
   let failed=false;
   const storyboard=record.kind==='submission' ? createStoryboard({submission:record,metadataRequest,mediaRequest:request}) : null;
   // The newest position has no later grid point yet: never ask beyond the footage.
   const slotOf=sample=>Math.min(Math.round(sample.time/FRAME_INTERVAL),Math.floor((sample.stream.end_time-record.start)/FRAME_INTERVAL));
   // Signed URLs change on each live refresh; a frame's session/time does not.
   const key=sample=>`${sample.stream?.start_time??record.key}:${sample.local}`;
+  function canvasFor(draw,width,height) {
+    const canvas=makeCanvas();canvas.width=160;canvas.height=90;
+    const context=canvas.getContext('2d');
+    drawFitted(context,(x,y,w,h)=>draw(context,x,y,w,h),width,height,160,90);
+    return canvas;
+  }
   function copy(source) {
     if(!source?.getContext)return source;
-    const canvas=makeCanvas();canvas.width=160;canvas.height=90;
-    canvas.getContext('2d').drawImage(source,0,0,160,90);return canvas;
+    return canvasFor((context,...rect)=>context.drawImage(source,...rect),source.width,source.height);
   }
   function remember(id,canvas) {
     cache.delete(id);cache.set(id,canvas);
@@ -130,7 +136,8 @@ export function createThumbnailSource({record,api,request,metadataRequest=reques
     return null;
   }
   async function drawImage(sample,signal) {
-    const url=urls.get(slotOf(sample))??frameUrl(sample.time);
+    // Once decoding, every position gets its own picture rather than a neighbor's.
+    const url=urls.get(slotOf(sample))??(failed?null:frameUrl(sample.time));
     if(!url)throw new Error('当前位置暂无平台预览图');
     let image;
     try{image=await limited(signal,child=>load(url,child));}
@@ -142,9 +149,17 @@ export function createThumbnailSource({record,api,request,metadataRequest=reques
     }
     try{
       signal.throwIfAborted();lifetime.signal.throwIfAborted();
-      const canvas=makeCanvas();canvas.width=160;canvas.height=90;
-      canvas.getContext('2d').drawImage(image,0,0,160,90);return canvas;
+      return canvasFor((context,...rect)=>context.drawImage(image,...rect),image.naturalWidth??image.width,image.naturalHeight??image.height);
     }finally{image.close?.();}
+  }
+  // Decoded stills also serve the large drag preview, which displays URLs.
+  function publish(sample,canvas) {
+    if(storyboard||!canvas?.toBlob)return;
+    const slot=slotOf(sample);
+    canvas.toBlob(blob=>{
+      if(!blob||lifetime.signal.aborted||urls.has(slot))return;
+      const url=URL.createObjectURL(blob);blobs.push(url);urls.set(slot,url);onFrames();
+    },'image/jpeg',.8);
   }
   async function read(sample,signal) {
     signal.throwIfAborted();lifetime.signal.throwIfAborted();
@@ -157,15 +172,19 @@ export function createThumbnailSource({record,api,request,metadataRequest=reques
       if(storyboard){
         const frame=await limited(signal,child=>storyboard.read(sample.local,child));
         signal.throwIfAborted();lifetime.signal.throwIfAborted();
-        canvas=makeCanvas();canvas.width=160;canvas.height=90;
-        canvas.getContext('2d').drawImage(frame.image,frame.x,frame.y,frame.width,frame.height,0,0,160,90);
+        canvas=canvasFor((context,...rect)=>context.drawImage(frame.image,frame.x,frame.y,frame.width,frame.height,...rect),frame.width,frame.height);
       }else canvas=await drawImage(sample,signal);
     }catch(error){
       signal.throwIfAborted();lifetime.signal.throwIfAborted();
       canvas=await readFrame(request,sample,signal);
+      publish(sample,canvas);
     }
     signal.throwIfAborted();lifetime.signal.throwIfAborted();
     remember(id,canvas);return copy(canvas);
   }
-  return {prepare,read,warm,frameUrl,dispose(){lifetime.abort();storyboard?.dispose();cache.clear();urls.clear();}};
+  return {prepare,read,warm,frameUrl,
+    // True when pictures must be decoded because the image service refused this account.
+    decodes:()=>!storyboard&&(failed||!api?.keyframes),
+    hasFrame:time=>urls.has(Math.round(time/FRAME_INTERVAL)),
+    dispose(){lifetime.abort();storyboard?.dispose();cache.clear();urls.clear();for(const url of blobs)URL.revokeObjectURL(url);}};
 }

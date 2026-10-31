@@ -24,6 +24,9 @@ const SETTLE_MS=160,UNSTILLED_SEEK_MS=250;
 // fragment again; the browser then drops the following frames until the next
 // keyframe, so the same fragments reload forever with no picture.
 const BOUNDARY_GAP=.1,RELOAD_LIMIT=3,RECOVERY_LIMIT=2;
+// Replay fragments are several megabytes. A paused preview only needs the one
+// holding its frame, while playback buffers ahead as usual.
+const PAUSED_BUFFER=2,PLAYING_BUFFER=12;
 
 export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},onStreams,HlsClass=Hls}) {
  let hls,record,streams=[],index=-1,generation=0,target=null,notified=false,attachedEnd=0;
@@ -62,7 +65,7 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   renewal?.abort();renewal=null;failed=false;
   const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;fragments=[];reloads=new Map();
   target=time;attachedEnd=streams[part].end_time;loading.hidden=false;
-  hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:12,maxMaxBufferLength:24,maxBufferHole:1,backBufferLength:15,startPosition:time});
+  hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:PAUSED_BUFFER,maxMaxBufferLength:24,maxBufferHole:1,backBufferLength:15,startPosition:time});
   hls.on(Hls.Events.ERROR,(_,data)=>{
    if(token!==generation||!data.fatal)return;
    if(data.type===Hls.ErrorTypes.NETWORK_ERROR&&!renewed){renewed=true;void renew(data);}else fail(data);
@@ -102,11 +105,14 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   if(!shown&&performance.now()-lastSeek>=UNSTILLED_SEEK_MS){commit();return;}
   settle=setTimeout(commit,shown?SETTLE_MS:UNSTILLED_SEEK_MS);
  }
+ const bufferFor=length=>()=>{if(hls?.config)hls.config.maxBufferLength=length;};
+ const bufferAhead=bufferFor(PLAYING_BUFFER),bufferOne=bufferFor(PAUSED_BUFFER);
  video.addEventListener('seeked',ready);video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);
+ video.addEventListener('play',bufferAhead);video.addEventListener('pause',bufferOne);
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
  video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
  function clear(){generation++;renewal?.abort();renewal=null;failed=false;renewed=false;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;scrubbing=false;scrubTime=null;clearTimeout(settle);settle=null;hideStill();}
- function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
+ function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.removeEventListener('play',bufferAhead);video.removeEventListener('pause',bufferOne);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
  function availableTotal(){return (record.live?streams.at(-1).end_time:record.end)-record.start;}
  function extend(next){
   // Ignore partial/regressing responses. Stable segment indices also keep the
@@ -119,6 +125,9 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   return {streams,total:availableTotal(),changed};
  }
  // A real still replaces the room cover as soon as the frame index reaches it.
- function refreshStill(){if(!notified&&record)showStill(frameUrl(target===null?0:offset()+target));}
+ function refreshStill(){
+  if(scrubTime!==null){if(showStill(frameUrl(scrubTime)))loading.hidden=true;}
+  else if(!notified&&record)showStill(frameUrl(target===null?0:offset()+target));
+ }
  return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在加载…';showStill(record.poster);const nextStreams=await api.clips(record,0,requestedEnd(),signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,reload(){if(failed)attach(index,Number.isFinite(target)?target:video.currentTime);},beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
 }

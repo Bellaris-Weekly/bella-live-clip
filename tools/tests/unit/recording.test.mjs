@@ -254,8 +254,19 @@ test('收尾期间页面硬取消仍中止事务，而正常收尾期间点击�
 });
 
 test('live growth updates estimate coverage while reusing existing segment rates without re-downloading sample media',async()=>{
- const reads=[],api={request:async url=>{reads.push(url);return {data:new ArrayBuffer(1000)};}};
+ const reads=[],api={request:async(url,{range})=>{reads.push(url);return {data:new ArrayBuffer(range.length),headers:'Content-Range: bytes 0-0/1000\r\n'};}};
  const first=await estimateRecordingRate(api,[{streamIndex:0,start:1000,segments:[{url:'old',duration:10}]}]);
  const updated=await estimateRecordingRate(api,[{streamIndex:0,start:1000,segments:[{url:'signed-old',duration:10},{url:'new',duration:10}]},{streamIndex:1,start:1030,segments:[{url:'reconnected',duration:10}]}],undefined,first);
  assert.deepEqual(reads,['old','reconnected']);assert.equal(estimateSelectionBytes(updated,1000,{start:0,end:40}),3000);
+});
+
+test('size sampling reads one byte, and only falls back to the whole fragment when it must',async()=>{
+ const requests=[];
+ const fragment=[{streamIndex:0,start:0,segments:[{url:'a',duration:4}]}];
+ const small={request:async(url,options)=>{requests.push(options.range?.length);return {data:new ArrayBuffer(1),headers:'content-range: bytes 0-0/8000'};}};
+ assert.equal((await estimateRecordingRate(small,fragment)).groups[0].rate,2000);assert.deepEqual(requests,[1]);
+ const noHeaders={request:async(url,options)=>({data:new ArrayBuffer(options.range?1:4000)})};
+ assert.equal((await estimateRecordingRate(noHeaders,fragment)).groups[0].rate,1000);
+ const rejected={request:async(url,options)=>{if(options.range)throw new Error('no ranges');return {data:new ArrayBuffer(4000)};}};
+ assert.equal((await estimateRecordingRate(rejected,fragment)).groups[0].rate,1000);
 });

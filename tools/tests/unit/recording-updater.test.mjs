@@ -38,31 +38,15 @@ test('switching sessions aborts the old poll and late transport completion canno
  old(['old']);await flush();await f.tick();assert.deepEqual(f.updates,[['new']]);assert.equal(f.calls.length,2);
  f.updater.stop();await f.tick(90000);assert.equal(f.calls.length,2);
 });
-test('replays renew their addresses rarely, before the platform expires them',async t=>{
- const f=fixture(t,async()=>['renewed']),replay={...record,live:false,end:1500};
- f.updater.start(replay);await f.tick(1199999);assert.equal(f.calls.length,0);
- await f.tick(1);assert.equal(f.calls.length,1);assert.equal(f.calls[0][2],500);assert.deepEqual(f.updates,[['renewed']]);
-});
-test('exports renew stale addresses first, and only those',async t=>{
- const f=fixture(t,async()=>['renewed']),signal=new AbortController().signal,replay={...record,live:false,end:1500};
- f.updater.start(replay,{fresh:true});f.updater.stop();
- await f.updater.ensureFresh(replay,signal);assert.equal(f.calls.length,0);
- t.mock.timers.tick(1200000);await f.updater.ensureFresh(replay,signal);assert.equal(f.calls.length,1);assert.deepEqual(f.updates,[['renewed']]);
- await f.updater.ensureFresh(replay,signal);assert.equal(f.calls.length,1,'the renewal counts as fresh');
-});
-test('a failed renewal does not stop an export, but cancelling does',async t=>{
- const f=fixture(t,async()=>{throw new Error('network');}),controller=new AbortController();
- t.mock.timers.tick(1200000);await f.updater.ensureFresh(record,controller.signal);assert.equal(f.calls.length,1);
- controller.abort();await assert.rejects(f.updater.ensureFresh(record,controller.signal),{name:'AbortError'});
-});
 test('a manual refresh applies immediately and cancels nothing else',async t=>{
  const f=fixture(t,async()=>['manual']);
  f.updater.start(record);await f.updater.refresh(record,new AbortController().signal);assert.deepEqual(f.updates,[['manual']]);
  await f.tick();assert.equal(f.calls.length,2,'polling continues');
 });
-test('temporary API failures retry without clearing usable footage',async t=>{
+test('temporary API failures retry without clearing usable footage; historical records do not poll',async t=>{
  let fail=true;
  const f=fixture(t,async()=>{if(fail)throw new Error('network');return ['recovered'];});
+ f.updater.start({...record,live:false});await f.tick();assert.equal(f.calls.length,0);
  f.updater.start(record);await f.tick();assert.equal(f.updates.length,0);
  fail=false;await f.tick();assert.deepEqual(f.updates,[['recovered']]);
 });

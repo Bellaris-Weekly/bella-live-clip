@@ -115,3 +115,22 @@ test('live growth retains cached frames across signed URL changes and fills newl
  strip.setStreams([{start_time:1000,end_time:1020,stream:'new-signed-url'}]);await wait();
  assert.deepEqual(reads,[1,3,5,7,9,11]);assert.equal(container.children.at(-1).children[0],'frame-11');strip.clear();
 });
+
+test('recording fragments supply stills without starting a player, and a player remains the fallback',async()=>{
+ const container=new Element(),located=[],read=[];let frames=0;
+ const strip=createThumbnails({container,locate:async time=>{located.push(time);return time<30?{segment:{url:'part'}}:null;},
+  readStill:async(_,place)=>{read.push(place.segment.url);return 'still';},readFrame:async()=>{frames++;return 'frame';}});
+ strip.load(record,[{start_time:1000,end_time:1060,stream:'a'}]);strip.update({start:0,end:60});await wait();
+ assert.equal(read.length,3);assert.equal(frames,3);assert.deepEqual(container.children[0].children,['still']);assert.deepEqual(container.children[5].children,['frame']);strip.clear();
+});
+test('a drag decodes only the newest position, two at a time, and never repeats one',async()=>{
+ const reads=[],flush=async()=>{for(let i=0;i<3;i++)await new Promise(resolve=>setImmediate(resolve));};
+ const strip=createThumbnails({container:new Element(),api:{keyframes:async()=>{throw new Error('权限不足');}},
+  readFrame:(_,sample)=>new Promise(resolve=>reads.push({sample,resolve}))});
+ strip.load({start:1000},[{start_time:1000,end_time:9000,stream:'a'}]);await flush();
+ for(const time of [60,120,180,240,300])strip.frameUrl(time);await flush();
+ assert.deepEqual(reads.map(read=>read.sample.time),[60,120],'the path in between is skipped');
+ reads[0].resolve('frame');await flush();
+ assert.deepEqual(reads.map(read=>read.sample.time),[60,120,300],'the free slot takes the newest position');
+ strip.frameUrl(60);strip.frameUrl(300);await flush();assert.equal(reads.length,3);strip.clear();
+});

@@ -47,7 +47,11 @@ async function respond(request, response) {
     return response.end('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"/>');
   }
   try {
-    response.end(await readFile(path.join(directory, path.basename(route))));
+    const body = await readFile(path.join(directory, path.basename(route)));
+    const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? '');
+    if (!range) return response.end(body);
+    response.writeHead(206);
+    response.end(body.subarray(Number(range[1]), Number(range[2]) + 1));
   } catch {
     response.writeHead(404).end();
   }
@@ -100,4 +104,16 @@ test('a drag shows stills, leaves the video alone and lands on the final positio
   assert.notEqual(result.framedAt, null);
   assert.equal(result.stillAfter, false, 'the decoded frame replaces the still');
   assert.ok(Math.abs(result.time - 28.3) < .2, `landed at ${result.time}`);
+});
+
+test('a fragment opening on a keyframe yields a real picture from its first media box', async () => {
+  const result = await inPage('fragmentStill', {segment: '/seg000.m4s'});
+  assert.equal(result.error, undefined);
+  assert.equal(result.width, 320);
+  assert.ok(result.brightness > 10, `brightness ${result.brightness}`);
+});
+
+test('a fragment opening mid-GOP is refused so the caller can fall back', async () => {
+  const result = await inPage('fragmentStill', {segment: '/seg001.m4s'});
+  assert.match(result.error, /关键帧/);
 });
