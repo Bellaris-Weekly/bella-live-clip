@@ -34,6 +34,15 @@ jobs:
       - name: Check built artifact is committed
         run: git diff --exit-code -- bella-live-clip.user.js
 
+      - name: Install browser test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          npx playwright-core install --with-deps chromium
+
+      - name: Browser tests
+        run: npm run test:e2e
+
   upload:
     needs: test
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
