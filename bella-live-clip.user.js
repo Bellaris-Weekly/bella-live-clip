@@ -5,7 +5,7 @@
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
-// @updateURL    https://share.bellaris.fans/bella-live-clip.meta.js
+// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js
 // @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。
 // @match        https://*.bilibili.com/*
 // @match        https://bilibili.com/*
@@ -37,7 +37,7 @@
 // @author       贝极星周报
 // @homepageURL  https://github.com/Bellaris-Weekly/bella-live-clip
 // @downloadURL  https://share.bellaris.fans/bella-live-clip.user.js
-// @updateURL    https://share.bellaris.fans/bella-live-clip.meta.js
+// @updateURL    https://share.bellaris.fans/bella-live-clip.user.js
 // @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。
 // @match        https://*.bilibili.com/*
 // @match        https://bilibili.com/*

@@ -10,7 +10,6 @@ const versions = {
   'package-lock.json root': lock.packages[''].version,
   'src/header.txt': read('src/header.txt').match(/^\/\/ @version\s+(\S+)/m)?.[1],
   'bella-live-clip.user.js': read('bella-live-clip.user.js').match(/^\/\/ @version\s+(\S+)/m)?.[1],
-  'bella-live-clip.meta.js': read('bella-live-clip.meta.js').match(/^\/\/ @version\s+(\S+)/m)?.[1],
   'README.md': read('README.md').match(/当前版本为\s*`([^`]+)`/)?.[1],
 };
 assert.match(pkg.version, /^\d+\.\d+\.\d+$/, '版本须为 x.y.z');
