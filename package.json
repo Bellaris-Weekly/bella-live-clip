@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "jsdom": "26.1.0",
     "wrangler": "4.151.1"
   },
   "license": "MIT",

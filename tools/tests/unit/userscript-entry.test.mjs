@@ -7,20 +7,25 @@ import {build} from 'esbuild';
 // Exercise the real entry point, replacing only application startup and network setup.
 const {outputFiles}=await build({entryPoints:['src/main.js'],bundle:true,write:false,format:'iife',loader:{'.txt':'text'},plugins:[{
   name:'entry-dependencies',setup(build){
-    build.onResolve({filter:/^\.\/(app\/application|services\/bilibili)\.js$/},args=>({path:args.path,namespace:'stub'}));
+    build.onResolve({filter:/^\.\/(app\/application|app\/live-screenshot|services\/bilibili)\.js$/},args=>({path:args.path,namespace:'stub'}));
     build.onLoad({filter:/.*/,namespace:'stub'},args=>({contents:args.path.includes('application')
       ? 'export function createApp(options){globalThis.appOptions=options;return {open(){}};}'
+      : args.path.includes('live-screenshot')
+      ? 'export function startLiveScreenshot(doc){globalThis.screenshotDocument=doc;}'
       : 'export class BiliApi{};export function createRequest(){};'}));
   },
 }]});
 
-function start(pageWindow,sandboxWindow={}){
+function startContext(pageWindow,sandboxWindow={},hostname='www.bilibili.com'){
+  sandboxWindow.top ??= sandboxWindow;
   pageWindow.fetch ??= () => { throw new Error("Unexpected page fetch"); };
-  const context={navigator:{userAgent:'test'},URL,AbortController,setTimeout,clearTimeout,unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
+  const context={location:{hostname},navigator:{userAgent:'test'},URL,AbortController,setTimeout,clearTimeout,unsafeWindow:pageWindow,window:sandboxWindow,document:{getElementById:()=>null},
     GM_xmlhttpRequest(){},GM_getValue(){},GM_setValue(){},GM_registerMenuCommand(){}};
   runInNewContext(outputFiles[0].text,context);
-  return context.appOptions;
+  return context;
 }
+
+function start(pageWindow,sandboxWindow={}) { return startContext(pageWindow,sandboxWindow).appOptions; }
 
 test('userscript declares access to the real page window',()=>{
   assert.match(readFileSync(new URL('../../../src/header.txt',import.meta.url),'utf8'),/^\/\/ @grant\s+unsafeWindow\s*$/m);
@@ -77,4 +82,18 @@ test('OPFS keeps its native storage receiver and the userscript no longer asks f
   const storage = { async getDirectory() { assert.equal(this, storage); return 'opfs'; } };
   const options = start({ navigator: { storage }, showDirectoryPicker() { assert.fail('directory picker'); } }, {});
   assert.equal(await options.storage.getDirectory(), 'opfs'); assert.equal('directoryPicker' in options, false);
+});
+
+
+test('live iframe starts only screenshots, while top pages retain the editor', () => {
+  const top = startContext({}, {}, 'live.bilibili.com');
+  assert.equal(top.screenshotDocument, top.document);
+  assert.ok(top.appOptions);
+  const frame = startContext({}, {top: {}}, 'live.bilibili.com');
+  assert.equal(frame.screenshotDocument, frame.document);
+  assert.equal(frame.appOptions, undefined);
+  const ordinaryFrame = startContext({}, {top: {}}, 'www.bilibili.com');
+  assert.equal(ordinaryFrame.screenshotDocument, undefined);
+  assert.equal(ordinaryFrame.appOptions, undefined);
+  assert.doesNotMatch(readFileSync(new URL('../../../src/header.txt', import.meta.url), 'utf8'), /^\/\/ @noframes/m);
 });

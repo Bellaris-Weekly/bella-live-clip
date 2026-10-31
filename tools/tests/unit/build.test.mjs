@@ -37,7 +37,8 @@ test('compressed single script keeps licenses, initializes dependencies and supp
   assert.equal(metadata.updateURL, metadata.downloadURL);
   assert.match(script, /MPL-2\.0/);assert.match(script, /Apache-2\.0/);
   // Evaluate the actual minified artifact, with an existing host to skip DOM/UI startup.
-  runInNewContext(script, {document:{getElementById:()=>({})},setTimeout,clearTimeout,TextEncoder,TextDecoder}, {timeout:1000});
+  const window = {}; window.top = window;
+  runInNewContext(script, {window,location:{hostname:'www.bilibili.com'},document:{getElementById:()=>({})},setTimeout,clearTimeout,TextEncoder,TextDecoder}, {timeout:1000});
 });
 
 test('release artifact includes only public endpoint and exact connect permission', async () => {

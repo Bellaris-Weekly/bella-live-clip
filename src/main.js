@@ -4,7 +4,11 @@ import {createDiagnosticReporter} from './services/diagnostics.js';
 import { createApp } from './app/application.js';
 import { BiliApi, createRequest } from './services/bilibili.js';
 import {createSubmissionRequest} from './services/submission-request.js';
-if (!document.getElementById('bella-live-clip-host')) {
+import {startLiveScreenshot} from './app/live-screenshot.js';
+
+if (location.hostname === 'live.bilibili.com') startLiveScreenshot(document);
+
+if (window.top === window && !document.getElementById('bella-live-clip-host')) {
   const diagnostics = createDiagnosticReporter({endpoint: typeof __LOG_SERVICE_ENDPOINT__ === 'string' ? __LOG_SERVICE_ENDPOINT__ : '',
     request: GM_xmlhttpRequest, version: readScriptMetadata(metadataText).version, userAgent: navigator.userAgent});
   const app = createApp({ diagnostics, api: new BiliApi(createRequest(GM_xmlhttpRequest), {
