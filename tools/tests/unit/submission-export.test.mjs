@@ -233,3 +233,24 @@ for (const precise of [false, true]) test(`投稿 ${precise ? '精确' : '原画
   try { assert.equal(await input.computeDuration(), 4); assert.ok(await input.getPrimaryAudioTrack()); assert.ok(await input.getPrimaryVideoTrack()); }
   finally { input.dispose(); }
 });
+
+test('第一次读取确定文件大小后，没有响应头的直连读取也能完成投稿导出', async () => {
+  const calls = [], read = transport({ video: await fixture('combined') }, calls);
+  const request = async (url, options) => {
+    const response = await read(url, options);
+    return options.needHeaders ? response : { data: response.data };
+  };
+  const blob = await exportSubmission(request, submission(true), { start: 2, end: 6 });
+  assert.ok(blob.size > 0);
+  assert.equal(calls[0].needHeaders, true, '首次读取必须走能看到响应头的通道');
+  assert.ok(calls.slice(1).every(options => !options.needHeaders));
+});
+
+test('直连读取返回的长度不对时停止，不把错误字节交给解封装', async () => {
+  const read = transport({ video: await fixture('combined') });
+  const request = async (url, options) => {
+    const response = await read(url, options);
+    return options.needHeaders ? response : { data: response.data.slice(0, 1) };
+  };
+  await assert.rejects(exportSubmission(request, submission(true), { start: 2, end: 6 }), /字节范围不一致/);
+});

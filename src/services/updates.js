@@ -21,6 +21,8 @@ export function readScriptMetadata(text) {
   return { version, namespace: value('namespace'), updateURL: value('updateURL'), downloadURL: value('downloadURL') };
 }
 
+const METADATA_RANGE = { offset: 0, length: 8192 };
+
 export function createUpdateChecker({ request, metadata, now = Date.now }) {
   let pending;
   return function check() {
@@ -30,7 +32,9 @@ export function createUpdateChecker({ request, metadata, now = Date.now }) {
       try {
         const url = new URL(metadata.updateURL);
         url.searchParams.set('_check', String(now()));
-        const { data } = await request(url.href, { auth: false });
+        // The script is a megabyte; its metadata block is the first few hundred bytes.
+        const { data } = await request(url.href, { auth: false, range: METADATA_RANGE })
+          .catch(() => request(url.href, { auth: false }));
         const latest = readScriptMetadata(data);
         if (latest.namespace !== metadata.namespace) throw new Error('更新源返回了其他脚本');
         result = { status: isNewerVersion(latest.version, metadata.version) ? 'available' : 'current', version: latest.version };

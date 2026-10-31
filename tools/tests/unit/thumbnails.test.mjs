@@ -98,6 +98,15 @@ test('延迟期间连续换选区只生成最终目标的六张图',async()=>{
  assert.deepEqual(reads,[40.5,41.5,42.5,43.5,44.5,45.5]);strip.clear();
 });
 
+test('platform stills do not wait for the first video frame; decoding does',async()=>{
+ const container=new Element(),keyframes=[];let decodes=0;
+ const strip=createThumbnails({container,api:{keyframes:async(_,times)=>{keyframes.push(times);return [];}},readFrame:async()=>{decodes++;return 'frame';}});
+ strip.load({start:1000},[{start_time:1000,end_time:1600,stream:'a'}],{defer:true});
+ strip.update({start:0,end:600});await wait();
+ assert.ok(keyframes.length>0);assert.equal(decodes,0);
+ strip.resume();await wait();assert.equal(decodes,6);strip.clear();
+});
+
 test('live growth retains cached frames across signed URL changes and fills newly recorded positions',async()=>{
  const container=new Element(),reads=[];
  const strip=createThumbnails({container,readFrame:async(_,sample)=>{reads.push(sample.time);return `frame-${sample.time}`;}});

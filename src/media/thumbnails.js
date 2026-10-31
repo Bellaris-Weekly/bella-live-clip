@@ -17,7 +17,7 @@ export async function readThumbnail(request,sample,signal) {
  if(sample.stream.kind==='submission')return readSubmissionThumbnail(request,sample.stream,sample.local,signal);
  signal.throwIfAborted();
  const video=document.createElement('video');video.muted=true;video.playsInline=true;
- const hls=new Hls({loader:makeHlsLoader(request),enableWorker:false,startPosition:sample.local,maxBufferLength:2,maxMaxBufferLength:2,backBufferLength:0});
+ const hls=new Hls({loader:makeHlsLoader(request),enableWorker:false,startPosition:sample.local,maxBufferLength:1,maxMaxBufferLength:2,backBufferLength:0});
  let timer,abort;
  try {
   return await new Promise((resolve,reject)=>{
@@ -40,9 +40,16 @@ export async function readThumbnail(request,sample,signal) {
 }
 
 export function createThumbnails({container,request,api,metadataRequest,readFrame=readThumbnail}) {
- let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,suspended=false,pendingWork;
- function cancel(){clearTimeout(timer);pendingWork=null;ready=null;controller?.abort();controller=null;}
- function clear(){cancel();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;suspended=false;container.replaceChildren();}
+ let record,source,streams=[],viewKey='',controller,timer,displayView,currentView,moving=false,ready,decoding=Promise.resolve(),release=()=>{};
+ function cancel(){clearTimeout(timer);ready=null;controller?.abort();controller=null;}
+ function clear(){cancel();source?.dispose();source=null;record=null;streams=[];viewKey='';displayView=null;currentView=null;moving=false;release();container.replaceChildren();}
+ // Video extraction competes with the main picture; platform images do not.
+ async function decode(reader,sample,signal){
+  let abort;
+  try{await Promise.race([decoding,new Promise((_,reject)=>{abort=()=>reject(signal.reason);signal.addEventListener('abort',abort,{once:true});})]);}
+  finally{signal.removeEventListener('abort',abort);}
+  signal.throwIfAborted();return readFrame(reader,sample,signal);
+ }
  async function render(samples,own,cells){
   const reader=source;await reader.prepare(samples,own.signal);let cursor=0;
   await Promise.all(Array.from({length:2},async()=>{
@@ -81,14 +88,16 @@ export function createThumbnails({container,request,api,metadataRequest,readFram
   const samples=thumbnailSamples(record,streams,target);
   const cells=samples.map(()=>{const cell=container.ownerDocument.createElement('div');cell.className='thumbnail';cell.textContent='…';return cell;});
   if(!displayView){container.replaceChildren(...cells);displayView={...target};project();}
-  const work=()=>{timer=setTimeout(async()=>{
+  timer=setTimeout(async()=>{
    ready={cells,view:{...target}};
    try{await render(samples,own,cells);}catch(error){if(own.signal.aborted)return;}
    if(!own.signal.aborted)publish();
-  },200);};
-  if(suspended)pendingWork=work;else work();
+  },200);
  }
- return {load(next,parts,{defer=false}={}){clear();record=next;streams=parts;suspended=defer;source=createThumbnailSource({record,api,request,metadataRequest,readFrame});},
-  setStreams(parts){streams=parts;viewKey='';if(currentView)update(currentView);},
-  resume(){suspended=false;const work=pendingWork;pendingWork=null;work?.();},update,clear};
+ return {load(next,parts,{defer=false,onFrames,center=0}={}){clear();record=next;streams=parts;
+   decoding=defer?new Promise(resolve=>{release=resolve;}):Promise.resolve();
+   source=createThumbnailSource({record,api,request,metadataRequest,readFrame:decode,onFrames});void source.warm(parts,center).catch(()=>{});},
+  setStreams(parts,center=0){streams=parts;viewKey='';void source?.warm(parts,center).catch(()=>{});if(currentView)update(currentView);},
+  frameUrl:time=>source?.frameUrl(time)??null,
+  resume(){release();},update,clear};
 }

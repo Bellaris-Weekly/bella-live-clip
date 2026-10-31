@@ -16,34 +16,75 @@ export function makeHlsLoader(request) {
  };
 }
 
-export function createPlayer({video,loading,api,status,onTime,onError=()=>{},onReady=()=>{},HlsClass=Hls}) {
+// Only the settled position is decoded. Every seek restarts sequential fragment
+// loading, so a drag shows platform stills and seeks when the pointer rests.
+const SETTLE_MS=160,UNSTILLED_SEEK_MS=250;
+// A fragment's first frame sits slightly after its nominal start, and most
+// fragments begin mid-GOP. Positioned inside that gap, hls.js appends the
+// fragment again; the browser then drops the following frames until the next
+// keyframe, so the same fragments reload forever with no picture.
+const BOUNDARY_GAP=.1,RELOAD_LIMIT=3,RECOVERY_LIMIT=2;
+
+export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},HlsClass=Hls}) {
  let hls,record,streams=[],index=-1,generation=0,target=null,notified=false,attachedEnd=0;
+ let scrubbing=false,scrubTime=null,settle=null,lastSeek=0;
+ let fragments=[],reloads=new Map(),recoveries=0;
  const offset=()=>streams[index] ? streams[index].start_time-record.start : 0;
+ function showStill(url){if(!still||!url)return false;if(still.getAttribute('src')!==url)still.setAttribute('src',url);still.hidden=false;return true;}
+ function hideStill(){if(still&&!still.hidden)still.hidden=true;}
+ function waiting(text){loading.textContent=text;loading.hidden=false;}
+ function clearBoundary(local){
+  const frag=fragments.find(({start,duration})=>local>=start&&local<start+duration);
+  return frag&&frag.start>0&&local-frag.start<BOUNDARY_GAP?frag.start+Math.min(BOUNDARY_GAP,frag.duration/2):local;
+ }
+ function recover(){
+  if(recoveries++>=RECOVERY_LIMIT){hls.stopLoad();waiting('这个位置暂时无法预览，请换个位置');return;}
+  attach(index,(Number.isFinite(target)?target:video.currentTime)+BOUNDARY_GAP);
+ }
  function attach(part,time=0){
-  const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;
+  const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;fragments=[];reloads=new Map();
   target=time;attachedEnd=streams[part].end_time;loading.hidden=false;
-  hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:20,maxMaxBufferLength:40,backBufferLength:15,startPosition:time});
+  hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:12,maxMaxBufferLength:24,maxBufferHole:1,backBufferLength:15,startPosition:time});
   hls.on(Hls.Events.ERROR,(_,data)=>{if(token===generation&&data.fatal){onError(new Error(`录像预览失败：${data.type} / ${data.details}`));loading.textContent='预览暂不可用，请刷新重试';status('录像预览失败，请刷新重试。',true);}});
   hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
+  hls.on(Hls.Events.LEVEL_LOADED,(_,{details})=>{
+   if(token!==generation)return;
+   fragments=details.fragments;
+   const safe=Number.isFinite(target)?clearBoundary(target):target;
+   if(safe!==target){target=safe;video.currentTime=safe;hls.startLoad(safe);}
+  });
+  hls.on(Hls.Events.FRAG_LOADED,(_,{frag})=>{
+   if(token!==generation||typeof frag.sn!=='number')return;
+   const count=(reloads.get(frag.sn)||0)+1;reloads.set(frag.sn,count);
+   if(count>RELOAD_LIMIT)recover();
+  });
   hls.loadSource(streams[index].stream);hls.attachMedia(video);
  }
  function seek(time){
-  video.pause();
+  video.pause();lastSeek=performance.now();reloads.clear();recoveries=0;
   // Prefer the loaded stream so a time on a shared boundary does not reload the previous one.
   const contains=p=>time>=p.start_time-record.start&&time<=p.end_time-record.start;
   const found=streams[index]&&contains(streams[index])?index:streams.findIndex(contains);
-  if(found<0){target=NaN;loading.hidden=false;loading.textContent='该位置没有录像';return;}
-  const local=clamp(time-(streams[found].start_time-record.start),0,Math.max(0,streams[found].end_time-streams[found].start_time-.001));
-  loading.textContent='正在定位画面…';loading.hidden=false;
+  if(found<0){target=NaN;hideStill();waiting('该位置没有录像');return;}
+  const local=clearBoundary(clamp(time-(streams[found].start_time-record.start),0,Math.max(0,streams[found].end_time-streams[found].start_time-.001)));
+  waiting('正在定位画面…');
   // Keep buffered playback untouched during a background update. Only replace
   // its old snapshot when the user seeks into newly available footage.
   if(!hls||found!==index||time+record.start>=attachedEnd&&streams[found].end_time>attachedEnd)attach(found,local);else{target=local;video.currentTime=local;}
  }
- function ready(){if(hls&&(target===null||Math.abs(video.currentTime-target)<.12)&&video.readyState>=2&&!video.seeking){target=null;loading.hidden=true;if(!notified){notified=true;onReady(record);}}}
+ function ready(){if(hls&&(target===null||Math.abs(video.currentTime-target)<.12)&&video.readyState>=2&&!video.seeking){target=null;loading.hidden=true;if(settle===null)hideStill();if(!notified){notified=true;onReady(record);}}}
+ function commit(){clearTimeout(settle);settle=null;if(scrubTime===null)return;const time=scrubTime;scrubTime=null;seek(time);if(!scrubbing)ready();}
+ function scrub(time){
+  scrubTime=time;const shown=showStill(frameUrl(time));
+  if(shown)loading.hidden=true;
+  clearTimeout(settle);settle=null;
+  if(!shown&&performance.now()-lastSeek>=UNSTILLED_SEEK_MS){commit();return;}
+  settle=setTimeout(commit,shown?SETTLE_MS:UNSTILLED_SEEK_MS);
+ }
  video.addEventListener('seeked',ready);video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
  video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
- function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;}
+ function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;scrubbing=false;scrubTime=null;clearTimeout(settle);settle=null;hideStill();}
  function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
  function availableTotal(){return (record.live?streams.at(-1).end_time:record.end)-record.start;}
  function extend(next){
@@ -56,5 +97,7 @@ export function createPlayer({video,loading,api,status,onTime,onError=()=>{},onR
   streams=next;
   return changed?{streams,total:availableTotal()}:null;
  }
- return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,pause:()=>video.pause(),position:()=>offset()+video.currentTime};
+ // A real still replaces the room cover as soon as the frame index reaches it.
+ function refreshStill(){if(!notified&&record)showStill(frameUrl(target===null?0:offset()+target));}
+ return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';showStill(record.poster);const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
 }

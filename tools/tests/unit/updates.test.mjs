@@ -43,6 +43,19 @@ test('each completed check requests fresh metadata, even within the same millise
   await f.check(); assert.equal(f.calls,3);
 });
 
+test('checks read only the metadata block and survive servers without range support', async () => {
+  const ranges = [];
+  const f = fixture(async (url, options) => {
+    ranges.push(options.range);
+    if (options.range && ranges.length === 1) throw new Error('range unsupported');
+    return {data:script('99.0.0')};
+  });
+  assert.equal((await f.check()).version,'99.0.0');
+  assert.deepEqual(ranges,[{offset:0,length:8192},undefined]);
+  assert.equal((await f.check()).version,'99.0.0');
+  assert.deepEqual(ranges[2],{offset:0,length:8192});
+});
+
 test('concurrent checks share a request; a failed check can retry immediately', async () => {
   let resolve;
   const f = fixture(() => new Promise(done => { resolve=done; }));

@@ -18,7 +18,7 @@ test('成员配置与回放转换保留 UID、直播间和姓名',()=>{
   const member=MEMBERS.find(item=>item.id===id);
   assert.deepEqual(member,{id,uid,room,name,color});
   assert.deepEqual(recordFromReplay({live_key:'987654321098765432',start_time:100,end_time:200,room_id:room,live_info:{title:'回放'}},member),{
-   key:'987654321098765432',title:'回放',start:100,end:200,live:false,uid,member:name,room,
+   key:'987654321098765432',title:'回放',start:100,end:200,live:false,uid,member:name,room,poster:null,
   });
  }
 });

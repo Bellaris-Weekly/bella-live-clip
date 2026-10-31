@@ -34,7 +34,7 @@ import {MEMBERS,roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration,formatTimeRange,formatDate,formatBytes} from '../shared/format.js';
 
-export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,storage=globalThis.navigator?.storage}){
+export function createApp({api,diagnostics=createDiagnosticReporter(),submissionRequest=api.request,mediaRequest=api.request,get=(_,fallback)=>fallback,set=()=>{},pageUrl=()=>location.href,saveFilePicker=typeof window.showSaveFilePicker==='function'?window.showSaveFilePicker.bind(window):null,storage=globalThis.navigator?.storage}){
  const host=document.createElement('div');host.id='bella-live-clip-host';const root=host.attachShadow({mode:'open'});root.innerHTML=`<style>${css}</style>${html}`;document.documentElement.append(host);
  const $=id=>root.getElementById(id),video=$('fullVideo');
  const readPageUrl=typeof pageUrl==='function'?pageUrl:()=>pageUrl;
@@ -73,20 +73,21 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
  const playback=createPlayback(video,status,{getRange:()=>ready?timeline.getSelection():null,position:()=>player?.position()??0,seek:seekTo});
  const activePlayback=()=>playerKind==='submission'?player:playback;
  bindVideoControls(video,playback,status);
- const thumbnails=createThumbnails({container:$('thumbnails'),request:api.request,api,metadataRequest:submissionRequest});
- const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>activePlayback()?.end({commit:!canceled}),onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
+ const thumbnails=createThumbnails({container:$('thumbnails'),request:mediaRequest,api,metadataRequest:submissionRequest});
+ const mediaApi={request:mediaRequest};
+ const timeline=createTimeline({track:$('timeline'),startHandle:$('startHandle'),endHandle:$('endHandle'),selectionElement:$('selection'),playhead:$('playhead'),ticks:$('ticks'),labels:$('timelineLabels'),onPreview:t=>{if(playerKind==='live')player.scrub(t);else player?.seek(t);updateClock(t);},onScrubStart:()=>{activePlayback()?.begin();if(playerKind==='live')player.beginScrub();if(isSubmission()){submissionThumbnails=true;thumbnails.update(timeline.getView());}},onScrubEnd:(_,{canceled=false}={})=>{if(playerKind==='live')player.endScrub();activePlayback()?.end({commit:!canceled});},onSelection:selection=>{updateExportSummary(selection);activePlayback()?.check();},onView:(view,motion)=>{$('timelineZoom').textContent=$('timeline').dataset.zoom;if(!isSubmission()||submissionThumbnails)thumbnails.update(view,motion);}});
  const liveUpdater=createLiveRecordingUpdater({api,onUpdate:extendLiveRecording,
   canRefresh:()=>ready&&record?.live&&page==='edit'&&!controller&&!$('panel').hidden&&!document.hidden&&!timeline.isInteracting()});
  const updateClock=t=>{$('clock').textContent=formatTimeRange(t,playbackTotal,' / ');};
  function usePlayer(kind){
   if(playerKind===kind)return;
   player?.destroy();playerKind=kind;
-  const options={video,loading:$('videoLoading'),api,request:api.request,status,onReady:owner=>{if(owner.key===record?.key)startBackgroundPreview();},onError:error=>{previewDiagnostic?.fail(error,recordingController?.signal);startBackgroundPreview();},onTime:t=>{timeline.setCurrent(t);updateClock(t);}};
+  const options={video,loading:$('videoLoading'),still:$('videoStill'),frameUrl:t=>thumbnails.frameUrl(t),api:{...mediaApi,clips:(...args)=>api.clips(...args)},request:mediaRequest,status,onReady:owner=>{if(owner.key===record?.key)startBackgroundPreview();},onError:error=>{previewDiagnostic?.fail(error,recordingController?.signal);startBackgroundPreview();},onTime:t=>{timeline.setCurrent(t);updateClock(t);}};
   video.hidden=kind==='submission';$('pageMirror').hidden=kind!=='submission';
   player=kind==='submission'?createSubmissionPlayer({...options,canvas:$('pageMirror'),
    getVideo:()=>document.querySelector('.bpx-player-container video, .bilibili-player-video video')??document.querySelector('video'),
    isCurrent:()=>parseSubmissionUrl(readPageUrl())?.key===loadedRoute,getRange:()=>timeline.getSelection(),onState:()=>syncPlayback(),
-   createPreview:submission=>createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest:api.request,submission})}):createPlayer(options);
+   createPreview:submission=>createSubmissionStoryboard({metadataRequest:submissionRequest,mediaRequest,submission})}):createPlayer(options);
  }
  let lastPlaybackPaused;
  const syncPlayback=()=>{const paused=playerKind==='submission'?player.isPaused():video.paused||video.ended;if(paused===lastPlaybackPaused)return;lastPlaybackPaused=paused;$('togglePlayback').innerHTML=icon(paused?'play':'pause');$('togglePlayback').setAttribute('aria-label',paused?'播放':'暂停');$('togglePlayback').title=paused?'播放':'暂停';};
@@ -100,7 +101,7 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   $('estimatedSize').textContent=estimate ? `约 ${formatBytes(estimateSelectionBytes(estimate,record.start,range))}` : estimateState==='error'?'大小暂不可用':'大小计算中…';
  }
  function startEstimate(plan,signal,previous){
-  void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(api,groups,signal,previous);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
+  void (async()=>{try{const groups=await plan.load();const result=await estimateRecordingRate(mediaApi,groups,signal,previous);signal.throwIfAborted();estimate=result;updateExportSummary();}catch(e){if(!signal.aborted){estimateState='error';updateExportSummary();}}})();
  }
  function startBackgroundPreview(){
   if(backgroundStarted||!ready||isSubmission()||!recordingPlan)return;
@@ -111,9 +112,9 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   const previousEstimate=estimate;
   recordingController?.abort();recordingController=new AbortController();
   recordStreams=next.streams;playbackTotal=next.total;segments=segmentBounds(record,recordStreams,playbackTotal);
-  recordingPlan=new RecordingPlan(api,recordStreams,recordingController.signal);
+  recordingPlan=new RecordingPlan(mediaApi,recordStreams,recordingController.signal);
   estimate=null;estimateState='loading';
-  thumbnails.setStreams(recordStreams);
+  thumbnails.setStreams(recordStreams,player.position());
   timeline.extend(segments[segmentIndex].end,{whole:$('wholeRecording').checked});
   renderSegments();updateClock(player.position());updateExportSummary();
   if(backgroundStarted)startEstimate(recordingPlan,recordingController.signal,previousEstimate);
@@ -173,9 +174,9 @@ export function createApp({api,diagnostics=createDiagnosticReporter(),submission
   usePlayer('live');record=next;previewDiagnostic=diagnostics.begin('preview',{pageUrl:readPageUrl(),record:next});loadedRoute=null;showPage('edit');setTitle($('recordTitle'),record.title);renderRecordMeta();enrichRecordType();
   status('正在载入整场录像…');const {total,streams}=await player.load(record,signal);
   playbackTotal=total;updateClock(0);
-  recordingController=new AbortController();recordingPlan=new RecordingPlan(api,streams,recordingController.signal);
+  recordingController=new AbortController();recordingPlan=new RecordingPlan(mediaApi,streams,recordingController.signal);
   recordStreams=streams;segments=segmentBounds(record,streams,total);
-  thumbnails.load(record,streams,{defer:true});ready=true;selectSegment(record.live?segments.length-1:0);$('editPage').focus({preventScroll:true});
+  thumbnails.load(record,streams,{defer:true,center:record.live?total:0,onFrames:()=>player.refreshStill?.()});ready=true;selectSegment(record.live?segments.length-1:0);$('editPage').focus({preventScroll:true});
   status('按住时间轴预览；松开选区边界后自动适配视野。');
   liveUpdater.start(record);
  }

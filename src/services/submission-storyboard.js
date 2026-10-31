@@ -55,15 +55,18 @@ export function createSubmissionStoryboard({metadataRequest,mediaRequest,submiss
   })().catch(error=>{if(sheets.get(url)===entry)sheets.delete(url);throw error;});
   return entry.pending;
  }
+ async function read(time,signal){
+  signal.throwIfAborted();lifetime.signal.throwIfAborted();
+  const cell=storyboardCell(await wait(getMetadata(),signal),time);
+  const image=await wait(getSheet(cell.url),signal);
+  // Some CDN image variants scale the whole sheet; crop by the actual grid.
+  const width=image.width/cell.columns,height=image.height/cell.rows;
+  return {image,x:cell.x/cell.width*width,y:cell.y/cell.height*height,width,height};
+ }
  return {
-  async read(time,signal){
-   signal.throwIfAborted();lifetime.signal.throwIfAborted();
-   const cell=storyboardCell(await wait(getMetadata(),signal),time);
-   const image=await wait(getSheet(cell.url),signal);
-   // Some CDN image variants scale the whole sheet; crop by the actual grid.
-   const width=image.width/cell.columns,height=image.height/cell.rows;
-   return {image,x:cell.x/cell.width*width,y:cell.y/cell.height*height,width,height};
-  },
+  read,
+  // The first drag should not also pay for the preview index and its image sheet.
+  warm(time){void read(time,lifetime.signal).catch(()=>{});},
   dispose(){lifetime.abort();for(const entry of sheets.values())release(entry);sheets.clear();},
  };
 }

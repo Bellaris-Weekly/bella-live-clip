@@ -9,7 +9,7 @@ test('整场播放器加载分片字节区间并返回计量',async()=>{
  loader.destroy();assert.equal(loader.stats.aborted,true);
 });
 
-function playerFixture(clips){
+function playerFixture(clips,options={}){
  const instances=[],shown=[];
  class FakeHls {
   constructor(config){this.config=config;this.events=new Map();instances.push(this);}
@@ -17,10 +17,12 @@ function playerFixture(clips){
   loadSource(url){this.url=url;}
   attachMedia(video){this.video=video;}
   destroy(){this.destroyed=true;}
+  startLoad(position){(this.starts??=[]).push(position);}
+  stopLoad(){this.stopped=true;}
  }
  const video=new EventTarget();Object.assign(video,{currentTime:0,readyState:0,seeking:false,pause(){},removeAttribute(){},load(){this.currentTime=0;}});
  const loading={hidden:true};
- const player=createPlayer({video,loading,api:{clips,request(){}},status(){},onTime(){},onReady:owner=>shown.push(owner),HlsClass:FakeHls});
+ const player=createPlayer({video,loading,api:{clips,request(){}},status(){},onTime(){},onReady:owner=>shown.push(owner),HlsClass:FakeHls,...options});
  return {player,video,loading,instances,shown};
 }
 
@@ -93,4 +95,82 @@ test('partial, reordered, overlapping or regressing live responses never shrink 
  const f=playerFixture(async()=>parts);await f.player.load({start:1000,live:true},new AbortController().signal);
  for(const next of [[],[parts[1]],[parts[1],parts[0]],[parts[0],{...parts[1],end_time:1240}],[{...parts[0],end_time:1210},parts[1]],[parts[0],{...parts[1],stream:''}]])assert.equal(f.player.extend(next),null);
  f.player.seek(220);assert.equal(f.instances.at(-1).url,'last');assert.equal(f.instances.at(-1).config.startPosition,20);f.player.destroy();
+});
+
+function still(){const attributes=new Map();return {hidden:true,attributes,getAttribute:name=>attributes.get(name)??null,setAttribute(name,value){attributes.set(name,value);}};}
+function playing(f){const hls=f.instances.at(-1);hls.events.get('hlsManifestParsed')();f.video.readyState=2;f.video.dispatchEvent(new Event('loadeddata'));}
+async function scrubFixture(t,options={}){
+ t.mock.timers.enable({apis:['setTimeout']});
+ const parts=[{start_time:1000,end_time:2000,stream:'first'}],image=still();
+ const f=playerFixture(async()=>parts,{still:image,frameUrl:time=>`still-${Math.round(time)}`,...options});
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(0);playing(f);
+ return {...f,image};
+}
+test('a drag paints stills and seeks the video only where the pointer rests',async t=>{
+ const f=await scrubFixture(t);
+ const seeks=[];Object.defineProperty(f.video,'currentTime',{get:()=>seeks.at(-1)??0,set:value=>seeks.push(value)});
+ f.player.beginScrub();
+ for(let time=100;time<700;time+=7){f.player.scrub(time);t.mock.timers.tick(16);}
+ assert.equal(seeks.length,0,'fragment loading must not restart on every pointer move');
+ assert.equal(f.image.getAttribute('src'),'still-695');assert.equal(f.image.hidden,false);assert.equal(f.loading.hidden,true);
+ assert.equal(f.player.position(),695,'the time follows the pointer without the video');
+ t.mock.timers.tick(160);assert.deepEqual(seeks,[695]);assert.equal(f.image.hidden,false,'stays until the frame is decoded');
+ f.video.dispatchEvent(new Event('seeked'));assert.equal(f.image.hidden,true);
+ f.player.scrub(800);f.player.endScrub();assert.deepEqual(seeks,[695,800],'release seeks at once');
+ t.mock.timers.tick(1000);assert.equal(seeks.length,2);f.player.destroy();
+});
+test('a release after the rest seek does not seek again and clears the still',async t=>{
+ const f=await scrubFixture(t);
+ const seeks=[];Object.defineProperty(f.video,'currentTime',{get:()=>seeks.at(-1)??0,set:value=>seeks.push(value)});
+ f.player.beginScrub();f.player.scrub(300);t.mock.timers.tick(160);f.video.dispatchEvent(new Event('seeked'));
+ f.player.endScrub();assert.deepEqual(seeks,[300]);assert.equal(f.image.hidden,true);f.player.destroy();
+});
+test('without platform stills a drag still shows video, at a bounded seek rate',async t=>{
+ const f=await scrubFixture(t,{frameUrl:()=>null});
+ const seeks=[];Object.defineProperty(f.video,'currentTime',{get:()=>seeks.at(-1)??0,set:value=>seeks.push(value)});
+ let clock=10000;t.mock.method(performance,'now',()=>clock);
+ f.player.beginScrub();
+ for(let time=0;time<60;time++){f.player.scrub(100+time);clock+=16;t.mock.timers.tick(16);}
+ assert.ok(seeks.length>=3&&seeks.length<=5,`${seeks.length} seeks in one second`);f.player.endScrub();f.player.destroy();
+});
+test('the poster covers the black screen and the first frame removes it',async t=>{
+ const image=still(),f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}],{still:image,frameUrl:()=>'grid-still'});
+ const loading=f.player.load({start:1000,end:2000,live:true,poster:'cover'},new AbortController().signal);
+ assert.equal(image.getAttribute('src'),'cover');assert.equal(image.hidden,false);await loading;
+ f.player.seek(500);f.player.refreshStill();assert.equal(image.getAttribute('src'),'grid-still','a real frame replaces the room cover');
+ playing(f);assert.equal(image.hidden,true);
+ f.player.refreshStill();assert.equal(image.hidden,true,'late index results do not cover decoded video');f.player.destroy();
+});
+
+const fragments=[{start:0,duration:1},{start:1,duration:1},{start:2,duration:.17},{start:2.17,duration:1}];
+test('seeks stay off fragment boundaries, where hls.js would reload forever',async()=>{
+ const f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}]);
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);
+ f.player.seek(1);f.instances[0].events.get('hlsLevelLoaded')(null,{details:{fragments}});
+ assert.equal(f.video.currentTime,1.1,'the opening position moves off the boundary');assert.deepEqual(f.instances[0].starts,[1.1]);
+ f.player.seek(2);assert.equal(f.video.currentTime,2.085,'short fragments keep the position inside them');
+ f.player.seek(2.5);assert.equal(f.video.currentTime,2.5,'other positions stay exact');
+ f.player.seek(0);assert.equal(f.video.currentTime,0,'the recording start begins on a keyframe');
+ f.player.destroy();
+});
+test('a fragment reload loop is rebuilt a bounded number of times, then stops downloading',async()=>{
+ const f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}]);
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(10);
+ const load=sn=>f.instances.at(-1).events.get('hlsFragLoaded')(null,{frag:{sn}});
+ for(let i=0;i<9;i++)load('initSegment');assert.equal(f.instances.length,1,'init segments are not media reloads');
+ load(5);load(6);load(5);load(6);load(5);assert.equal(f.instances.length,1);
+ load(5);assert.equal(f.instances.length,2);assert.equal(f.instances[0].destroyed,true);assert.equal(f.instances[1].config.startPosition,10.1);
+ for(let i=0;i<4;i++)load(5);assert.equal(f.instances.length,3);
+ for(let i=0;i<4;i++)load(5);assert.equal(f.instances.length,3);assert.equal(f.instances[2].stopped,true);
+ assert.match(f.loading.textContent,/暂时无法预览/);
+ f.player.seek(20);assert.equal(f.video.currentTime,20);
+ for(let i=0;i<4;i++)load(5);assert.equal(f.instances.length,4,'a new position gets a fresh recovery budget');f.player.destroy();
+});
+test('normal playback across many fragments is not mistaken for a loop',async()=>{
+ const f=playerFixture(async()=>[{start_time:1000,end_time:2000,stream:'first'}]);
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(10);
+ for(let sn=0;sn<100;sn++)f.instances[0].events.get('hlsFragLoaded')(null,{frag:{sn}});
+ assert.equal(f.instances.length,1);
+ for(let i=0;i<3;i++){f.instances[0].events.get('hlsFragLoaded')(null,{frag:{sn:7}});f.player.seek(10+i);}
+ assert.equal(f.instances.length,1,'seeking back over old fragments is not a loop');f.player.destroy();
 });

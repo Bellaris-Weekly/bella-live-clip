@@ -15,18 +15,19 @@ export function remoteMp4Source(request, descriptor, { signal, referer, onRead =
   async function readRange(start, end) {
     controller.signal.throwIfAborted();
     const range = { offset: start, length: end - start };
+    // Only the manager can read Content-Range. Once the first read has fixed the
+    // file size, a direct 206 of exactly the requested length is sufficient.
     const response = await requestWithRetry(api, descriptor.url, {
-      type: 'arraybuffer', range, referer, signal: controller.signal,
+      type: 'arraybuffer', range, referer, signal: controller.signal, needHeaders: size === undefined,
     }, { onRetry: state => onRetry(state, descriptor) });
     controller.signal.throwIfAborted();
     const match = /^content-range:\s*bytes\s+(\d+)-(\d+)\/(\d+)\s*$/im.exec(response.headers ?? '');
     const bytes = new Uint8Array(response.data);
-    if (!match || Number(match[1]) !== start || Number(match[2]) !== end - 1
-      || bytes.byteLength !== end - start || Number(match[3]) < end
-      || (size !== undefined && Number(match[3]) !== size)) {
+    if (bytes.byteLength !== end - start || (!match && size === undefined) || (match && (Number(match[1]) !== start
+      || Number(match[2]) !== end - 1 || Number(match[3]) < end || (size !== undefined && Number(match[3]) !== size)))) {
       throw new Error('视频服务器返回的字节范围不一致，请重新载入视频。');
     }
-    size = Number(match[3]);
+    if (match) size = Number(match[3]);
     onRead(bytes.byteLength, descriptor);
     return bytes;
   }

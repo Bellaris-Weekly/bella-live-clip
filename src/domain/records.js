@@ -6,11 +6,22 @@ export const MEMBERS = Object.freeze([
   { id: 'sinuo', name: '思诺', uid: '3537115310721781', room: 30858592, color: '#7252c0' },
 ]);
 
+// A poster is decoration: anything but a platform image is simply not shown.
+function imageUrl(value) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value.replace(/^\/\//, 'https://'));
+    url.protocol = 'https:';
+    return url.hostname === 'hdslb.com' || url.hostname.endsWith('.hdslb.com') ? url.href : null;
+  } catch { return null; }
+}
+
 export function recordFromReplay(item, member) {
   if (typeof item.live_key !== 'string') throw new Error('场次编号格式异常，请刷新场次列表。');
   return {
     key: item.live_key, title: item.live_info.title, start: item.start_time,
     end: item.end_time, live: false, uid: member.uid, member: member.name, room: item.room_id,
+    poster: imageUrl(item.live_info.cover),
   };
 }
 
@@ -55,6 +66,7 @@ export function recordFromRoom(info, member, now = Date.now() / 1000) {
   return {
     key: info.live_id_str, title: info.title, start: info.live_start_time,
     end: Math.floor(now), live: true, uid: info.uid, member: member.name, room: info.room_id,
+    poster: imageUrl(info.keyframe) || imageUrl(info.cover),
   };
 }
 

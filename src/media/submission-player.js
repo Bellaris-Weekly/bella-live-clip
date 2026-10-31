@@ -87,7 +87,8 @@ export function createSubmissionPlayer({canvas,loading,getVideo,isCurrent,onTime
  canvas.addEventListener('click',click);canvas.addEventListener('keydown',key);canvas.addEventListener('dblclick',fullscreen);
  function clear(){detach();preview?.dispose();preview=null;submission=null;visible=false;context.clearRect(0,0,canvas.width,canvas.height);}
  return {
-  async load(next,signal){signal.throwIfAborted();clear();submission=next;preview=createPreview(next);visible=true;refresh();return {total:next.duration};},
+  async load(next,signal){signal.throwIfAborted();clear();submission=next;preview=createPreview(next);visible=true;refresh();
+   preview.warm?.(source?.currentTime??0);return {total:next.duration};},
   getScreenshotVideo(){refresh();return visible&&!scrubbing?source:null;},
   refresh,seek,position:()=>previewTime??source?.currentTime??0,isPaused:()=>!source||source.paused||source.ended,
   pause(){source?.pause();},toggle,check,cancel,
