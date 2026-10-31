@@ -254,3 +254,24 @@ test('直连读取返回的长度不对时停止，不把错误字节交给解�
   };
   await assert.rejects(exportSubmission(request, submission(true), { start: 2, end: 6 }), /字节范围不一致/);
 });
+
+test('主节点持续失败时切换到备用节点继续导出', async () => {
+  const data = await fixture('combined'), read = transport({ video: data }), hosts = [];
+  const record = submission(true); record.media.video.backupUrls = ['https://backup.example/video'];
+  const request = async (url, options) => {
+    hosts.push(new URL(url).hostname);
+    if (url.includes('media.example')) throw new RequestError('节点故障', { retryable: true });
+    return read(url, options);
+  };
+  const realSetTimeout = setTimeout;
+  globalThis.setTimeout = (fn, delay, ...rest) => realSetTimeout(fn, Math.min(delay, 1), ...rest);
+  try { assert.ok((await exportSubmission(request, record, { start: 2, end: 6 })).size > 0); }
+  finally { globalThis.setTimeout = realSetTimeout; }
+  assert.equal(hosts.filter(host => host === 'media.example').length, 3);
+  assert.ok(hosts.filter(host => host === 'backup.example').length > 1, '切换后不再回到故障节点');
+});
+
+test('备用节点也失败时报告错误，不无限切换', async () => {
+  const record = submission(true); record.media.video.backupUrls = ['https://backup.example/video'];
+  await assert.rejects(exportSubmission(async () => { throw new Error('权限错误'); }, record, { start: 2, end: 6 }), /权限错误/);
+});

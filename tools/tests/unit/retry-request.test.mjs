@@ -53,3 +53,9 @@ test('cancelling a live GM request aborts the transport and preserves the cancel
   controller.abort(new DOMException('user stopped','AbortError'));
   await assert.rejects(pending,error=>error===controller.signal.reason);assert.ok(aborted);
 });
+
+test('a retry limit surfaces the last error instead of waiting forever',async()=>{
+ let calls=0;
+ await assert.rejects(requestWithRetry({request:async()=>{calls++;throw new RequestError('down',{retryable:true});}},'u',{},{limit:2,wait:async()=>{}}),/down/);
+ assert.equal(calls,3);
+});

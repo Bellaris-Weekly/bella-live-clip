@@ -23,7 +23,7 @@ const stubs = {
   'export': 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan': 'export class RecordingPlan{constructor(api,streams,signal){this.streams=streams;this.signal=signal;scenario.plans.push(this);}async load(){return scenario.groups;}}',
   'recording': 'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
-  'temporary-media': 'export const createTemporaryMedia=()=>{};',
+  'temporary-media': 'export const createTemporaryMedia=()=>{};export const ensureTemporarySpace=async(...args)=>scenario.space?.(...args);',
 };
 const {outputFiles} = await build({entryPoints:['src/app/application.js'],bundle:true,write:false,format:'iife',globalName:'application',
   loader:{'.txt':'text','.html':'text','.css':'text'},plugins:[{name:'render-media-fixtures',setup(build){
@@ -50,11 +50,11 @@ function start({url='https://www.bilibili.com/video/BV1234567890',loadVideo=asyn
   const document={createElement:()=>({...element(),attachShadow:()=>root}),createTextNode:text=>text,
     documentElement:element(),addEventListener(){},querySelector:()=>null};
   const seeks=[];
-  const scenario={loadVideo,export:exportWork,groups,plans:[],loads:[],extensions:[],selection:{start:2,end:8},thumbnailResumes:0,estimates:0,player:new Proxy({load:async(record,signal)=>{scenario.loads.push({record,signal});return {total,streams};},extend(parts){return {streams:parts,total:parts.at(-1).end_time-scenario.loads.at(-1).record.start};},position:()=>0,isPaused:()=>true,seek:time=>seeks.push(time)},{get:(target,key)=>target[key]||(()=>{})})};
+  const scenario={loadVideo,export:exportWork,groups,plans:[],loads:[],extensions:[],selection:{start:2,end:8},thumbnailResumes:0,estimates:0,player:new Proxy({load:async(record,signal)=>{scenario.loads.push({record,signal});return {total,streams};},extend(parts){return {streams:parts,total:parts.at(-1).end_time-scenario.loads.at(-1).record.start,changed:true};},position:()=>0,isPaused:()=>true,seek:time=>seeks.push(time)},{get:(target,key)=>target[key]||(()=>{})})};
   scenario.timeline=new Proxy({getSelection:()=>({...scenario.selection}),getView:()=>({start:0,end:100}),isInteracting:()=>scenario.interacting,extend(end,options){scenario.extensions.push({end,...options});if(options.whole)scenario.selection.end=end;}},{get:(target,key)=>target[key]||(()=>{})});
   const timers=new Map();let timerId=0;
-  const context={scenario,document,window:{addEventListener(){},removeEventListener(){}},URL,AbortController,DOMException,
-    innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout(fn,delay){if(delay!==30000)return setTimeout(fn,delay);const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){if(!timers.delete(id))clearTimeout(id);}};
+  scenario.windowEvents=[];const context={scenario,document,window:{addEventListener(name){scenario.windowEvents.push(`+${name}`);},removeEventListener(name){scenario.windowEvents.push(`-${name}`);}},URL,AbortController,DOMException,
+    innerWidth:1200,innerHeight:900,setInterval:()=>0,clearInterval(){},setTimeout(fn,delay){if(delay<30000)return setTimeout(fn,delay);const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){if(!timers.delete(id))clearTimeout(id);}};
   runInNewContext(outputFiles[0].text,context);
   const requests=[];
   const diagnostics=createDiagnosticReporter({endpoint:'https://logs.example.com/v1/logs',version:'1.2.3',online:()=>true,id:()=>crypto.randomUUID(),request:options=>{requests.push(JSON.parse(options.data));options.onload({status:201});}});
@@ -151,7 +151,7 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
   assert.equal(single.$('segments').hidden,true);assert.equal(single.$('segments').children.length,0);
 });
 
-for(const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999'])test(`刷新列表选中的直播沿用场次身份并加载新增录像：${url}`,async()=>{
+for(const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999'])test(`刷新选中的直播沿用场次身份、加入新增录像并保留选区：${url}`,async()=>{
  const record={key:'selected-live',uid:672353429,room:22632424,member:'贝拉',title:'直播',start:1000,end:1100,live:true};
  const calls=[],streams=[{start_time:1000,end_time:1100,stream:'first'}];
  const f=start({url,streams,total:300,current:async source=>{calls.push(source.room);return source.room===record.room?record:null;}});
@@ -161,12 +161,32 @@ for(const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999'])
  f.$('cards').children[0].onclick();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(f.scenario.loads.length,1);assert.deepEqual(f.seeks,[85]);calls.length=0;
  streams.push({start_time:1200,end_time:1250,stream:'latest'});
+ const selection={...f.scenario.selection};
  await f.$('refreshEditor').onclick();
- assert.equal(f.scenario.loads.length,2,'刷新必须重新加载已选场次');
+ assert.equal(f.scenario.loads.length,1,'刷新不能重新打开场次，否则丢失选区');
  assert.deepEqual(calls,[],'刷新录像不应重新解析所在网页的直播间');
- assert.equal(f.scenario.loads[1].record.key,record.key);assert.equal(f.scenario.loads[1].record.room,record.room);
- assert.deepEqual(f.seeks,[85,235]);assert.equal(f.requests.length,0);assert.equal(f.$('editPage').hidden,false);
+ assert.equal(f.scenario.plans.at(-1).streams.length,2);assert.equal(f.$('segments').children.length,2);
+ assert.deepEqual(f.seeks,[85],'播放位置不变');assert.deepEqual(f.scenario.selection,selection);
+ assert.equal(f.requests.length,0);assert.equal(f.$('editPage').hidden,false);
  assert.match(f.$('refreshEditor').innerHTML,/glyph-refresh/);assert.equal(f.$('refreshEditor').getAttribute('aria-label'),'刷新录像');assert.equal(f.$('refreshEditor').title,'刷新录像');
+});
+
+test('打开失败的录像刷新时重新打开；回放地址更新不打断大小预估',async()=>{
+ const record={key:'replay',room:123,member:'成员',start:1000,end:1100,live:false};
+ let clips=0;
+ const f=start({url:'https://live.bilibili.com/123',current:async()=>record,streams:[{start_time:1000,end_time:1100,stream:'first'}]});
+ f.scenario.player.load=async()=>{if(!clips++)throw new Error('network');return {total:100,streams:[{start_time:1000,end_time:1100,stream:'first'}]};};
+ await f.app.open();assert.equal(clips,1);
+ await f.$('refreshEditor').onclick();assert.equal(clips,2);
+});
+
+test('导出期间拦截关闭页面，结束后解除；空间不足时不开始读取',async()=>{
+ const record={key:'replay',room:123,member:'成员',start:1000,end:1100,live:false};
+ const f=start({url:'https://live.bilibili.com/123',current:async()=>record,streams:[{start_time:1000,end_time:1100,stream:'first'}],exportWork:async()=>{assert.ok(f.scenario.windowEvents.includes('+beforeunload'));return [];}});
+ await f.app.open();f.scenario.windowEvents.length=0;
+ await f.$('download').onclick();assert.deepEqual(f.scenario.windowEvents.filter(name=>name.endsWith('beforeunload')),['+beforeunload','-beforeunload']);
+ let exported=false;f.scenario.space=async()=>{throw new Error('浏览器临时空间不足');};f.scenario.export=async()=>{exported=true;return [];};
+ await f.$('download').onclick();assert.equal(exported,false);assert.match(f.$('status').textContent,/临时空间不足/);
 });
 
 test('直播自动增长同步分段、缩略图和导出计划，保留原选区与播放位置',async()=>{

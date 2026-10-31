@@ -16,7 +16,7 @@ export function waitForRetry(delay, signal) {
 
 // Keep transient failures inside the read, before a demuxer or writable sees them.
 // Completed segments and the open output stay alive until recovery or cancellation.
-export async function requestWithRetry(api, url, options = {}, {onRetry = () => {}, wait = waitForRetry} = {}) {
+export async function requestWithRetry(api, url, options = {}, {onRetry = () => {}, wait = waitForRetry, limit = Infinity} = {}) {
   const {signal} = options;
   let attempt = 0;
   try {
@@ -25,7 +25,7 @@ export async function requestWithRetry(api, url, options = {}, {onRetry = () => 
       try { return await api.request(url, options); }
       catch (error) {
         signal?.throwIfAborted();
-        if (!(error instanceof RequestError) || !error.retryable) throw error;
+        if (!(error instanceof RequestError) || !error.retryable || attempt >= limit) throw error;
         const delay = Math.min(1000 * 2 ** Math.min(attempt++, 4), 10000);
         onRetry({attempt, delay});
         await wait(delay, signal);

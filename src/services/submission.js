@@ -2,6 +2,8 @@ import {normalizeSubmission, parseSubmissionUrl, submissionPart} from '../domain
 import {requestWithRetry} from './retry-request.js';
 
 const API = 'https://api.bilibili.com';
+// Opening a video is interactive: fail visibly instead of retrying forever.
+const LOAD_RETRIES = 2;
 const MIXIN = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13];
 
 // MD5's 64 rounds and little-endian padding (RFC 1321). Only used for the
@@ -43,7 +45,7 @@ export function signWbi(params, images, now = Date.now()) {
 
 export function createSubmissionService(request) {
   async function get(path, params, options, allowGuestKeys = false) {
-    const {data:text} = await requestWithRetry({request}, `${API}${path}?${params}`, options, {onRetry:options.onRetry});
+    const {data:text} = await requestWithRetry({request}, `${API}${path}?${params}`, options, {onRetry:options.onRetry,limit:LOAD_RETRIES});
     options.signal?.throwIfAborted();
     let result;
     try { result = JSON.parse(text); } catch { throw new Error('B 站未返回视频接口数据，请刷新页面后重试。'); }

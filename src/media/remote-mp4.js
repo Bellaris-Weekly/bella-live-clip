@@ -3,6 +3,8 @@ import { requestWithRetry } from '../services/retry-request.js';
 import { createFragmentIndex } from './mp4-index.js';
 
 const CHUNK_SIZE = 1024 * 1024;
+// A node that keeps failing costs a few seconds before its backup is tried.
+const RETRIES_BEFORE_BACKUP = 2;
 
 // Each source owns its transport lifetime; the library owns its bounded cache.
 export function remoteMp4Source(request, descriptor, { signal, referer, onRead = () => {}, onRetry = () => {}, onIndex = () => {} } = {}) {
@@ -11,15 +13,29 @@ export function remoteMp4Source(request, descriptor, { signal, referer, onRead =
   const abort = () => controller.abort(signal.reason);
   signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
-  let sizePromise, size, prefix, trailer;
+  const urls = [descriptor.url, ...(descriptor.backupUrls ?? [])];
+  let sizePromise, size, prefix, trailer, active = 0;
+  async function fetchRange(options) {
+    for (;;) {
+      const last = active === urls.length - 1;
+      try {
+        return await requestWithRetry(api, urls[active], options,
+          { onRetry: state => onRetry(state, descriptor), limit: last ? Infinity : RETRIES_BEFORE_BACKUP });
+      } catch (error) {
+        controller.signal.throwIfAborted();
+        if (last) throw error;
+        active++;
+      }
+    }
+  }
   async function readRange(start, end) {
     controller.signal.throwIfAborted();
     const range = { offset: start, length: end - start };
     // Only the manager can read Content-Range. Once the first read has fixed the
     // file size, a direct 206 of exactly the requested length is sufficient.
-    const response = await requestWithRetry(api, descriptor.url, {
+    const response = await fetchRange({
       type: 'arraybuffer', range, referer, signal: controller.signal, needHeaders: size === undefined,
-    }, { onRetry: state => onRetry(state, descriptor) });
+    });
     controller.signal.throwIfAborted();
     const match = /^content-range:\s*bytes\s+(\d+)-(\d+)\/(\d+)\s*$/im.exec(response.headers ?? '');
     const bytes = new Uint8Array(response.data);

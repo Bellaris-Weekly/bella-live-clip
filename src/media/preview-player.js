@@ -25,10 +25,10 @@ const SETTLE_MS=160,UNSTILLED_SEEK_MS=250;
 // keyframe, so the same fragments reload forever with no picture.
 const BOUNDARY_GAP=.1,RELOAD_LIMIT=3,RECOVERY_LIMIT=2;
 
-export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},HlsClass=Hls}) {
+export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=>null,onError=()=>{},onReady=()=>{},onStreams,HlsClass=Hls}) {
  let hls,record,streams=[],index=-1,generation=0,target=null,notified=false,attachedEnd=0;
  let scrubbing=false,scrubTime=null,settle=null,lastSeek=0;
- let fragments=[],reloads=new Map(),recoveries=0;
+ let fragments=[],reloads=new Map(),recoveries=0,renewed=false,failed=false,renewal=null;
  const offset=()=>streams[index] ? streams[index].start_time-record.start : 0;
  function showStill(url){if(!still||!url)return false;if(still.getAttribute('src')!==url)still.setAttribute('src',url);still.hidden=false;return true;}
  function hideStill(){if(still&&!still.hidden)still.hidden=true;}
@@ -41,11 +41,32 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   if(recoveries++>=RECOVERY_LIMIT){hls.stopLoad();waiting('这个位置暂时无法预览，请换个位置');return;}
   attach(index,(Number.isFinite(target)?target:video.currentTime)+BOUNDARY_GAP);
  }
+ const requestedEnd=()=>(record.live?Math.floor(Date.now()/1000):record.end)-record.start;
+ function fail(data){
+  failed=true;onError(new Error(`录像预览失败：${data.type} / ${data.details}`));
+  loading.textContent='预览暂不可用，请点右上角刷新';status('预览暂不可用，请点右上角刷新。',true);
+ }
+ // A failed read usually means the signed address expired. Fetch a new one once
+ // per position and continue from the same place.
+ async function renew(data){
+  const token=generation,own=new AbortController();renewal=own;
+  const time=Number.isFinite(target)?target:video.currentTime;
+  waiting('正在刷新录像地址…');
+  try{
+   const parts=await api.clips(record,0,requestedEnd(),own.signal);
+   if(token!==generation)return;
+   (onStreams??extend)(parts);attach(index,time);
+  }catch(error){if(token===generation&&!own.signal.aborted)fail(data);}
+ }
  function attach(part,time=0){
+  renewal?.abort();renewal=null;failed=false;
   const token=++generation;hls?.destroy();video.pause();video.removeAttribute('src');video.load();index=part;fragments=[];reloads=new Map();
   target=time;attachedEnd=streams[part].end_time;loading.hidden=false;
   hls=new HlsClass({loader:makeHlsLoader(api.request),enableWorker:false,maxBufferLength:12,maxMaxBufferLength:24,maxBufferHole:1,backBufferLength:15,startPosition:time});
-  hls.on(Hls.Events.ERROR,(_,data)=>{if(token===generation&&data.fatal){onError(new Error(`录像预览失败：${data.type} / ${data.details}`));loading.textContent='预览暂不可用，请刷新重试';status('录像预览失败，请刷新重试。',true);}});
+  hls.on(Hls.Events.ERROR,(_,data)=>{
+   if(token!==generation||!data.fatal)return;
+   if(data.type===Hls.ErrorTypes.NETWORK_ERROR&&!renewed){renewed=true;void renew(data);}else fail(data);
+  });
   hls.on(Hls.Events.MANIFEST_PARSED,()=>{if(token===generation&&target!==null)video.currentTime=target;});
   hls.on(Hls.Events.LEVEL_LOADED,(_,{details})=>{
    if(token!==generation)return;
@@ -61,7 +82,7 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
   hls.loadSource(streams[index].stream);hls.attachMedia(video);
  }
  function seek(time){
-  video.pause();lastSeek=performance.now();reloads.clear();recoveries=0;
+  video.pause();lastSeek=performance.now();reloads.clear();recoveries=0;renewed=false;
   // Prefer the loaded stream so a time on a shared boundary does not reload the previous one.
   const contains=p=>time>=p.start_time-record.start&&time<=p.end_time-record.start;
   const found=streams[index]&&contains(streams[index])?index:streams.findIndex(contains);
@@ -84,20 +105,20 @@ export function createPlayer({video,loading,api,status,onTime,still,frameUrl=()=
  video.addEventListener('seeked',ready);video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);
  video.ontimeupdate=()=>{ready();onTime(offset()+video.currentTime);};
  video.onwaiting=()=>{loading.textContent='正在加载画面…';loading.hidden=false;};video.onplaying=()=>{loading.hidden=true;};
- function clear(){generation++;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;scrubbing=false;scrubTime=null;clearTimeout(settle);settle=null;hideStill();}
+ function clear(){generation++;renewal?.abort();renewal=null;failed=false;renewed=false;hls?.destroy();hls=null;video.pause();video.removeAttribute('src');video.load();streams=[];index=-1;target=null;notified=false;scrubbing=false;scrubTime=null;clearTimeout(settle);settle=null;hideStill();}
  function destroy(){clear();for(const event of ['seeked','loadeddata','canplay'])video.removeEventListener(event,ready);video.ontimeupdate=video.onwaiting=video.onplaying=null;}
  function availableTotal(){return (record.live?streams.at(-1).end_time:record.end)-record.start;}
  function extend(next){
   // Ignore partial/regressing responses. Stable segment indices also keep the
   // active HLS player and an existing selection attached to the same segment.
-  if(!record?.live||next.length<streams.length||!next.length)return null;
+  if(!record||next.length<streams.length||!next.length||!record.live&&next.length!==streams.length)return null;
   if(next.some((part,i)=>!Number.isFinite(part.start_time)||!Number.isFinite(part.end_time)||part.end_time<=part.start_time||typeof part.stream!=='string'||!part.stream||
    i>0&&part.start_time<next[i-1].end_time||i<streams.length&&(part.start_time!==streams[i].start_time||part.end_time<streams[i].end_time)))return null;
-  const changed=next.length!==streams.length||next.some((part,i)=>part.end_time!==streams[i].end_time);
+  const changed=record.live&&(next.length!==streams.length||next.some((part,i)=>part.end_time!==streams[i].end_time));
   streams=next;
-  return changed?{streams,total:availableTotal()}:null;
+  return {streams,total:availableTotal(),changed};
  }
  // A real still replaces the room cover as soon as the frame index reaches it.
  function refreshStill(){if(!notified&&record)showStill(frameUrl(target===null?0:offset()+target));}
- return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在获取录像地址…';showStill(record.poster);const total=(record.live?Math.floor(Date.now()/1000):record.end)-record.start;const nextStreams=await api.clips(record,0,total,signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
+ return {getScreenshotVideo:()=>video,async load(nextRecord,signal){clear();const token=generation;record=nextRecord;loading.hidden=false;loading.textContent='正在加载…';showStill(record.poster);const nextStreams=await api.clips(record,0,requestedEnd(),signal);signal.throwIfAborted();if(token!==generation)throw new DOMException('已切换场次','AbortError');streams=nextStreams;return {streams,total:availableTotal()};},extend,seek,clear,destroy,refreshStill,reload(){if(failed)attach(index,Number.isFinite(target)?target:video.currentTime);},beginScrub(){scrubbing=true;},scrub,endScrub(){scrubbing=false;if(scrubTime!==null)commit();else ready();},pause:()=>video.pause(),position:()=>scrubTime??offset()+video.currentTime};
 }

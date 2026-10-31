@@ -174,3 +174,32 @@ test('normal playback across many fragments is not mistaken for a loop',async()=
  for(let i=0;i<3;i++){f.instances[0].events.get('hlsFragLoaded')(null,{frag:{sn:7}});f.player.seek(10+i);}
  assert.equal(f.instances.length,1,'seeking back over old fragments is not a loop');f.player.destroy();
 });
+
+test('an expired address is renewed once and playback continues from the same position',async()=>{
+ let clips=0;
+ const applied=[],parts=()=>[{start_time:1000,end_time:2000,stream:`signed-${++clips}`}];
+ const f=playerFixture(async()=>parts(),{onStreams:next=>{applied.push(next);f.player.extend(next);}});
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(300);
+ const network={type:'networkError',details:'fragLoadError',fatal:true};
+ f.instances[0].events.get('hlsError')(null,network);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(applied.length,1);assert.equal(f.instances.length,2);assert.equal(f.instances[1].url,'signed-2');assert.equal(f.instances[1].config.startPosition,300);
+ f.instances[1].events.get('hlsError')(null,network);assert.equal(f.instances.length,2,'the same position is not retried forever');
+ f.player.reload();assert.equal(f.instances.length,3,'the refresh button retries a failed preview');
+ f.player.seek(400);f.instances[2].events.get('hlsError')(null,network);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.instances.length,4,'a new position may renew again');f.player.destroy();
+});
+test('a failed renewal reports the original error; reload leaves working playback alone',async()=>{
+ let clips=0;const errors=[];
+ const f=playerFixture(async()=>{if(++clips>1)throw new Error('offline');return [{start_time:1000,end_time:2000,stream:'first'}];},{onError:error=>errors.push(error.message)});
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);f.player.seek(10);
+ f.player.reload();assert.equal(f.instances.length,1);
+ f.instances[0].events.get('hlsError')(null,{type:'networkError',details:'fragLoadError',fatal:true});await new Promise(resolve=>setImmediate(resolve));
+ assert.match(errors[0],/fragLoadError/);f.player.destroy();
+});
+test('replay addresses may change but the recording itself cannot',async()=>{
+ const parts=[{start_time:1000,end_time:2000,stream:'first'}];
+ const f=playerFixture(async()=>parts);
+ await f.player.load({start:1000,end:2000,live:false},new AbortController().signal);
+ const next=f.player.extend([{...parts[0],stream:'renewed'}]);assert.equal(next.changed,false);assert.equal(next.streams[0].stream,'renewed');
+ assert.equal(f.player.extend([parts[0],{start_time:2100,end_time:2200,stream:'x'}]),null);f.player.destroy();
+});
