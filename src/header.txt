@@ -9,6 +9,7 @@
 // @description  B 站当前投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺直播与历史回放剪辑，浏览器内导出 MP4。
 // @match        https://*.bilibili.com/*
 // @match        https://bilibili.com/*
+// @match        https://studio.bk0717.com/*
 // @connect      share.bellaris.fans
 // @connect      calendar.bk0717.us.ci
 // @connect      api.live.bilibili.com

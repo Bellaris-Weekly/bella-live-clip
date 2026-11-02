@@ -6,10 +6,18 @@ import {BiliApi, createRequest} from './services/bilibili.js';
 import {createSubmissionRequest} from './services/submission-request.js';
 import {createMediaRequest} from './services/media-request.js';
 import {startLiveScreenshot} from './app/live-screenshot.js';
+import {startPageBridge} from './services/page-bridge.js';
 
 if (location.hostname === 'live.bilibili.com') startLiveScreenshot(document);
 
-if (window.top === window && !document.getElementById('bella-live-clip-host')) {
+if (location.hostname === 'studio.bk0717.com') {
+  startPageBridge({
+    name: 'bella-live-clip',
+    version: readScriptMetadata(metadataText).version,
+    request: GM_xmlhttpRequest,
+    target: unsafeWindow,
+  });
+} else if (window.top === window && !document.getElementById('bella-live-clip-host')) {
   const diagnostics = createDiagnosticReporter({
     endpoint: typeof __LOG_SERVICE_ENDPOINT__ === 'string' ? __LOG_SERVICE_ENDPOINT__ : '',
     request: GM_xmlhttpRequest,
