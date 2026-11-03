@@ -1,6 +1,6 @@
 {
   "name": "bella-live-clip",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "private": true,
   "type": "module",
   "description": "Bilibili submission, live and replay clip downloader userscript",
