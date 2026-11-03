@@ -155,6 +155,36 @@ test('播放进度与点击预览只更新指针，短片和长场均不重写�
   }
 });
 
+test('拖动和键盘预览都区分播放进度与起止点，松手可恢复真实播放位置', t => {
+  const f = fixture(t);
+  let interaction;
+  const timeline = createTimeline({
+    ...f,
+    onPreview: time => f.previews.push(time),
+    onScrubStart: options => {
+      interaction = options.type;
+    },
+    onScrubEnd: () => {
+      if (interaction !== 'playhead') timeline.setCurrent(50);
+    },
+  });
+  for (const type of ['playhead', 'start', 'end']) {
+    timeline.reset(100, {start: 20, end: 80});
+    timeline.setCurrent(50);
+    const target = type === 'playhead' ? f.track : f[type + 'Handle'];
+    const event = {button: 0, clientX: 60, pointerId: 1, target, preventDefault() {}};
+    f.track.handlers.pointerdown(event);
+    assert.equal(interaction, type);
+    assert.equal(f.previews.at(-1), type === 'playhead' ? 60 : type === 'start' ? 20 : 80);
+    f.track.handlers.pointerup(event);
+    assert.equal(f.playhead.style.left, type === 'playhead' ? '60%' : '50%');
+    interaction = null;
+    timeline.handleKeyDown({key: 'ArrowRight', target, preventDefault() {}, stopPropagation() {}});
+    assert.equal(interaction, type);
+    assert.equal(f.playhead.style.left, type === 'playhead' ? '65%' : '50%');
+  }
+});
+
 test('缩放和选区调整复用刻度节点，锁定只改变边界可用状态', t => {
   const f = fixture(t);
   f.timeline.reset(100);

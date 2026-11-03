@@ -323,6 +323,51 @@ test('a release after the rest seek does not seek again and clears the still', a
   assert.equal(f.image.hidden, true);
   f.player.destroy();
 });
+test('restoring a trim preview cancels its pending seek and returns to the saved position', async t => {
+  const f = await scrubFixture(t);
+  f.video.currentTime = 420;
+  const restoreTime = f.player.position(),
+    seeks = [];
+  Object.defineProperty(f.video, 'currentTime', {
+    get: () => seeks.at(-1) ?? restoreTime,
+    set: value => {
+      seeks.push(value);
+    },
+  });
+  f.player.beginScrub();
+  f.player.scrub(700);
+  assert.equal(f.player.position(), 700);
+  assert.equal(f.image.getAttribute('src'), 'still-700');
+  f.player.endScrub(restoreTime);
+  assert.deepEqual(seeks, [420], 'release restores playback without seeking to the pending trim point');
+  assert.equal(f.player.position(), restoreTime);
+  assert.equal(f.image.hidden, true);
+  t.mock.timers.tick(1000);
+  assert.deepEqual(seeks, [420], 'the delayed trim seek cannot move playback again');
+  f.player.destroy();
+});
+test('restoring a settled trim preview seeks back even when there is no pending preview', async t => {
+  const f = await scrubFixture(t),
+    restoreTime = f.player.position(),
+    seeks = [];
+  Object.defineProperty(f.video, 'currentTime', {
+    get: () => seeks.at(-1) ?? restoreTime,
+    set: value => {
+      seeks.push(value);
+    },
+  });
+  f.player.beginScrub();
+  f.player.scrub(700);
+  t.mock.timers.tick(160);
+  f.video.dispatchEvent(new Event('seeked'));
+  assert.deepEqual(seeks, [700]);
+  f.player.endScrub(restoreTime);
+  assert.deepEqual(seeks, [700, 0], 'the saved recording start is a valid restoration target');
+  assert.equal(f.player.position(), restoreTime);
+  t.mock.timers.tick(1000);
+  assert.deepEqual(seeks, [700, 0]);
+  f.player.destroy();
+});
 test('without platform stills a drag still shows video, at a bounded seek rate', async t => {
   const f = await scrubFixture(t, {frameUrl: () => null});
   const seeks = [];

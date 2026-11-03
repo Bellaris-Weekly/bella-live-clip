@@ -264,13 +264,12 @@ export function createSubmissionPlayer({
       clearPreview();
       showPreview({image, x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight}, time);
     },
-    end({commit = true} = {}) {
-      const target = previewTime,
-        wasScrubbing = scrubbing;
+    end({commit = true, time = previewTime} = {}) {
+      const wasScrubbing = scrubbing;
       clearPreview();
       scrubbing = false;
       previewTime = null;
-      if (wasScrubbing && commit && source && target !== null) source.currentTime = target;
+      if (wasScrubbing && commit && source && time !== null) source.currentTime = time;
       update();
     },
     playSelection() {

@@ -1,11 +1,13 @@
-// Playback stays inside the selection; scrubbing preserves playback intent.
+// Inline playback stays inside the selection; fullscreen plays the whole video.
 // Seeks can land slightly short of a cut point (stream ends are clamped), so
 // positions within EDGE of a cut count as being on it.
 const EDGE = 0.05;
+const isVideoFullscreen = video => video.getRootNode?.().fullscreenElement === video;
 export function createPlayback(video, onError, {getRange, position, seek}) {
   let scrubbing = false,
     resume = false,
     timer;
+  const playbackRange = () => (isVideoFullscreen(video) ? null : getRange());
   const clearTimer = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -16,7 +18,7 @@ export function createPlayback(video, onError, {getRange, position, seek}) {
       if (error.name !== 'AbortError') onError(error.message, true);
     });
   function constrain(restart = false) {
-    const range = getRange();
+    const range = playbackRange();
     if (!range) return true;
     const time = position();
     const atEnd = time >= range.end - EDGE;
@@ -35,7 +37,7 @@ export function createPlayback(video, onError, {getRange, position, seek}) {
   function check() {
     clearTimer();
     if (scrubbing || video.paused || video.seeking || video.readyState < 2) return;
-    const range = getRange();
+    const range = playbackRange();
     if (!range) return;
     if (position() < range.start - EDGE) {
       play();
@@ -52,6 +54,7 @@ export function createPlayback(video, onError, {getRange, position, seek}) {
   });
   for (const event of ['playing', 'timeupdate', 'seeked', 'ratechange']) video.addEventListener(event, check);
   for (const event of ['pause', 'waiting', 'emptied', 'ended']) video.addEventListener(event, clearTimer);
+  video.ownerDocument?.addEventListener('fullscreenchange', check);
   return {
     check,
     begin() {
@@ -81,7 +84,7 @@ export function createPlayback(video, onError, {getRange, position, seek}) {
 
 // Leave fullscreen gestures and controls to the browser.
 export function bindVideoControls(video, playback, onError) {
-  const fullscreen = () => video.getRootNode().fullscreenElement === video;
+  const fullscreen = () => isVideoFullscreen(video);
   const sync = () => {
     video.controls = fullscreen();
   };

@@ -197,6 +197,7 @@ export function createApp({
     locate: async (time, signal) =>
       recordingPlan ? locateSegment(await recordingPlan.load(signal), record.start + time) : null,
   });
+  let scrubReturnTime = null;
   const timeline = createTimeline({
     track: $('timeline'),
     startHandle: $('startHandle'),
@@ -210,7 +211,8 @@ export function createApp({
       else player?.seek(t);
       updateClock(t);
     },
-    onScrubStart: () => {
+    onScrubStart: ({type}) => {
+      scrubReturnTime = type === 'playhead' ? null : (player?.position() ?? null);
       activePlayback()?.begin();
       if (playerKind === 'live') player.beginScrub();
       if (isSubmission()) {
@@ -219,8 +221,14 @@ export function createApp({
       }
     },
     onScrubEnd: (_, {canceled = false} = {}) => {
-      if (playerKind === 'live') player.endScrub();
-      activePlayback()?.end({commit: !canceled});
+      if (playerKind === 'live') player.endScrub(scrubReturnTime ?? undefined);
+      activePlayback()?.end({commit: !canceled, time: scrubReturnTime ?? undefined});
+      if (scrubReturnTime !== null) {
+        const time = player.position();
+        timeline.setCurrent(time);
+        updateClock(time);
+      }
+      scrubReturnTime = null;
     },
     onSelection: selection => {
       updateExportSummary(selection);

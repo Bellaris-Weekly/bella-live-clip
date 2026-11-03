@@ -9,7 +9,7 @@ const stubs = {
   controls: 'export const createControls=()=>()=>{};',
   'record-card':
     'export const createRecordCard=(record,select)=>{const card=document.createElement("div");card.onclick=select;return card;};',
-  timeline: 'export const createTimeline=()=>scenario.timeline;',
+  timeline: 'export const createTimeline=options=>{scenario.timelineOptions=options;return scenario.timeline;};',
   version: 'export const createVersionControl=()=>({refresh:async()=>{}});',
   'page-progress': 'export const bindPageProgress=()=>()=>{};',
   'export-progress': 'export const renderExportProgress=()=>{};',
@@ -18,7 +18,7 @@ const stubs = {
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',
   'submission-player': 'export const createSubmissionPlayer=()=>scenario.player;',
   'preview-player': 'export const createPlayer=options=>{scenario.previewOptions=options;return scenario.player;};',
-  playback: 'export const createPlayback=()=>({cancel(){}});export const bindVideoControls=()=>{};',
+  playback: 'export const createPlayback=()=>scenario.playback;export const bindVideoControls=()=>{};',
   thumbnails:
     'export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},sweep(){},update(){}});',
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
@@ -142,6 +142,7 @@ function start({
     selection: {start: 2, end: 8},
     thumbnailResumes: 0,
     estimates: 0,
+    playback: {cancel() {}, begin() {}, end() {}, check() {}},
     player: new Proxy(
       {
         load: async (record, signal) => {
@@ -251,6 +252,92 @@ function start({
     },
   };
 }
+
+test('裁剪点预览结束恢复原进度和时间显示，随后拖动播放进度仍提交新位置', async () => {
+  for (const kind of ['live', 'submission'])
+    for (const paused of [false, true])
+      for (const canceled of [false, true]) {
+        const record = {key: 'replay', room: 123, member: '成员', start: 1000, end: 1100, live: false};
+        const f = start(
+          kind === 'live'
+            ? {
+                url: 'https://live.bilibili.com/123',
+                current: async () => record,
+                streams: [{start_time: 1000, end_time: 1100, stream: 'first'}],
+              }
+            : {},
+        );
+        await f.app.open();
+        const state = {time: 42, preview: null, paused},
+          restored = [],
+          resumedAt = [];
+        let timelineTime,
+          resume = false;
+        Object.assign(f.scenario.player, {
+          position: () => state.preview ?? state.time,
+          begin() {
+            state.preview = state.time;
+          },
+          beginScrub() {
+            state.preview = state.time;
+          },
+          seek(time) {
+            state.preview = time;
+          },
+          scrub(time) {
+            state.preview = time;
+          },
+          endScrub(time) {
+            restored.push(time);
+            state.time = time ?? state.preview;
+            state.preview = null;
+          },
+          end({commit, time}) {
+            restored.push(time);
+            if (commit) state.time = time ?? state.preview;
+            state.preview = null;
+          },
+        });
+        Object.assign(f.scenario.playback, {
+          begin() {
+            resume = !state.paused;
+            state.paused = true;
+          },
+          end() {
+            resumedAt.push(state.time);
+            state.paused = !resume;
+          },
+        });
+        f.scenario.timeline.setCurrent = time => (timelineTime = time);
+        const {onScrubStart, onPreview, onScrubEnd} = f.scenario.timelineOptions;
+        for (const type of ['start', 'end']) {
+          const before = state.time,
+            boundary = type === 'start' ? 10 : 80,
+            label = `${kind}/${paused}/${canceled}/${type}`;
+          onScrubStart({type});
+          onPreview(boundary);
+          assert.equal(f.scenario.player.position(), boundary, label);
+          assert.equal(f.$('clock').textContent, type === 'start' ? '00:10 / 01:40' : '01:20 / 01:40', label);
+          if (kind === 'submission' && !paused) state.time += 3;
+          const expected = kind === 'submission' && canceled ? state.time : before;
+          onScrubEnd(boundary, {canceled});
+          assert.equal(restored.at(-1), before, label);
+          assert.equal(f.scenario.player.position(), expected, label);
+          assert.equal(timelineTime, expected, label);
+          assert.equal(f.$('clock').textContent, `00:${expected} / 01:40`, label);
+          assert.equal(state.paused, paused, label);
+          if (kind === 'live') assert.equal(resumedAt.at(-1), before, '恢复播放前先定位到原进度');
+
+          onScrubStart({type: 'playhead'});
+          onPreview(55);
+          onScrubEnd(55);
+          assert.equal(restored.at(-1), undefined, '连续拖动播放进度不能复用上次裁剪点的恢复位置');
+          assert.equal(f.scenario.player.position(), 55, label);
+          assert.equal(f.$('clock').textContent, '00:55 / 01:40', label);
+          assert.equal(state.paused, paused, label);
+        }
+      }
+});
 
 test('直播首帧前不启动缩略图或大小采样，日程换对象后仍只启动一次', async () => {
   const record = {

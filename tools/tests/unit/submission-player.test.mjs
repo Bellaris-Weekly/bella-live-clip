@@ -128,6 +128,30 @@ test('scrubbing preserves page playback until release and commits only the final
   }
 });
 
+test('trim preview release restores its starting position and preserves playing or paused state', async () => {
+  for (const paused of [false, true]) {
+    const f = fixture();
+    f.video.paused = paused;
+    await f.load();
+    const time = f.player.position();
+    f.player.begin();
+    await f.player.seek(51);
+    assert.equal(f.player.position(), 51, '拖动中显示裁剪点预览');
+    f.video.currentTime = 14;
+    f.player.end({time});
+    assert.equal(f.video.currentTime, 12);
+    assert.equal(f.times.at(-1), 12);
+    assert.equal(f.player.position(), 12);
+    assert.equal(f.video.paused, paused);
+    assert.equal(f.draws.at(-1)[0], f.video, '松手后恢复网页视频画面');
+    f.player.begin();
+    await f.player.seek(80);
+    f.player.end();
+    assert.equal(f.video.currentTime, 80, '随后拖动播放进度仍跳到新位置');
+    f.player.destroy();
+  }
+});
+
 test('only explicit selection playback stops at the endpoint and normal play can continue beyond it', async () => {
   const f = fixture();
   await f.load();

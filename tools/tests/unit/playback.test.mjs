@@ -311,7 +311,10 @@ test('键盘调整播放位置和两个边界后保留播放或暂停状态', t 
 
 function boundedPlayback(t, initial) {
   const video = makeVideo(true),
+    root = {fullscreenElement: null},
     timers = new Map();
+  video.ownerDocument = new EventTarget();
+  video.getRootNode = () => root;
   let id = 0,
     range = {...initial};
   t.mock.method(globalThis, 'setTimeout', (callback, delay) => {
@@ -333,6 +336,12 @@ function boundedPlayback(t, initial) {
     timers,
     position,
     seek,
+    fullscreen(target) {
+      // Inside the editor's shadow root, the document sees its host, not the video.
+      video.ownerDocument.fullscreenElement = target ? {} : null;
+      root.fullscreenElement = target;
+      video.ownerDocument.dispatchEvent(new Event('fullscreenchange'));
+    },
     setRange(next) {
       range = next;
       playback.check();
@@ -365,11 +374,69 @@ test('选区外开始播放会回到起点，按剩余时长停止且不循环�
     assert.equal(f.timers.size, 0);
     assert.equal(f.video.playCount, plays);
     void f.video.play();
-    assert.equal(f.position(), range.start, '原生全屏控件也从起点重播');
+    assert.equal(f.position(), range.start, '普通画面的原生播放也从起点重播');
     assert.equal(f.video.paused, false);
     f.playback.cancel();
     assert.equal(f.timers.size, 0);
   }
+});
+
+test('视频全屏取消选区计时，原生跳转及播放不再受裁剪边界限制', t => {
+  const f = boundedPlayback(t, {start: 10, end: 30});
+  f.advance(20);
+  f.playback.toggle();
+  const pending = [...f.timers.values()].at(-1);
+  assert.equal(pending.delay, 10000);
+  f.fullscreen(f.video);
+  assert.equal(f.timers.size, 0, '进入全屏立即清除裁剪终点计时');
+  for (const position of [5, 35]) {
+    f.advance(position);
+    for (const event of ['seeked', 'timeupdate', 'playing', 'ratechange']) {
+      f.video.dispatchEvent(new Event(event));
+      assert.equal(f.position(), position, `${event}/${position}`);
+      assert.equal(f.video.paused, false, `${event}/${position}`);
+      assert.equal(f.timers.size, 0);
+    }
+    pending.callback();
+    assert.equal(f.position(), position, '已排队的旧计时也不能限制全屏播放');
+    assert.equal(f.video.paused, false);
+    f.video.pause();
+    void f.video.play();
+    assert.equal(f.position(), position, '原生控件恢复时保留选区外位置');
+    assert.equal(f.video.paused, false);
+    f.playback.toggle();
+    f.playback.toggle();
+    assert.equal(f.position(), position, '自定义播放入口同样放开全屏范围');
+    assert.equal(f.video.paused, false);
+    assert.equal(f.timers.size, 0);
+  }
+  f.playback.cancel();
+});
+
+test('退出视频全屏立即恢复选区限制，其他元素全屏不解除限制', t => {
+  const f = boundedPlayback(t, {start: 10, end: 30});
+  f.fullscreen(f.video);
+  f.advance(20);
+  void f.video.play();
+  f.fullscreen(null);
+  assert.equal(f.position(), 20);
+  assert.equal(f.video.paused, false);
+  assert.equal([...f.timers.values()].at(-1).delay, 10000, '退出后恢复裁剪终点计时');
+  for (const position of [5, 35]) {
+    f.fullscreen(f.video);
+    f.advance(position);
+    void f.video.play();
+    f.fullscreen(null);
+    assert.equal(f.position(), position === 5 ? 10 : 30);
+    assert.equal(f.video.paused, position === 35);
+  }
+  f.fullscreen({});
+  f.advance(5);
+  void f.video.play();
+  assert.equal(f.position(), 10, '另一个元素进入全屏时视频仍受选区限制');
+  assert.equal(f.video.paused, false);
+  assert.equal(f.timers.size, 1);
+  f.playback.cancel();
 });
 
 test('播放中拖动到终点或缩短选区立即停止，暂停预览不被强制拉回', t => {

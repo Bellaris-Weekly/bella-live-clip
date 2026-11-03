@@ -158,6 +158,49 @@ test('a drag shows stills, leaves the video alone and lands on the final positio
   assert.ok(Math.abs(result.time - 28.3) < 0.2, `landed at ${result.time}`);
 });
 
+for (const paused of [false, true]) {
+  for (const settledPreview of [false, true]) {
+    test(`trim preview restores ${paused ? 'paused' : 'playing'} video after ${settledPreview ? 'settled' : 'pending'} preview`, async () => {
+      const result = await inPage('restoreAfterTrim', {paused, settledPreview});
+      assert.deepEqual(result.errors, []);
+      assert.notEqual(result.initialFrame, null, 'the starting playback frame is decoded');
+      if (settledPreview) {
+        assert.notEqual(result.previewFrame, null, 'the trim point frame is decoded');
+        assert.ok(Math.abs(result.previewTime - 25.3) < 0.2, `preview at ${result.previewTime}`);
+      } else assert.ok(Math.abs(result.previewTime - result.saved) < 0.05, 'pending previews do not seek');
+      assert.ok(Math.abs(result.restoredTime - result.saved) < 0.15, `restored to ${result.restoredTime}`);
+      assert.notEqual(result.restoredFrame, null, 'the restored frame is decoded');
+      assert.equal(result.stillShown, false, 'the restored video replaces the trim preview');
+      assert.equal(result.paused, paused);
+      const elapsed = result.finalTime - result.saved;
+      if (paused) assert.ok(Math.abs(elapsed) < 0.15, `paused position moved by ${elapsed}`);
+      else assert.ok(elapsed > 0.15 && elapsed < 2, `playback advanced by ${elapsed}`);
+    });
+  }
+}
+
+test('fullscreen playback in a shadow root seeks outside the selection and constrains again on exit', async () => {
+  const result = await inPage('fullscreenPlayback', {});
+  assert.deepEqual(result.errors, []);
+  assert.notEqual(result.initialFrame, null);
+  assert.equal(result.retargeted, true, 'the document retargets fullscreen to the shadow host');
+  for (const position of result.positions) {
+    assert.notEqual(position.framedAt, null, `decoded frame after seeking to ${position.target}`);
+    assert.equal(
+      position.paused,
+      false,
+      `fullscreen playback continues beyond either trim boundary: ${JSON.stringify(result)}`,
+    );
+    assert.ok(
+      position.time >= position.target && position.time < position.target + 2,
+      `seek to ${position.target} remained at ${position.time}`,
+    );
+  }
+  assert.notEqual(result.exitFrame, null);
+  assert.equal(result.exitPaused, true, 'exiting fullscreen enforces the selection end');
+  assert.ok(Math.abs(result.exitTime - 15) < 0.2, `exit stopped at ${result.exitTime}`);
+});
+
 test('a fragment opening on a keyframe yields a real picture from its first media box', async () => {
   const result = await inPage('fragmentStill', {segment: '/seg000.m4s'});
   assert.equal(result.error, undefined);

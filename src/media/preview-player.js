@@ -396,8 +396,9 @@ export function createPlayer({
       scrubbing = true;
     },
     scrub,
-    endScrub() {
+    endScrub(restoreTime) {
       scrubbing = false;
+      if (Number.isFinite(restoreTime)) scrubTime = restoreTime;
       if (scrubTime !== null) commit();
       else ready();
     },

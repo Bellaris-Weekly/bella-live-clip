@@ -187,7 +187,7 @@ export function createTimeline({
     const type = e.target.closest('[data-handle]')?.dataset.handle || 'playhead';
     (type === 'playhead' ? track : type === 'start' ? startHandle : endHandle).focus({preventScroll: true});
     drag = {type, x: e.clientX, view: {...view}, anchor: selection[type]};
-    onScrubStart?.();
+    onScrubStart?.({type});
     track.setPointerCapture(e.pointerId);
     apply(e.clientX);
   });
@@ -247,7 +247,7 @@ export function createTimeline({
     const type = e.target.closest('[data-handle]')?.dataset.handle || 'playhead';
     const size = e.key.startsWith('Arrow') ? (e.shiftKey ? SHIFT_STEP : KEYBOARD_STEP) : FINE_STEP,
       delta = STEP_KEYS[e.key] * size;
-    onScrubStart?.();
+    onScrubStart?.({type});
     if (type === 'playhead') {
       current = clamp(current + delta, min, total);
       if (zooming) {

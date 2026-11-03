@@ -1,6 +1,7 @@
 // Runs inside Chromium against the real player and hls.js.
 import {createPlayer} from '../../../src/media/preview-player.js';
 import {readFragmentStill} from '../../../src/media/fragment-still.js';
+import {createPlayback} from '../../../src/media/playback.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -77,6 +78,88 @@ window.drag = async ({timeout}) => {
   r.player.endScrub();
   const framedAt = await settled(r, timeout);
   return {...during, framedAt, stillAfter: !r.still.hidden, time: r.video.currentTime, loads: loads() - before};
+};
+
+function controlledRig(range) {
+  const r = rig(),
+    errors = [];
+  const playback = createPlayback(r.video, message => errors.push(message), {
+    getRange: () => range,
+    position: () => r.player.position(),
+    seek: time => r.player.seek(time),
+  });
+  return {...r, playback, errors};
+}
+
+window.restoreAfterTrim = async ({timeout, paused, settledPreview}) => {
+  const r = controlledRig({start: 5, end: 30});
+  await load(r);
+  r.player.seek(12.7);
+  const initialFrame = await settled(r, timeout);
+  if (!paused) {
+    await r.video.play();
+    await sleep(100);
+  }
+  const saved = r.player.position();
+  r.playback.begin();
+  r.player.beginScrub();
+  r.player.scrub(25.3);
+  let previewFrame = null;
+  if (settledPreview) {
+    await sleep(180);
+    previewFrame = await settled(r, timeout);
+  }
+  const previewTime = r.video.currentTime;
+  r.player.endScrub(saved);
+  const restoredTime = r.video.currentTime;
+  r.playback.end();
+  const restoredFrame = await settled(r, timeout);
+  await sleep(400);
+  return {
+    initialFrame,
+    previewFrame,
+    previewTime,
+    saved,
+    restoredTime,
+    restoredFrame,
+    finalTime: r.video.currentTime,
+    paused: r.video.paused,
+    stillShown: !r.still.hidden,
+    errors: r.errors,
+  };
+};
+
+window.fullscreenPlayback = async ({timeout}) => {
+  const r = controlledRig({start: 10, end: 15}),
+    host = document.createElement('div');
+  document.body.append(host);
+  const root = host.attachShadow({mode: 'open'});
+  root.append(r.video);
+  await load(r);
+  r.player.seek(12.7);
+  const initialFrame = await settled(r, timeout);
+  await r.video.play();
+  await r.video.requestFullscreen();
+  const retargeted = document.fullscreenElement === host && root.fullscreenElement === r.video,
+    positions = [];
+  for (const target of [3.4, 25.3]) {
+    r.video.currentTime = target;
+    const framedAt = await settled(r, timeout);
+    await sleep(250);
+    positions.push({target, time: r.video.currentTime, paused: r.video.paused, framedAt});
+  }
+  await document.exitFullscreen();
+  await sleep(150);
+  const exitFrame = await settled(r, timeout);
+  return {
+    initialFrame,
+    retargeted,
+    positions,
+    exitFrame,
+    exitTime: r.video.currentTime,
+    exitPaused: r.video.paused,
+    errors: r.errors,
+  };
 };
 
 const ranged = async (url, {range, signal}) => {
