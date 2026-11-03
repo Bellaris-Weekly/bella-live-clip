@@ -48,3 +48,5 @@
 生产部署只读取 GitHub Actions Secret `LOG_SERVICE_CONFIG`，不在仓库中保存实际账户、Worker、数据库、域名或令牌配置。资源及域名绑定由维护者预先完成；部署流程只检查并更新已有 Worker 和数据库，不读取、验证或修改域名，也不自动创建替代资源。发布构建从同一个 Secret 注入公开接收地址和对应网络权限，仓库中的构建不含实际地址；管理凭据不会进入插件。
 
 预览截图浏览器验证：运行 `npm run serve`，打开 `http://127.0.0.1:8765/?screenshot`，选择场次后移入预览并点击相机，再移出预览。测试页应显示 `hoverShown`、`leaveHidden`、`png` 和 `nativeSize` 均为 `true`，并实际下载原尺寸 PNG。
+
+弹幕性能对照：运行 `node tools/scripts/benchmark-danmaku.mjs`（需要 FFmpeg 和 Playwright Chromium）。对同一 1080p/30fps 素材比较 2.13.1 合成器与当前实现，预热后交替测量三次，输出空弹幕、固定弹幕和滚动弹幕的中位耗时。测量仅覆盖解码、合成、编码和内存封装，不包含网络或写盘，不能当作真实导出的提速承诺。`npm run test:e2e` 另外验证合成前后逐像素一致、动态表情、原尺寸和 AAC 音频保留。

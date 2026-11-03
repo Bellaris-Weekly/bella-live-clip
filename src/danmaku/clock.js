@@ -59,7 +59,14 @@ export function firstVideoDecodeTime(bytes, trackId, timescale) {
 export function sourceClock(entries) {
   const ranges = [...entries].sort((a, b) => a.start - b.start);
   return time => {
-    const entry = ranges.findLast(item => item.start <= time + 1e-6) ?? ranges[0];
+    let low = 0,
+      high = ranges.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (ranges[middle].start <= time + 1e-6) low = middle + 1;
+      else high = middle;
+    }
+    const entry = ranges[Math.max(0, low - 1)];
     if (!entry || time > entry.end + 0.1 || !Number.isFinite(entry.sourceOffset))
       throw new Error('弹幕源媒体时间映射缺失，已停止导出。');
     return time - entry.sourceOffset;

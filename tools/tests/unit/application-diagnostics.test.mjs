@@ -12,7 +12,7 @@ const stubs = {
   timeline: 'export const createTimeline=options=>{scenario.timelineOptions=options;return scenario.timeline;};',
   version: 'export const createVersionControl=()=>({refresh:async()=>{}});',
   'page-progress': 'export const bindPageProgress=()=>()=>{};',
-  'export-progress': 'export const renderExportProgress=()=>{};',
+  'export-progress': 'export const renderExportProgress=()=>{};export const limitProgress=render=>render;',
   schedule: 'export class ScheduleService{async enrich(records){return {records};}}',
   submission: 'export const createSubmissionService=()=>({load:()=>scenario.loadVideo()});',
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',

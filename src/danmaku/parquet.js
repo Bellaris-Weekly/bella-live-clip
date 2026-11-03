@@ -4,8 +4,12 @@ import {receivedTime} from './clock.js';
 
 const MAX_EVENTS = 100000;
 
-export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal} = {}) {
-  const metadata = await parquetMetadataAsync(file);
+export async function readMetadata(file) {
+  return parquetMetadataAsync(file);
+}
+
+export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal, metadata} = {}) {
+  metadata ??= await readMetadata(file);
   const meta = Object.fromEntries((metadata.key_value_metadata ?? []).map(item => [item.key, item.value]));
   if (meta.live_archive_version !== '1' || !meta.sections) throw new Error('弹幕归档格式不支持。');
   const selected = JSON.parse(meta.sections).danmaku ?? [];

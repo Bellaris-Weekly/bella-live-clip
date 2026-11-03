@@ -209,10 +209,14 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
         .filter(item => !item.next.done)
         .reduce((a, b) => (a.next.value.packet.timestamp <= b.next.value.packet.timestamp ? a : b));
       const {packet, decoderConfig} = stream.next.value;
+      // Prepare one successor while the current packet is being muxed/written.
+      // The iterator still owns decode order; this never queues a whole clip.
+      const next = stream.iterator.next();
+      void next.catch(() => {});
       await stream.source.add(packet, {decoderConfig});
       progress = Math.max(progress, Math.min(0.99, (packet.timestamp + packet.duration) / (end - start)));
       onProgress(progress, stats);
-      stream.next = await stream.iterator.next();
+      stream.next = await next;
       if (stream.next.done) stream.source.close();
     }
     for (const stream of streams) stream.source.close();

@@ -111,18 +111,30 @@ export async function readDanmaku(file, options) {
   return (await import('./parquet.js')).readDanmaku(file, options);
 }
 
-export async function loadComments(record, {origin, start, end, adjustment = 0, signal, fetcher = fetch}) {
+// Read the index and first archive footer while media is downloaded. Keep at
+// most one prefetched file (live snapshots must still be fetched atomically).
+// Row payloads are selected only after the exact native media clock is known.
+export async function prepareComments(record, {signal, fetcher = fetch} = {}) {
   const options = {signal, fetcher};
   const index = await readJson(publicUrl(`live-archive/v1/${record.room}/index.json`), options);
   const parts = archiveParts(index, record.key);
+  const file = await archiveFile(parts[0], options);
+  const {readMetadata} = await import('./parquet.js');
+  const metadata = await readMetadata(file);
+  return {parts, file, metadata};
+}
+
+export async function loadComments(record, {origin, start, end, adjustment = 0, signal, fetcher = fetch, prepared}) {
+  const options = {signal, fetcher};
+  const archive = await (prepared ?? prepareComments(record, options));
   const events = [];
   let retainedBytes = 0;
   const from = start + origin + PLAYBACK_LATENCY - adjustment;
   const to = end + origin + PLAYBACK_LATENCY - adjustment;
-  for (const part of parts) {
+  for (const [i, part] of archive.parts.entries()) {
     signal?.throwIfAborted();
-    const file = await archiveFile(part, options);
-    const rows = await readDanmaku(file, {from, to, signal});
+    const file = i === 0 ? archive.file : await archiveFile(part, options);
+    const rows = await readDanmaku(file, {from, to, signal, metadata: i === 0 ? archive.metadata : undefined});
     for (const row of rows) {
       retainedBytes += String(row.text).length * 2 + 128;
       if (retainedBytes > 16 * 1024 * 1024) throw new Error('弹幕文字超过内存预算，请缩短选区。');

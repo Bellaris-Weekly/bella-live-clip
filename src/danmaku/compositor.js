@@ -1,7 +1,7 @@
 import {VideoSample} from 'mediabunny';
 import {loadComments} from './archive.js';
 import {loadEmotes, textTokens, emoteFrame} from './emotes.js';
-import {DanmakuLayout} from './layout.js';
+import {DanmakuLayout, visibleComment} from './layout.js';
 import {PREROLL} from './clock.js';
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -12,7 +12,7 @@ const FONT =
 
 export async function createDanmakuCompositor(
   record,
-  {origin, start, end, sourceTime, width, height, adjustment, signal, fetcher},
+  {origin, start, end, sourceTime, width, height, adjustment, signal, fetcher, prepared},
 ) {
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
   const events = await loadComments(record, {
@@ -22,9 +22,11 @@ export async function createDanmakuCompositor(
     adjustment,
     signal,
     fetcher,
+    prepared,
   });
+  prepared = undefined;
   const fontSize = (45 * height) / 1080;
-  const resources = await loadEmotes(events, record.room, fontSize, {signal, fetcher});
+  const resources = await loadEmotes(events.filter(visibleComment), record.room, fontSize, {signal, fetcher});
   try {
     const canvas = new OffscreenCanvas(width, height),
       overlay = new OffscreenCanvas(width, height);
@@ -56,8 +58,16 @@ export async function createDanmakuCompositor(
             const emoji = EMOJI_RUN.test(run);
             const font = `${emoji ? '400' : '600'} ${fontSize}px ${emoji ? EMOJI_FONT : FONT}`;
             ink.font = font;
-            parts.push({text: run, font, emoji, x: width});
-            width += ink.measureText(run).width;
+            const metrics = ink.measureText(run);
+            parts.push({
+              text: run,
+              font,
+              emoji,
+              x: width,
+              top: -metrics.actualBoundingBoxAscent - ink.lineWidth - 2,
+              bottom: metrics.actualBoundingBoxDescent + ink.lineWidth + 2,
+            });
+            width += metrics.width;
           }
         }
       }
@@ -67,33 +77,84 @@ export async function createDanmakuCompositor(
       return content;
     }
     const layout = new DanmakuLayout(events, {width, height, measure, start: sourceTime(start) - PREROLL});
+    let previous = [],
+      regions = [];
     return {
       render(sample, timestamp) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
-        sample.draw(context, 0, 0, width, height);
-        ink.clearRect(0, 0, width, height);
+        const commands = [];
         for (const item of layout.advance(time)) {
           const x = layout.x(item, time);
-          ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
           for (const part of item.parts) {
             const y = item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;
-            if (part.asset) ink.drawImage(emoteFrame(part.asset, time - item.started), x + part.x, y);
-            else {
-              ink.font = part.font;
-              if (!part.emoji) ink.strokeText(part.text, x + part.x, y);
-              ink.fillText(part.text, x + part.x, y);
-            }
+            commands.push({
+              item,
+              part,
+              x: x + part.x,
+              y,
+              frame: part.asset ? emoteFrame(part.asset, time - item.started) : null,
+            });
           }
         }
-        context.globalAlpha = 0.65;
-        context.drawImage(overlay, 0, 0);
-        context.globalAlpha = 1;
+        // Fixed comments and unchanged animation frames reuse the existing ink.
+        const changed =
+          commands.length !== previous.length ||
+          commands.some((command, i) => {
+            const old = previous[i];
+            return (
+              command.item !== old.item ||
+              command.part !== old.part ||
+              command.x !== old.x ||
+              command.y !== old.y ||
+              command.frame !== old.frame
+            );
+          });
+        if (changed) {
+          for (const [top, bottom] of regions) ink.clearRect(0, top, width, bottom - top);
+          const rows = [];
+          for (const {item, part, x, y, frame} of commands) {
+            const top = Math.max(0, Math.floor(y + (frame ? -2 : part.top)));
+            const bottom = Math.min(height, Math.ceil(y + (frame ? part.asset.height + 2 : part.bottom)));
+            if (Number.isFinite(top) && Number.isFinite(bottom)) {
+              if (bottom > top) rows.push([top, bottom]);
+            } else rows.push([0, height]);
+            ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
+            if (frame) ink.drawImage(frame, x, y);
+            else {
+              ink.font = part.font;
+              if (!part.emoji) ink.strokeText(part.text, x, y);
+              ink.fillText(part.text, x, y);
+            }
+          }
+          regions = [];
+          for (const row of rows.sort((a, b) => a[0] - b[0])) {
+            const last = regions.at(-1);
+            if (last && row[0] <= last[1]) last[1] = Math.max(last[1], row[1]);
+            else regions.push(row);
+          }
+          previous = commands;
+        }
+        // The export entry rejects rotation. Avoid the generic per-frame
+        // save/translate/rotate path while keeping the same full-frame scaling.
+        context.drawImage(sample.toCanvasImageSource(), 0, 0, width, height);
+        if (regions.length) {
+          context.save();
+          context.beginPath();
+          for (const [top, bottom] of regions) context.rect(0, top, width, bottom - top);
+          context.clip();
+          context.globalAlpha = 0.65;
+          // Keep the original image transform: slicing drawImage's source can
+          // change browser sampling/rounding even at apparently identical size.
+          context.drawImage(overlay, 0, 0);
+          context.restore();
+        }
         return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});
       },
       close() {
         resources.close();
         cache.clear();
+        previous = regions = [];
         canvas.width = overlay.width = 1;
         canvas.height = overlay.height = 1;
       },

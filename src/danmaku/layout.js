@@ -1,15 +1,15 @@
 const BLOCKED = new Set(['喜欢主播加关注，点点红包抽礼物', '点点红包，关注主播抽礼物～', '老板大气！点点红包抽礼物']);
 const TICKS = 60;
 
+export const visibleComment = item => [1, 4, 5].includes(item.mode) && !BLOCKED.has(String(item.text).trim());
+
 export class DanmakuLayout {
   constructor(events, {width, height, measure, start}) {
     this.width = width;
     this.height = height;
     this.scale = height / 1080;
     this.measure = measure;
-    this.events = events
-      .filter(item => [1, 4, 5].includes(item.mode) && !BLOCKED.has(String(item.text).trim()))
-      .sort((a, b) => a.time - b.time || a.order - b.order);
+    this.events = events.filter(visibleComment).sort((a, b) => a.time - b.time || a.order - b.order);
     this.cursor = 0;
     this.tick = Math.floor(start * TICKS);
     this.active = [];
@@ -64,8 +64,12 @@ export class DanmakuLayout {
         this.dropped++;
         continue;
       }
+      if (blocked.has(event.mode)) {
+        pending.push(event);
+        continue;
+      }
       const content = this.measure(event);
-      const position = blocked.has(event.mode) ? null : this.place(content, event.mode, now);
+      const position = this.place(content, event.mode, now);
       if (!position) {
         pending.push(event);
         blocked.add(event.mode);
@@ -83,7 +87,22 @@ export class DanmakuLayout {
     if (target < this.tick - 1) throw new Error('弹幕媒体时间倒退，无法继续压制。');
     // Fixed media-time ticks make layout independent of encoder speed and of
     // how often callers ask for a frame. The same ticks also pre-roll the cut.
-    while (this.tick <= target) this.step(this.tick++ / TICKS);
+    while (this.tick <= target) {
+      if (!this.waiting.length) {
+        // No placement decisions occur before the next arrival. Search using
+        // the original tick/60 comparison, including fractional boundaries.
+        const next = this.events[this.cursor]?.time ?? Infinity;
+        let low = this.tick,
+          high = target;
+        while (low < high) {
+          const middle = Math.floor((low + high) / 2);
+          if (middle / TICKS < next) low = middle + 1;
+          else high = middle;
+        }
+        this.tick = low;
+      }
+      this.step(this.tick++ / TICKS);
+    }
     return this.active;
   }
 }

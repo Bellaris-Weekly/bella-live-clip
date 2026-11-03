@@ -171,11 +171,18 @@ export async function exportSelection(
     });
   }
   report();
+  const exportSignal = signal;
   for (const [index, plan] of plans.entries()) {
+    const planController = new AbortController();
+    const abortPlan = () => planController.abort(exportSignal.reason);
+    exportSignal?.addEventListener('abort', abortPlan, {once: true});
+    if (exportSignal?.aborted) abortPlan();
+    const signal = planController.signal;
     let temporary,
       input,
       destination,
       compositor,
+      preparedComments,
       saved = false;
     const entries = new Map(),
       cache = new Map();
@@ -212,6 +219,12 @@ export async function exportSelection(
       return data;
     }
     try {
+      if (danmaku) {
+        const {prepareComments} = await import('../danmaku/archive.js');
+        preparedComments = prepareComments(record, {signal});
+        // A failed archive must also stop the concurrent media download.
+        void preparedComments.catch(error => planController.abort(error));
+      }
       temporary = await createTemporary({signal});
       signal?.throwIfAborted();
       let origin;
@@ -219,8 +232,10 @@ export async function exportSelection(
         message = '正在读取弹幕媒体时钟';
         report();
         const {partOrigin, firstVideoDecodeTime} = await import('../danmaku/clock.js');
-        const first = await read(group.firstSegment);
-        const init = group.firstMap ? await read(group.firstMap) : null;
+        const [first, init] = await Promise.all([
+          read(group.firstSegment),
+          group.firstMap ? read(group.firstMap) : null,
+        ]);
         const probe = new Input({source: new BlobSource(new Blob(init ? [init, first] : [first])), formats: [MP4]});
         try {
           const track = await probe.getPrimaryVideoTrack();
@@ -296,7 +311,9 @@ export async function exportSelection(
           height,
           adjustment: danmaku.adjustment,
           signal,
+          prepared: preparedComments,
         });
+        preparedComments = undefined;
       }
       message = danmaku ? '正在重新编码并压制弹幕' : '正在裁剪';
       const result = await convertInput(input, {
@@ -322,6 +339,9 @@ export async function exportSelection(
       if (signal?.aborted) throw signal.reason;
       throw mediaStorageError(error);
     } finally {
+      exportSignal?.removeEventListener('abort', abortPlan);
+      planController.abort();
+      await preparedComments?.catch(() => {});
       compositor?.close();
       input?.dispose();
       cache.clear();

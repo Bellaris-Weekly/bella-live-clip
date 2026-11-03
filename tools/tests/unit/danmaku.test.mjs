@@ -2,7 +2,14 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {partOrigin, commentTime, firstVideoDecodeTime, sourceClock} from '../../../src/danmaku/clock.js';
-import {readDanmaku, loadComments, archiveParts, boundedFetch, publicUrl} from '../../../src/danmaku/archive.js';
+import {
+  readDanmaku,
+  loadComments,
+  archiveParts,
+  boundedFetch,
+  publicUrl,
+  prepareComments,
+} from '../../../src/danmaku/archive.js';
 import {selectEmotes, emoteFrame} from '../../../src/danmaku/emotes.js';
 import {DanmakuLayout} from '../../../src/danmaku/layout.js';
 
@@ -233,4 +240,115 @@ test('an aborted archive load does not start a request', async () => {
     }),
     {name: 'AbortError'},
   );
+});
+
+test('idle layout ticks preserve every placement and drop against the original 60 Hz clock', async () => {
+  const {DanmakuLayout: Reference} = await import('../fixtures/danmaku-layout-reference.js');
+  let seed = 19;
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const events = Array.from({length: 300}, (_, i) => ({
+    ...event(random() * 25, i, [1, 4, 5][i % 3]),
+    text: String(i),
+    width: 30 + random() * 500,
+    height: 15 + random() * 120,
+  }));
+  const options = {width: 1920, height: 1080, start: -15, measure: item => ({width: item.width, height: item.height})};
+  const actual = new DanmakuLayout(events, options),
+    expected = new Reference(events, options);
+  for (let time = 0; time < 50; time += random() * 0.5) {
+    assert.deepEqual(actual.advance(time), expected.advance(time));
+    assert.deepEqual(actual.waiting, expected.waiting);
+    assert.equal(actual.dropped, expected.dropped);
+  }
+  let steps = 0;
+  const empty = layout([]);
+  empty.step = () => steps++;
+  empty.advance(3600);
+  assert.equal(steps, 1, 'an hour without arrivals needs no 216,000-tick replay');
+});
+
+test('prefetched archive snapshot is reused when the exact media interval becomes known', async () => {
+  const requests = [];
+  const fetcher = async url => {
+    requests.push(url);
+    return new Response(
+      url.endsWith('index.json')
+        ? JSON.stringify({schemaVersion: 1, live: [{live_key: 'x', part: 1, path: 'live-archive/v1/1/live/x.parquet'}]})
+        : fixture,
+    );
+  };
+  const record = {room: 1, key: 'x'};
+  const prepared = prepareComments(record, {fetcher});
+  await prepared;
+  assert.equal(requests.length, 2);
+  const rows = await loadComments(record, {origin: 0, start: 90, end: 110, fetcher, prepared});
+  assert.equal(rows.length, 2);
+  assert.equal(requests.length, 2);
+});
+
+test('native clock lookup preserves gap errors, equal starts and backward queries', () => {
+  const entries = [
+    {start: 0, end: 3, sourceOffset: -10},
+    {start: 3, end: 5, sourceOffset: -20},
+    {start: 3, end: 6, sourceOffset: -30},
+    {start: 8, end: 10, sourceOffset: -40},
+  ];
+  const clock = sourceClock(entries);
+  for (const time of [9, 3, 2, 0, 8, 5, 2.9999995, 10]) {
+    const expected = entries.findLast(entry => entry.start <= time + 1e-6) ?? entries[0];
+    assert.equal(clock(time), time - expected.sourceOffset);
+  }
+  assert.throws(() => clock(7), /映射/);
+});
+
+test('a failed prefetched archive aborts concurrent media reads and releases temporary media', async t => {
+  const {exportSelection} = await import('../../../src/media/export.js');
+  let requested = false,
+    canceled = false,
+    removed = false;
+  t.mock.method(globalThis, 'fetch', async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    return new Response('', {status: 404});
+  });
+  const api = {
+    request: (_, {signal}) =>
+      new Promise((_, reject) => {
+        requested = true;
+        const cancel = () => {
+          canceled = true;
+          reject(signal.reason);
+        };
+        if (signal.aborted) cancel();
+        else signal.addEventListener('abort', cancel, {once: true});
+      }),
+  };
+  const segment = {url: 'https://media.test/1.m4s', duration: 3};
+  await assert.rejects(
+    exportSelection(
+      api,
+      {room: 1, key: 'x', start: 0},
+      [
+        {
+          segments: [segment],
+          firstSegment: segment,
+          start: 0,
+          streamEnd: 3,
+        },
+      ],
+      {start: 0, end: 2},
+      {
+        danmaku: {},
+        createTemporary: async () => ({
+          handle: {},
+          remove: async () => {
+            removed = true;
+          },
+        }),
+      },
+    ),
+    /没有弹幕归档/,
+  );
+  assert.equal(requested, true);
+  assert.equal(canceled, true);
+  assert.equal(removed, true);
 });

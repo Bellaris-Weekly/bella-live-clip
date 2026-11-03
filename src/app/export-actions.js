@@ -1,7 +1,7 @@
 import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
 import {estimateSelectionBytes} from '../media/recording-estimate.js';
 import {fileName} from '../media/file-name.js';
-import {renderExportProgress} from '../ui/export-progress.js';
+import {renderExportProgress, limitProgress} from '../ui/export-progress.js';
 import {formatBytes, formatDuration} from '../shared/format.js';
 
 const NO_FILE_SAVING = '当前浏览器不支持保存文件，请使用 Chrome 或 Edge。';
@@ -85,11 +85,14 @@ export function createExportActions({
         clearDownloads();
         status('正在导出…');
         diagnostic.stage('preparing');
-        const onProgress = progress => {
-          diagnostic.progress(progress);
+        const updateProgress = limitProgress(progress => {
           renderExportProgress($('progress'), status, progress, submission);
           if (submission && progress.estimatedBytes !== null)
             $('estimatedSize').textContent = `约 ${formatBytes(progress.estimatedBytes)}`;
+        });
+        const onProgress = progress => {
+          diagnostic.progress(progress);
+          updateProgress(progress);
         };
         await (submission ? exportVideo : exportClip)(record, selection, destination, {signal, onProgress, danmaku});
         status('导出完成。');

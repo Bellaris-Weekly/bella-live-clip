@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {renderExportProgress} from '../../../src/ui/export-progress.js';
+import {renderExportProgress, limitProgress} from '../../../src/ui/export-progress.js';
 
 test('准备时使用不定进度并标明读取量，实际处理后恢复百分比', () => {
   const progress = {
@@ -40,4 +40,25 @@ test('直播片段保留处理比例和重连状态', () => {
   assert.equal(progress.value, 50);
   assert.match(text, /第 2 次/);
   assert.match(text, /第 2 次.* · 30% · 已读取/);
+});
+
+test('packet progress is throttled, while phase changes, retries and completion are immediate', () => {
+  let time = 0;
+  const received = [];
+  const report = limitProgress(
+    state => received.push(state),
+    () => time,
+  );
+  report({phase: 'processing', progress: 0.1});
+  for (time = 1; time < 100; time++) report({phase: 'processing', progress: 0.2});
+  assert.equal(received.length, 1);
+  report({phase: 'processing', progress: 0.3});
+  assert.equal(received.length, 2);
+  report({phase: 'processing', progress: 0.3, reconnecting: 1, attempt: 1});
+  report({phase: 'processing', progress: 0.3, reconnecting: 1, attempt: 2});
+  report({phase: 'processing', progress: 0.3, reconnecting: 0});
+  report({phase: 'finalizing', progress: 0.99});
+  report({phase: 'complete', progress: 1});
+  assert.equal(received.length, 7);
+  assert.equal(received.at(-1).progress, 1);
 });
