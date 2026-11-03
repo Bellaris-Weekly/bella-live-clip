@@ -21,6 +21,9 @@ export class RecordingPlan {
           start: stream.start_time + group.offset,
           streamEnd: stream.end_time,
           streamIndex: index,
+          part: stream,
+          firstSegment: parsed.groups[0]?.segments[0],
+          firstMap: parsed.groups[0]?.map,
         });
     }
     return groups;

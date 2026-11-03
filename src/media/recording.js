@@ -158,6 +158,7 @@ export async function saveRecording(
         pendingDiscontinuity = false;
         onSegment({
           segment: item.segment,
+          sourceOffset: offset,
           start: recordingTime(sourceStart + offset),
           end: recordingTime(sourceEnd + offset),
         });

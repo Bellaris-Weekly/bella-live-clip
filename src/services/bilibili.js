@@ -176,6 +176,6 @@ export class BiliApi {
     );
     const list = data.list || [];
     if (!list.length) throw new Error('B 站暂未返回这段录像，请刷新场次重试；最新片段可能还在生成。');
-    return [...list].sort((a, b) => a.start_time - b.start_time);
+    return [...list].sort((a, b) => a.start_time - b.start_time).map(part => ({...part, clockComplete: start === 0}));
   }
 }

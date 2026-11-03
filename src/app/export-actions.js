@@ -44,7 +44,7 @@ export function createExportActions({
     showSaved({...output, name: destination.name});
   }
 
-  async function exportClip(record, selection, destination, {signal, onProgress}) {
+  async function exportClip(record, selection, destination, {signal, onProgress, danmaku}) {
     const estimate = session.estimate();
     await ensureTemporarySpace(storage, estimate ? estimateSelectionBytes(estimate, record.start, selection) : 0);
     const segmentIndex = session.segmentIndex();
@@ -54,6 +54,7 @@ export function createExportActions({
       signal,
       precise: session.exportMode() === 'precise',
       onProgress,
+      danmaku,
       createTemporary: options => createTemporaryMedia({...options, storage}),
       createFile: () => ({handle: destination, name: destination.name, remove: async () => {}}),
       onSaved: showSaved,
@@ -64,7 +65,8 @@ export function createExportActions({
     if (session.busy() || !session.ready()) return;
     const record = session.record(),
       submission = session.isSubmission(),
-      selection = timeline.getSelection();
+      selection = timeline.getSelection(),
+      danmaku = session.danmaku?.();
     const estimate = session.estimate();
     await job(
       async (signal, diagnostic) => {
@@ -89,7 +91,7 @@ export function createExportActions({
           if (submission && progress.estimatedBytes !== null)
             $('estimatedSize').textContent = `约 ${formatBytes(progress.estimatedBytes)}`;
         };
-        await (submission ? exportVideo : exportClip)(record, selection, destination, {signal, onProgress});
+        await (submission ? exportVideo : exportClip)(record, selection, destination, {signal, onProgress, danmaku});
         status('导出完成。');
       },
       'export',

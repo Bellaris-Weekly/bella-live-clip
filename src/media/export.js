@@ -1,4 +1,4 @@
-import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion} from 'mediabunny';
+import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion, canEncodeVideo} from 'mediabunny';
 import {segmentKey, selectPlaylistRange} from './playlist.js';
 import {trimPrecise} from './smart-trim.js';
 import {recordingTime} from './recording-timeline.js';
@@ -10,10 +10,20 @@ import {requestWithRetry} from '../services/retry-request.js';
 // The caller owns the Input so HLS and Blob inputs use the same conversion path.
 export async function convertInput(
   input,
-  {start, end, precise = false, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle} = {},
+  {
+    start,
+    end,
+    precise = false,
+    compositor,
+    signal,
+    onProgress = () => {},
+    onProcessingStart = () => {},
+    fileHandle,
+  } = {},
 ) {
   signal?.throwIfAborted();
-  if (precise) return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle});
+  if (precise || compositor)
+    return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor});
   const session = await createMediaOutput({fileHandle, signal}),
     {output} = session;
   let conversion, canceling;
@@ -117,6 +127,7 @@ export async function exportSelection(
   {
     signal,
     precise = false,
+    danmaku,
     onProgress = () => {},
     onSaved = () => {},
     createFile,
@@ -164,6 +175,7 @@ export async function exportSelection(
     let temporary,
       input,
       destination,
+      compositor,
       saved = false;
     const entries = new Map(),
       cache = new Map();
@@ -202,6 +214,22 @@ export async function exportSelection(
     try {
       temporary = await createTemporary({signal});
       signal?.throwIfAborted();
+      let origin;
+      if (danmaku) {
+        message = '正在读取弹幕媒体时钟';
+        report();
+        const {partOrigin, firstVideoDecodeTime} = await import('../danmaku/clock.js');
+        const first = await read(group.firstSegment);
+        const init = group.firstMap ? await read(group.firstMap) : null;
+        const probe = new Input({source: new BlobSource(new Blob(init ? [init, first] : [first])), formats: [MP4]});
+        try {
+          const track = await probe.getPrimaryVideoTrack();
+          if (!track) throw new Error('首分片没有视频轨，无法对齐弹幕。');
+          origin = partOrigin(group.part, firstVideoDecodeTime(first, track.id, await track.getTimeResolution()));
+        } finally {
+          probe.dispose();
+        }
+      }
       message = '正在整理录像';
       const expanded = await extendPlan(group, plan, read, signal);
       for (const segment of expanded.segments) resources.add(segmentKey(segment));
@@ -247,11 +275,35 @@ export async function exportSelection(
         count: plans.length,
       });
       signal?.throwIfAborted();
-      message = '正在裁剪';
+      if (danmaku) {
+        message = '正在读取弹幕和表情';
+        report();
+        const {sourceClock} = await import('../danmaku/clock.js');
+        const {createDanmakuCompositor} = await import('../danmaku/compositor.js');
+        const track = await input.getPrimaryVideoTrack();
+        if (!(await track.canDecode())) throw new Error('当前浏览器无法解码视频，不能压制弹幕。');
+        if (await track.getRotation()) throw new Error('当前暂不支持旋转视频压制弹幕。');
+        const width = await track.getCodedWidth(),
+          height = await track.getCodedHeight();
+        if (!(await canEncodeVideo('avc', {width, height})))
+          throw new Error('当前浏览器无法编码此分辨率的 H.264，不能压制弹幕。');
+        compositor = await createDanmakuCompositor(record, {
+          origin,
+          start,
+          end,
+          sourceTime: sourceClock(entries.values()),
+          width,
+          height,
+          adjustment: danmaku.adjustment,
+          signal,
+        });
+      }
+      message = danmaku ? '正在重新编码并压制弹幕' : '正在裁剪';
       const result = await convertInput(input, {
         start,
         end,
         precise,
+        compositor,
         signal,
         fileHandle: destination.handle,
         onProgress(value, detail) {
@@ -270,6 +322,7 @@ export async function exportSelection(
       if (signal?.aborted) throw signal.reason;
       throw mediaStorageError(error);
     } finally {
+      compositor?.close();
       input?.dispose();
       cache.clear();
       try {

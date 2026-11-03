@@ -89,7 +89,7 @@ export async function readVideoEncodingSettings(track, {signal} = {}) {
   return {width, height, bitrate, frameRate, sourceDecoderConfig, canSplice, encodingOptions: options};
 }
 
-export async function* encodeVideoRange(track, {start, end, origin = 0, settings, signal}) {
+export async function* encodeVideoRange(track, {start, end, origin = 0, settings, signal, compositor}) {
   settings ??= await readVideoEncodingSettings(track, {signal});
   signal?.throwIfAborted();
   const packets = [];
@@ -126,10 +126,16 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         const clippedStart = Math.max(start, sample.timestamp);
         const clippedEnd = Math.min(end, sample.timestamp + sample.duration);
         if (clippedEnd <= clippedStart) continue;
-        sample.setTimestamp(clippedStart - origin);
-        sample.setDuration(clippedEnd - clippedStart);
+        const rendered = compositor?.render(sample, clippedStart);
+        const frame = rendered ?? sample;
+        frame.setTimestamp(clippedStart - origin);
+        frame.setDuration(clippedEnd - clippedStart);
         // add() enforces the codec's four-input backpressure; drain every emitted batch before reading more.
-        await Promise.race([source.add(sample, first ? {keyFrame: true} : undefined), aborted]);
+        try {
+          await Promise.race([source.add(frame, first ? {keyFrame: true} : undefined), aborted]);
+        } finally {
+          rendered?.close();
+        }
         first = false;
       } finally {
         sample.close();

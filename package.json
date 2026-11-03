@@ -17,7 +17,9 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "fzstd": "0.1.1",
     "hls.js": "1.6.16",
+    "hyparquet": "1.32.0",
     "mediabunny": "1.56.1"
   },
   "devDependencies": {

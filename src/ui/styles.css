@@ -208,3 +208,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
  .header-tools{gap:2px}
  #shortcut{width:78px;font-size:10px;padding-inline:3px}
 }
+
+.danmaku-options { margin: 8px 0; font-size: 12px; }
+.danmaku-options label { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
+.danmaku-options input[type='number'] { width: 58px; }
+.danmaku-options p { margin: 5px 0; opacity: .75; }
