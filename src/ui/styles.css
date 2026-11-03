@@ -112,10 +112,12 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #timelineLabels input{width:64px;height:22px;padding:0 2px;border-color:transparent;border-radius:5px;background:transparent;color:inherit;text-align:center;font-size:10px}
 #timelineLabels input:hover:not(:disabled),#timelineLabels input:focus{border-color:var(--line);background:var(--paper)}
 .export-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.export-mode{position:relative;display:grid;grid-template-columns:1fr 1fr;flex:none;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover);isolation:isolate}
-.export-mode::before{content:"";position:absolute;left:2px;top:2px;bottom:2px;width:calc(50% - 2px);border-radius:5px;background:var(--accent);transition:transform .18s ease;z-index:-1}
+.export-mode{position:relative;display:grid;grid-template-columns:repeat(var(--mode-count,3),1fr);flex:none;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--hover);isolation:isolate}
+.export-mode::before{content:"";position:absolute;left:2px;top:2px;bottom:2px;width:calc((100% - 4px)/var(--mode-count,3));border-radius:5px;background:var(--accent);transition:transform .24s cubic-bezier(.22,1,.36,1);z-index:-1}
 .export-mode:has([data-mode="precise"][aria-pressed="true"])::before{transform:translateX(100%)}
-.export-mode button{padding:5px 10px;border-radius:5px;background:transparent;color:var(--muted);font-size:11px;line-height:18px}
+.export-mode:has([data-mode="danmaku"][hidden]){--mode-count:2}
+.export-mode:has([data-mode="danmaku"][aria-pressed="true"])::before{transform:translateX(200%)}
+.export-mode button{padding:5px 10px;border-radius:5px;background:transparent;color:var(--muted);font-size:11px;line-height:18px;transition:color .18s ease}
 .export-mode button[aria-pressed=true]{color:white}
 .export-mode button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .resize{position:absolute;z-index:5;touch-action:none}
@@ -208,8 +210,3 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
  .header-tools{gap:2px}
  #shortcut{width:78px;font-size:10px;padding-inline:3px}
 }
-
-.danmaku-options { margin: 8px 0; font-size: 12px; }
-.danmaku-options label { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
-.danmaku-options input[type='number'] { width: 58px; }
-.danmaku-options p { margin: 5px 0; opacity: .75; }

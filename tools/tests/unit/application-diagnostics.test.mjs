@@ -112,15 +112,17 @@ function start({
   total = 100,
   groups = [],
   clips = async () => streams,
+  settings = {},
 } = {}) {
   let page = url;
+  const modes = ['copy', 'precise', 'danmaku'].map(mode => ({...element(), dataset: {mode}}));
   const nodes = new Map(),
     root = {
       getElementById(id) {
         if (!nodes.has(id)) nodes.set(id, element());
         return nodes.get(id);
       },
-      querySelectorAll: () => [],
+      querySelectorAll: selector => (selector === '[data-mode]' ? modes : []),
     };
   const document = {
     createElement: () => ({...element(), attachShadow: () => root}),
@@ -223,6 +225,8 @@ function start({
   };
   const app = context.application.createApp({
     api,
+    get: (key, fallback) => settings[key] ?? fallback,
+    set: (key, value) => (settings[key] = value),
     diagnostics,
     pageUrl: () => page,
     saveFilePicker: picker,
@@ -230,6 +234,7 @@ function start({
   });
   return {
     app,
+    modes,
     requests,
     seeks,
     scenario,
@@ -732,4 +737,69 @@ test('自动增长在拖动、后台、导出、关闭时暂停；重新打开�
   f.$('back').onclick();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.timers.size, 0);
+});
+
+test('三种导出方式互斥：弹幕按默认时间压制，切回原画或精确后不再带弹幕', async () => {
+  const outputs = [];
+  const settings = {'danmaku.adjustment': 4};
+  const f = start({
+    url: 'https://live.bilibili.com/123',
+    current: async () => ({key: 'live', room: 123, start: 0, end: 100}),
+    settings,
+    exportWork: async options => outputs.push(options),
+  });
+  await f.app.open();
+  for (const mode of ['danmaku', 'copy', 'precise', 'danmaku']) {
+    f.modes.find(button => button.dataset.mode === mode).onclick();
+    assert.deepEqual(
+      f.modes.filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.dataset.mode),
+      [mode],
+    );
+    assert.equal(settings['exportMode.live'], mode);
+    await f.$('download').onclick();
+    const options = outputs.at(-1);
+    assert.equal(options.precise, mode !== 'copy');
+    assert.equal(options.danmaku?.adjustment, mode === 'danmaku' ? 0 : undefined);
+  }
+  f.$('wholeRecording').checked = true;
+  await f.$('download').onclick();
+  assert.equal(outputs.at(-1).danmaku, undefined);
+  f.$('wholeRecording').checked = false;
+  await f.$('download').onclick();
+  assert.equal(outputs.at(-1).danmaku.adjustment, 0);
+});
+
+test('旧弹幕开关迁移为弹幕模式，投稿与直播分别记住选择', async () => {
+  const settings = {'danmaku.enabled': true, 'exportMode.live': 'precise'};
+  const outputs = [];
+  const options = {
+    url: 'https://live.bilibili.com/123',
+    current: async () => ({key: 'live', room: 123, start: 0, end: 100}),
+    settings,
+    exportWork: async options => {
+      outputs.push(options);
+      return {bytes: 1};
+    },
+  };
+  const f = start(options);
+  await f.app.open();
+  const danmaku = f.modes.find(button => button.dataset.mode === 'danmaku');
+  assert.equal(danmaku.getAttribute('aria-pressed'), 'true');
+  assert.equal(danmaku.hidden, false);
+  assert.equal(settings['danmaku.enabled'], false);
+  assert.equal(settings['exportMode.live'], 'danmaku');
+  f.navigate('https://www.bilibili.com/video/BV1234567890');
+  await f.app.open();
+  assert.equal(danmaku.hidden, true);
+  assert.equal(danmaku.getAttribute('aria-pressed'), 'false');
+  await f.$('download').onclick();
+  assert.equal(outputs.at(-1).precise, true);
+  assert.equal(outputs.at(-1).danmaku, undefined);
+  const reopened = start(options);
+  await reopened.app.open();
+  assert.equal(reopened.modes[2].getAttribute('aria-pressed'), 'true');
+  reopened.modes[0].onclick();
+  const again = start(options);
+  await again.app.open();
+  assert.equal(again.modes[0].getAttribute('aria-pressed'), 'true');
 });

@@ -129,14 +129,19 @@ export function createApp({
   let scheduleController = null,
     backgroundStarted = false;
   // Live clips default to lossless; video clips keep their exact cut, as they always have.
-  let burnDanmaku = Boolean(get('danmaku.enabled', false));
   const exportModes = {live: get('exportMode.live', 'copy'), submission: get('exportMode.submission', 'precise')};
+  if (get('danmaku.enabled', false)) {
+    exportModes.live = 'danmaku';
+    set('exportMode.live', 'danmaku');
+    set('danmaku.enabled', false);
+  }
   const modeKind = () => (isSubmission() ? 'submission' : 'live'),
     exportMode = () => exportModes[modeKind()];
   function renderExportMode() {
-    root
-      .querySelectorAll('[data-mode]')
-      .forEach(el => el.setAttribute('aria-pressed', el.dataset.mode === exportMode()));
+    root.querySelectorAll('[data-mode]').forEach(el => {
+      el.hidden = el.dataset.mode === 'danmaku' && isSubmission();
+      el.setAttribute('aria-pressed', el.dataset.mode === exportMode());
+    });
   }
   const panelWindow = createPanelWindow({root, get, set});
   let exporter = null,
@@ -374,15 +379,6 @@ export function createApp({
       whole: $('wholeRecording').checked,
       stopping: exporter.stopping(),
     });
-    const unavailable = isSubmission() || $('wholeRecording').checked;
-    $('burnDanmaku').checked = burnDanmaku && !unavailable;
-    $('burnDanmaku').disabled = Boolean(controller) || unavailable;
-    $('danmakuAdjustment').disabled = Boolean(controller) || unavailable || !$('burnDanmaku').checked;
-    $('danmakuHint').textContent = isSubmission()
-      ? '普通投稿不支持压制弹幕：直播弹幕归档无法对应投稿时间轴。'
-      : $('wholeRecording').checked
-        ? '整场压制弹幕暂不支持，请关闭整场后选择片段导出。'
-        : '压制弹幕需要重新编码，会更慢。负值提前，正值延后（±5 秒）。';
     updateFeedback();
   }
 
@@ -821,20 +817,6 @@ export function createApp({
         updateExportSummary();
       }),
   );
-  const savedAdjustment = Number(get('danmaku.adjustment', 0));
-  $('danmakuAdjustment').value = String(Number.isFinite(savedAdjustment) ? clamp(savedAdjustment, -5, 5) : 0);
-  $('burnDanmaku').checked = burnDanmaku;
-  $('burnDanmaku').onchange = () => {
-    burnDanmaku = $('burnDanmaku').checked;
-    set('danmaku.enabled', burnDanmaku);
-    controls();
-  };
-  $('danmakuAdjustment').onchange = () => {
-    const value = Number($('danmakuAdjustment').value);
-    const adjustment = Number.isFinite(value) ? Math.round(clamp(value, -5, 5) * 10) / 10 : 0;
-    $('danmakuAdjustment').value = String(adjustment);
-    set('danmaku.adjustment', adjustment);
-  };
   exporter = createExportActions({
     root,
     job,
@@ -856,9 +838,7 @@ export function createApp({
       estimate: () => estimate,
       exportMode,
       danmaku: () =>
-        !isSubmission() && !$('wholeRecording').checked && $('burnDanmaku').checked
-          ? {adjustment: Number($('danmakuAdjustment').value)}
-          : null,
+        !isSubmission() && !$('wholeRecording').checked && exportMode() === 'danmaku' ? {adjustment: 0} : null,
       segments: () => segments,
       segmentIndex: () => segmentIndex,
       total: () => playbackTotal,

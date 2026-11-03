@@ -52,7 +52,7 @@ export function createExportActions({
     const {exportSelection} = await import('../media/export.js');
     await exportSelection(mediaApi, record, groups, selection, {
       signal,
-      precise: session.exportMode() === 'precise',
+      precise: session.exportMode() !== 'copy',
       onProgress,
       danmaku,
       createTemporary: options => createTemporaryMedia({...options, storage}),
