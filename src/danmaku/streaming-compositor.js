@@ -1,5 +1,5 @@
 import {mapConcurrent} from '../shared/concurrent.js';
-import {createDanmakuPainter} from './compositor.js';
+import {createDanmakuPainter, danmakuFontSize} from './compositor.js';
 import {loadEmoteCatalog, loadEmotes, referencedEmotes} from './emotes.js';
 import {visibleComment} from './layout.js';
 import {PREROLL} from './clock.js';
@@ -99,7 +99,7 @@ export async function createStreamingCompositor(
       const loaded = await loadEmotes(
         missing.map(text => ({text})),
         record.room,
-        (45 * height) / 1080,
+        danmakuFontSize(height),
         {signal, fetcher, selected, lazy: true, budget, metrics},
       );
       for (const [name, asset] of loaded.assets) assets.set(name, asset);

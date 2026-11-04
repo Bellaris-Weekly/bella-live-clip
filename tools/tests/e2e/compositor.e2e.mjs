@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {chromium} from 'playwright-core';
 
-test('optimized compositor matches the 2.13.1 pixels at fractional positions, animation boundaries and empty frames', async () => {
+test('outlined and shadowed compositor matches full-frame pixels at fractional positions, animation boundaries and empty frames', async () => {
   const {outputFiles} = await build({
     entryPoints: ['tools/tests/e2e/compositor-page.js'],
     bundle: true,
