@@ -8,7 +8,7 @@ export async function readMetadata(file) {
   return parquetMetadataAsync(file);
 }
 
-export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal, metadata} = {}) {
+export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal, metadata, readGroup} = {}) {
   metadata ??= await readMetadata(file);
   const meta = Object.fromEntries((metadata.key_value_metadata ?? []).map(item => [item.key, item.value]));
   if (meta.live_archive_version !== '1' || !meta.sections) throw new Error('弹幕归档格式不支持。');
@@ -31,14 +31,16 @@ export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal
     if (groups.has(i) && !outside) {
       if (Number(group.total_byte_size) > 16 * 1024 * 1024 || count > 10000) throw new Error('弹幕分区超过内存预算。');
       // Read one section group at a time. Other sections never reach the decoder.
-      const values = await parquetReadObjects({
-        file,
-        metadata,
-        rowStart,
-        rowEnd,
-        columns: ['sec', 't', 'sent', 'text', 'mode', 'color'],
-        compressors: {ZSTD: (input, output) => decompress(input, new Uint8Array(output))},
-      });
+      const load = () =>
+        parquetReadObjects({
+          file,
+          metadata,
+          rowStart,
+          rowEnd,
+          columns: ['sec', 't', 'sent', 'text', 'mode', 'color'],
+          compressors: {ZSTD: (input, output) => decompress(input, new Uint8Array(output))},
+        });
+      const values = await (readGroup ? readGroup(i, Number(group.total_byte_size), load) : load());
       for (const row of values) {
         if (row.sec !== 'danmaku') throw new Error('弹幕归档分区不一致。');
         const time = receivedTime(row);

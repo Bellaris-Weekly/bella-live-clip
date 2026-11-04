@@ -1,4 +1,4 @@
-import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion, canEncodeVideo} from 'mediabunny';
+import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion} from 'mediabunny';
 import {segmentKey, selectPlaylistRange} from './playlist.js';
 import {trimPrecise} from './smart-trim.js';
 import {recordingTime} from './recording-timeline.js';
@@ -116,9 +116,9 @@ function selectionTime(plan, entries, point, endBoundary) {
   return entries.get(segmentKey(plan.segments.at(-1)))?.end ?? 0;
 }
 
-// Normalize each selected discontinuity to temporary disk using the exact same
-// packet timeline as full download, then trim from that seekable MP4 into the
-// destination. No combined HLS Input or whole-file ArrayBuffer is involved.
+// All modes reuse the recording packet timeline. Copy/precise cuts use a
+// seekable temporary MP4; danmaku feeds a bounded intermediate stream straight
+// into the decoder, compositor and final MP4 writer.
 export async function exportSelection(
   api,
   record,
@@ -156,7 +156,9 @@ export async function exportSelection(
     processing = 0,
     reconnecting = 0,
     attempt = 0,
-    message;
+    message,
+    videoFrames = 0,
+    processedSeconds = 0;
   function report(phase = 'preparing') {
     onProgress({
       progress,
@@ -168,6 +170,8 @@ export async function exportSelection(
       reconnecting,
       attempt,
       message,
+      videoFrames,
+      processedSeconds,
     });
   }
   report();
@@ -181,7 +185,6 @@ export async function exportSelection(
     let temporary,
       input,
       destination,
-      compositor,
       preparedComments,
       saved = false;
     const entries = new Map(),
@@ -225,7 +228,7 @@ export async function exportSelection(
         // A failed archive must also stop the concurrent media download.
         void preparedComments.catch(error => planController.abort(error));
       }
-      temporary = await createTemporary({signal});
+      if (!danmaku) temporary = await createTemporary({signal});
       signal?.throwIfAborted();
       let origin;
       if (danmaku) {
@@ -262,6 +265,52 @@ export async function exportSelection(
           return response;
         },
       };
+      if (danmaku) {
+        destination = await createFile({
+          start: plan.offset + plan.start,
+          end: plan.offset + plan.end,
+          index,
+          count: plans.length,
+        });
+        const {exportStreamingDanmaku} = await import('./streaming-export.js');
+        const result = await exportStreamingDanmaku(savingApi, record, expanded, plan, {
+          origin,
+          adjustment: danmaku.adjustment,
+          preparedComments,
+          createTemporary,
+          fileHandle: destination.handle,
+          signal,
+          abort: error => planController.abort(error),
+          onSegment: entry => entries.set(segmentKey(entry.segment), entry),
+          selectionStart: () => Math.max(0, selectionTime(plan, entries, plan.start, false)),
+          selectionEnd: () => selectionTime(plan, entries, plan.end, true),
+          onDownload(state) {
+            reconnecting = state.reconnecting;
+            attempt = state.attempt;
+            report(processing ? 'processing' : 'preparing');
+          },
+          onProgress(value, detail) {
+            message = detail?.message ?? '正在重新编码并压制弹幕';
+            videoFrames = detail?.videoFrames ?? videoFrames;
+            processedSeconds = detail?.processedSeconds ?? processedSeconds;
+            if (value !== 1) value = Math.min(0.99, processedSeconds / weight);
+            processing = Math.max(processing, (completedDuration + weight * value) / totalDuration);
+            progress = Math.min(0.99, processing);
+            report('processing');
+          },
+        });
+        saved = true;
+        const output = {
+          ...result,
+          name: destination.name,
+          start: plan.offset + plan.start,
+          end: plan.offset + plan.end,
+        };
+        outputs.push(output);
+        completedDuration += weight;
+        onSaved(output);
+        continue;
+      }
       await saveRecording(savingApi, [expanded], temporary.handle, {
         signal,
         concurrency: 2,
@@ -290,37 +339,11 @@ export async function exportSelection(
         count: plans.length,
       });
       signal?.throwIfAborted();
-      if (danmaku) {
-        message = '正在读取弹幕和表情';
-        report();
-        const {sourceClock} = await import('../danmaku/clock.js');
-        const {createDanmakuCompositor} = await import('../danmaku/compositor.js');
-        const track = await input.getPrimaryVideoTrack();
-        if (!(await track.canDecode())) throw new Error('当前浏览器无法解码视频，不能压制弹幕。');
-        if (await track.getRotation()) throw new Error('当前暂不支持旋转视频压制弹幕。');
-        const width = await track.getCodedWidth(),
-          height = await track.getCodedHeight();
-        if (!(await canEncodeVideo('avc', {width, height})))
-          throw new Error('当前浏览器无法编码此分辨率的 H.264，不能压制弹幕。');
-        compositor = await createDanmakuCompositor(record, {
-          origin,
-          start,
-          end,
-          sourceTime: sourceClock(entries.values()),
-          width,
-          height,
-          adjustment: danmaku.adjustment,
-          signal,
-          prepared: preparedComments,
-        });
-        preparedComments = undefined;
-      }
-      message = danmaku ? '正在重新编码并压制弹幕' : '正在裁剪';
+      message = '正在裁剪';
       const result = await convertInput(input, {
         start,
         end,
         precise,
-        compositor,
         signal,
         fileHandle: destination.handle,
         onProgress(value, detail) {
@@ -342,7 +365,6 @@ export async function exportSelection(
       exportSignal?.removeEventListener('abort', abortPlan);
       planController.abort();
       await preparedComments?.catch(() => {});
-      compositor?.close();
       input?.dispose();
       cache.clear();
       try {

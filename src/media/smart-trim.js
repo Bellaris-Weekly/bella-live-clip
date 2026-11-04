@@ -108,6 +108,7 @@ async function* videoPackets(track, {start, end, settings, normalizer, plan, sig
 async function* audioPackets(track, {start, end, signal}) {
   const sink = new EncodedPacketSink(track),
     decoderConfig = await track.getDecoderConfig();
+  const endTime = typeof end === 'function' ? end : () => end;
   let first = (await sink.getKeyPacket(start)) ?? (await sink.getFirstKeyPacket());
   if (first && first.timestamp + first.duration <= start) first = await sink.getNextKeyPacket(first);
   // AAC overlap-add needs the preceding packet to reconstruct the first audible
@@ -116,11 +117,12 @@ async function* audioPackets(track, {start, end, signal}) {
   if (!first) return;
   for await (const packet of sink.packets(first)) {
     signal?.throwIfAborted();
-    if (packet.timestamp >= end) break;
+    const limit = endTime();
+    if (packet.timestamp >= limit) break;
     yield {
       packet: packet.clone({
         timestamp: packet.timestamp - start,
-        duration: Math.min(packet.duration, end - packet.timestamp),
+        duration: Math.min(packet.duration, limit - packet.timestamp),
       }),
       decoderConfig,
     };
@@ -214,12 +216,19 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
       const next = stream.iterator.next();
       void next.catch(() => {});
       await stream.source.add(packet, {decoderConfig});
-      progress = Math.max(progress, Math.min(0.99, (packet.timestamp + packet.duration) / (end - start)));
+      progress = Math.max(
+        progress,
+        Math.min(0.99, (packet.timestamp + packet.duration) / ((typeof end === 'function' ? end() : end) - start)),
+      );
+      stats.processedSeconds = Math.max(stats.processedSeconds ?? 0, packet.timestamp + packet.duration);
+      if (stream.isVideo) stats.videoFrames = (stats.videoFrames ?? 0) + 1;
       onProgress(progress, stats);
       stream.next = await next;
       if (stream.next.done) stream.source.close();
     }
     for (const stream of streams) stream.source.close();
+    if (typeof end === 'function' && (!Number.isFinite(end()) || end() <= start))
+      throw new Error('选区结束时间尚未确认，已停止导出。');
     const result = await session.finish();
     onProgress(1, stats);
     return result;

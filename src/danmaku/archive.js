@@ -92,19 +92,22 @@ async function archiveFile(part, options) {
   const size = Number(response.headers.get('content-range')?.split('/')[1]);
   if (!(size > 8 && size <= MAX_FILE_BYTES)) throw new Error('弹幕归档大小无效或超过内存预算。');
   const etag = response.headers.get('etag');
-  return {
+  const handle = signal => ({
     byteLength: size,
+    withSignal: handle,
     async slice(start, end = size) {
-      options.signal?.throwIfAborted();
+      signal?.throwIfAborted();
       const {bytes, response} = await boundedFetch(url, {
         ...options,
+        signal,
         headers: {Range: `bytes=${start}-${end - 1}`, ...(etag ? {'If-Match': etag} : {})},
       });
       if (response.status !== 206 || bytes.length !== end - start || (etag && response.headers.get('etag') !== etag))
         throw new Error('弹幕归档读取期间发生变化，请重试。');
       return bytes.buffer;
     },
-  };
+  });
+  return handle(options.signal);
 }
 
 export async function readDanmaku(file, options) {
@@ -143,4 +146,99 @@ export async function loadComments(record, {origin, start, end, adjustment = 0, 
     if (events.length > MAX_EVENTS) throw new Error('选区内弹幕过多，请缩短选区。');
   }
   return events.sort((a, b) => a.time - b.time || a.order - b.order);
+}
+
+// One export owns its snapshot files and small row-group cache. Live objects are
+// frozen once, then read from temporary disk instead of fetched again per window.
+export function createCommentReader(record, {signal, fetcher = fetch, prepared, createTemporary} = {}) {
+  const options = {signal, fetcher};
+  const archive = Promise.resolve(prepared ?? prepareComments(record, options));
+  void archive.catch(() => {});
+  const opened = new Map(),
+    temporary = [],
+    cache = new Map();
+  let cachedBytes = 0,
+    closed = false;
+  async function open(index, part, initial) {
+    let file = index === 0 ? initial.file : await archiveFile(part, options);
+    const {readMetadata} = await import('./parquet.js');
+    const metadata = index === 0 ? initial.metadata : await readMetadata(file);
+    if (file.withSignal) file = file.withSignal(signal);
+    if (file instanceof ArrayBuffer && createTemporary) {
+      const storage = await createTemporary({signal});
+      temporary.push(storage);
+      const writable = await storage.handle.createWritable();
+      try {
+        await writable.write({type: 'write', position: 0, data: new Uint8Array(file)});
+        await writable.close();
+      } catch (error) {
+        await writable.abort();
+        throw error;
+      }
+      const blob = await storage.handle.getFile();
+      file = {byteLength: blob.size, slice: (from, to) => blob.slice(from, to).arrayBuffer()};
+      if (index === 0) initial.file = file;
+    }
+    return {file, metadata};
+  }
+  function readGroup(key, size, load) {
+    if (cache.has(key)) {
+      const entry = cache.get(key);
+      cache.delete(key);
+      cache.set(key, entry);
+      return entry.promise;
+    }
+    while (cache.size && (cache.size >= 2 || cachedBytes + size > 16 * 1024 * 1024)) {
+      const oldest = cache.keys().next().value;
+      cachedBytes -= cache.get(oldest).size;
+      cache.delete(oldest);
+    }
+    const promise = load();
+    void promise.catch(() => {});
+    cache.set(key, {promise, size});
+    cachedBytes += size;
+    return promise;
+  }
+  return {
+    async read({origin, start, end, adjustment = 0}) {
+      if (closed) throw new Error('弹幕读取器已关闭。');
+      signal?.throwIfAborted();
+      const initial = await archive;
+      const from = start + origin + PLAYBACK_LATENCY - adjustment;
+      const to = end + origin + PLAYBACK_LATENCY - adjustment;
+      const events = [];
+      let bytes = 0;
+      for (const [index, part] of initial.parts.entries()) {
+        signal?.throwIfAborted();
+        if (!opened.has(index)) opened.set(index, open(index, part, initial));
+        const {file, metadata} = await opened.get(index);
+        const rows = await readDanmaku(file, {
+          from,
+          to,
+          signal,
+          metadata,
+          readGroup: (group, size, load) => readGroup(`${index}:${group}`, size, load),
+        });
+        for (const row of rows) {
+          const time = commentTime(row, origin, adjustment);
+          if (time < start || time >= end) continue;
+          bytes += String(row.text).length * 2 + 128;
+          if (bytes > 16 * 1024 * 1024 || events.length >= MAX_EVENTS)
+            throw new Error('弹幕窗口超过内存预算，请缩短选区。');
+          events.push({...row, time, order: events.length});
+        }
+      }
+      return events.sort((a, b) => a.time - b.time || a.order - b.order);
+    },
+    async close() {
+      closed = true;
+      await Promise.allSettled([...opened.values()]);
+      cache.clear();
+      opened.clear();
+      await Promise.all(temporary.map(item => item.remove()));
+      temporary.length = 0;
+      const initial = await archive.catch(() => null);
+      if (initial) initial.file = initial.metadata = null;
+    },
+  };
 }

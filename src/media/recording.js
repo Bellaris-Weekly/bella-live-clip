@@ -16,7 +16,7 @@ export async function saveRecording(
   api,
   groups,
   fileHandle,
-  {signal, stopSignal, onProgress = () => {}, onSegment = () => {}, concurrency = 6} = {},
+  {signal, stopSignal, onProgress = () => {}, onSegment = () => {}, concurrency = 6, fragmented = false} = {},
 ) {
   let file,
     input,
@@ -86,11 +86,12 @@ export async function saveRecording(
         report();
       },
     });
-    // Keep media on disk and write the index at completion. Regular MP4 carries
-    // the composition-time/edit metadata needed for B-frame playback sync.
+    // Final recordings use regular MP4 for playback compatibility. The internal
+    // selection pipe uses fMP4 so its metadata is available before EOF; the
+    // consumer still writes a regular MP4 with composition times and edit lists.
     output = new Output({
-      format: new Mp4OutputFormat({fastStart: false}),
-      target: new StreamTarget(writable, {chunked: true, chunkSize: 1024 * 1024}),
+      format: new Mp4OutputFormat({fastStart: fragmented ? 'fragmented' : false}),
+      target: new StreamTarget(writable, fragmented ? {chunked: false} : {chunked: true, chunkSize: 1024 * 1024}),
     });
     try {
       for await (const item of download.segments()) {

@@ -120,3 +120,68 @@ test('one failed image releases sibling decoders and every bitmap before rejecti
   assert.ok(owned.bitmaps.length > 0);
   assert.ok(owned.bitmaps.every(item => item.closed));
 });
+
+test('lazy emotes fetch only when visible and decode only the required animation phase', async t => {
+  const owned = codecs(t),
+    requests = [],
+    budget = {used: 0, compressed: 0};
+  const fetcher = async url => {
+    requests.push(url);
+    return new Response(
+      url.endsWith('.json') ? JSON.stringify(metadata(url)) : new Uint8Array([Number(url.match(/(\d+)\.png$/)[1])]),
+      {headers: {'Content-Type': 'image/png'}},
+    );
+  };
+  const resources = await loadEmotes(comments, 1, 45, {fetcher, lazy: true, budget});
+  assert.equal(requests.filter(url => url.endsWith('.png')).length, 0);
+  assert.equal(owned.images.length, 0);
+  const asset = resources.assets.get('[表情0]');
+  await asset.prepare(0.05);
+  assert.equal(requests.filter(url => url.endsWith('.png')).length, 1);
+  assert.equal(owned.images.length, 1);
+  await asset.prepare(0.08);
+  assert.equal(owned.images.length, 1);
+  await asset.prepare(0.15);
+  assert.equal(owned.images.length, 2);
+  await asset.prepare(3);
+  assert.equal(owned.images.length, 2);
+  assert.equal(budget.compressed, 0, 'completed animation releases its compressed decoder input');
+  resources.close();
+  assert.equal(budget.used, 0);
+  assert.ok(owned.bitmaps.every(bitmap => bitmap.closed));
+});
+
+test('canceling an in-flight lazy bitmap releases a late result and its byte reservation', async t => {
+  const owned = codecs(t),
+    controller = new AbortController(),
+    budget = {used: 0, compressed: 0};
+  let release, started;
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
+  const beginning = new Promise(resolve => {
+    started = resolve;
+  });
+  const original = globalThis.createImageBitmap;
+  globalThis.createImageBitmap = async (...args) => {
+    started();
+    await gate;
+    return original(...args);
+  };
+  const fetcher = async url =>
+    new Response(url.endsWith('.json') ? JSON.stringify(metadata(url)) : new Uint8Array([0]), {
+      headers: {'Content-Type': 'image/png'},
+    });
+  const resources = await loadEmotes(comments, 1, 45, {fetcher, lazy: true, signal: controller.signal, budget});
+  const preparing = resources.assets.get('[表情0]').prepare(0);
+  const canceled = assert.rejects(preparing, {name: 'AbortError'});
+  await beginning;
+  controller.abort();
+  release();
+  await canceled;
+  resources.close();
+  assert.equal(budget.used, 0);
+  assert.equal(budget.compressed, 0);
+  assert.ok(owned.bitmaps.every(bitmap => bitmap.closed));
+  assert.ok(owned.images.every(image => image.closed));
+});

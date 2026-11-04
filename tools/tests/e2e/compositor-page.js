@@ -1,8 +1,9 @@
+import {createStreamingCompositor} from '../../../src/danmaku/streaming-compositor.js';
 import {VideoSample, Input, BlobSource, MP4, VideoSampleSink} from 'mediabunny';
 import {createDanmakuCompositor} from '../../../src/danmaku/compositor.js';
 import {createDanmakuCompositor as reference} from '../fixtures/danmaku-compositor-reference.js';
 
-window.checkCompositor = async ({width, height, encoded, fixed = false}) => {
+window.checkCompositor = async ({width, height, encoded, fixed = false, streaming = false}) => {
   const frame = new OffscreenCanvas(width, height);
   const context = frame.getContext('2d');
   const gradient = context.createLinearGradient(0, 0, width, height);
@@ -18,7 +19,7 @@ window.checkCompositor = async ({width, height, encoded, fixed = false}) => {
     ? await new VideoSampleSink(await input.getPrimaryVideoTrack()).getSample(0)
     : new VideoSample(frame, {timestamp: 0, duration: 1 / 30});
   const read = new OffscreenCanvas(width, height).getContext('2d', {willReadFrequently: true});
-  const events = Array.from({length: 60}, (_, i) => ({
+  const events = Array.from({length: streaming ? 300 : 60}, (_, i) => ({
     time: -5 + i * 0.17,
     order: i,
     mode: [1, 4, 5][i % 3],
@@ -38,14 +39,33 @@ window.checkCompositor = async ({width, height, encoded, fixed = false}) => {
     });
     return {
       assets: new Map([
-        ['[花]', {frames, ends: [0.1, 0.3], loops: Infinity, width: frames[0].width, height: frames[0].height}],
+        [
+          '[花]',
+          {
+            frames,
+            ends: [0.1, 0.3],
+            loops: Infinity,
+            width: frames[0].width,
+            height: frames[0].height,
+            async prepare() {},
+            close() {},
+          },
+        ],
       ]),
       close() {},
     };
   };
   const options = {origin: 0, start: 0, end: 30, sourceTime: t => t, width, height};
   const before = await reference({room: 1}, options);
-  const after = await createDanmakuCompositor({room: 1}, options);
+  const reader = {
+    async read({start, end}) {
+      return events.filter(item => item.time >= start && item.time < end).map(item => ({...item}));
+    },
+    async close() {},
+  };
+  const after = streaming
+    ? await createStreamingCompositor({room: 1}, {...options, reader})
+    : await createDanmakuCompositor({room: 1}, options);
   let compared = 0,
     calls = 0,
     referenceCalls = 0,
@@ -56,11 +76,15 @@ window.checkCompositor = async ({width, height, encoded, fixed = false}) => {
     return fillText.apply(this, args);
   };
   try {
-    for (const t of [0, 0.017, 0.033, 0.067, 0.1, 0.101, 0.3, 1, 2.13, 4.9, 5, 6, 8, 10, 15, 25, 29]) {
+    const times = streaming
+      ? [0, 0.033, 9.99, 10, 10.01, 19.99, 20, 20.017, 30, 39.99, 40, 49, 55]
+      : [0, 0.017, 0.033, 0.067, 0.1, 0.101, 0.3, 1, 2.13, 4.9, 5, 6, 8, 10, 15, 25, 29];
+    for (const t of times) {
       calls = 0;
       const a = before.render(sample, t);
       referenceCalls += calls;
       calls = 0;
+      await after.prepare?.(t);
       const b = after.render(sample, t);
       currentCalls += calls;
       a.draw(read, 0, 0);
@@ -77,7 +101,7 @@ window.checkCompositor = async ({width, height, encoded, fixed = false}) => {
     }
   } finally {
     before.close();
-    after.close();
+    await after.close();
     sample.close();
     input?.dispose();
     OffscreenCanvasRenderingContext2D.prototype.fillText = fillText;

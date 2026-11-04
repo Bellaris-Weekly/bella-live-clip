@@ -46,7 +46,8 @@ export function createExportActions({
 
   async function exportClip(record, selection, destination, {signal, onProgress, danmaku}) {
     const estimate = session.estimate();
-    await ensureTemporarySpace(storage, estimate ? estimateSelectionBytes(estimate, record.start, selection) : 0);
+    if (!danmaku)
+      await ensureTemporarySpace(storage, estimate ? estimateSelectionBytes(estimate, record.start, selection) : 0);
     const segmentIndex = session.segmentIndex();
     const groups = (await session.plan().load(signal)).filter(group => group.streamIndex === segmentIndex);
     const {exportSelection} = await import('../media/export.js');

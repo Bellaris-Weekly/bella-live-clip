@@ -301,7 +301,7 @@ test('native clock lookup preserves gap errors, equal starts and backward querie
   assert.throws(() => clock(7), /映射/);
 });
 
-test('a failed prefetched archive aborts concurrent media reads and releases temporary media', async t => {
+test('a failed prefetched archive aborts concurrent media reads before allocating temporary media', async t => {
   const {exportSelection} = await import('../../../src/media/export.js');
   let requested = false,
     canceled = false,
@@ -350,5 +350,41 @@ test('a failed prefetched archive aborts concurrent media reads and releases tem
   );
   assert.equal(requested, true);
   assert.equal(canceled, true);
-  assert.equal(removed, true);
+  assert.equal(removed, false);
+});
+
+test('windowed archive reads freeze a live snapshot once and release its temporary file', async () => {
+  const {createCommentReader} = await import('../../../src/danmaku/archive.js');
+  const {memoryFile} = await import('../support/memory-file.mjs');
+  let fetches = 0,
+    removed = 0;
+  const fetcher = async url => {
+    if (url.endsWith('index.json'))
+      return new Response(
+        JSON.stringify({schemaVersion: 1, live: [{live_key: 'x', part: 1, path: 'live-archive/v1/1/live/x.parquet'}]}),
+      );
+    fetches++;
+    return new Response(fixture);
+  };
+  const reader = createCommentReader(
+    {room: 1, key: 'x'},
+    {
+      fetcher,
+      createTemporary: async () => ({
+        handle: memoryFile(),
+        remove: async () => {
+          removed++;
+        },
+      }),
+    },
+  );
+  const a = await reader.read({origin: 0, start: 90, end: 99});
+  const b = await reader.read({origin: 0, start: 99, end: 110});
+  const c = await reader.read({origin: 0, start: 110, end: 120});
+  assert.equal(a.length, 1);
+  assert.equal(b.length, 1);
+  assert.equal(c.length, 0);
+  assert.equal(fetches, 1);
+  await reader.close();
+  assert.equal(removed, 1);
 });

@@ -1,0 +1,360 @@
+// Frozen pre-streaming export for native timeline and AAC parity checks.
+import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion, canEncodeVideo} from 'mediabunny';
+import {segmentKey, selectPlaylistRange} from '../../../src/media/playlist.js';
+import {trimPrecise} from '../../../src/media/smart-trim.js';
+import {recordingTime} from '../../../src/media/recording-timeline.js';
+import {saveRecording} from '../../../src/media/recording.js';
+import {createMediaOutput} from '../../../src/media/file-output.js';
+import {createTemporaryMedia, mediaStorageError} from '../../../src/media/temporary-media.js';
+import {requestWithRetry} from '../../../src/services/retry-request.js';
+
+// The caller owns the Input so HLS and Blob inputs use the same conversion path.
+export async function convertInput(
+  input,
+  {
+    start,
+    end,
+    precise = false,
+    compositor,
+    signal,
+    onProgress = () => {},
+    onProcessingStart = () => {},
+    fileHandle,
+  } = {},
+) {
+  signal?.throwIfAborted();
+  if (precise || compositor)
+    return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor});
+  const session = await createMediaOutput({fileHandle, signal}),
+    {output} = session;
+  let conversion, canceling;
+  const cancel = () => {
+    if (conversion) canceling = conversion.cancel();
+  };
+  signal?.addEventListener('abort', cancel, {once: true});
+  try {
+    const options = {input, output, copy: {mode: 'forced'}, showWarnings: false};
+    if (start !== undefined || end !== undefined) options.trim = {start, end};
+    conversion = await Conversion.init(options);
+    signal?.throwIfAborted();
+    if (!conversion.isValid || conversion.discardedTracks.length) {
+      throw new Error('这段录像无法保存为 MP4，已停止，以免丢失声音或画面。');
+    }
+    conversion.onProgress = onProgress;
+    onProcessingStart();
+    await conversion.execute();
+    signal?.throwIfAborted();
+    return await session.finish();
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason;
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+    if (canceling) await canceling;
+    await session.cancel();
+  }
+}
+
+// Boundary probes use native packet times, never the HLS clock heuristic. A
+// GOP may span any number of files; extend until a real random-access point is
+// found, not a fixed "one extra segment" rule. Only boundary files are cached.
+async function extendPlan(group, plan, read, signal) {
+  const first = group.segments.indexOf(plan.segments[0]);
+  const last = group.segments.indexOf(plan.segments.at(-1));
+  let from = first,
+    to = last;
+  async function keys(index) {
+    const segment = group.segments[index],
+      parts = group.map ? [await read(group.map), await read(segment)] : [await read(segment)];
+    const input = new Input({source: new BlobSource(new Blob(parts)), formats: [MP4, MPEG_TS]});
+    try {
+      const track = await input.getPrimaryVideoTrack();
+      if (!track) throw new Error('录像没有可读取的画面。');
+      const origin = await input.getFirstTimestamp(),
+        result = [];
+      for await (const packet of new EncodedPacketSink(track).packets()) {
+        signal?.throwIfAborted();
+        if (((await track.determinePacketType(packet)) ?? packet.type) === 'key')
+          result.push(packet.timestamp - origin);
+      }
+      return result;
+    } finally {
+      input.dispose();
+    }
+  }
+  while (from > 0) {
+    const times = await keys(from);
+    if (times.some(time => time <= (from === first ? plan.start : Infinity))) break;
+    from--;
+  }
+  const lastStart = plan.segments.slice(0, -1).reduce((sum, segment) => sum + segment.duration, 0);
+  while (to < group.segments.length - 1) {
+    const times = await keys(to);
+    if (times.some(time => time >= (to === last ? plan.end - lastStart : -Infinity))) break;
+    to++;
+  }
+  return {segments: group.segments.slice(from, to + 1), map: group.map};
+}
+
+// Translate within the selected segment, retaining native time between files.
+// At an exact manifest boundary use the actual end, including duration drift.
+function selectionTime(plan, entries, point, endBoundary) {
+  let cursor = 0;
+  for (const segment of plan.segments) {
+    const next = cursor + segment.duration;
+    if (point < next || (endBoundary && point <= next + 1e-6)) {
+      const entry = entries.get(segmentKey(segment));
+      if (!entry) {
+        // An undecodable prefix was skipped. The first retained media starts at
+        // zero; this follows the same contract as full-recording export.
+        return 0;
+      }
+      if (endBoundary && Math.abs(point - next) <= 1e-6) return entry.end;
+      return recordingTime(Math.min(entry.end, entry.start + point - cursor));
+    }
+    cursor = next;
+  }
+  return entries.get(segmentKey(plan.segments.at(-1)))?.end ?? 0;
+}
+
+// Normalize each selected discontinuity to temporary disk using the exact same
+// packet timeline as full download, then trim from that seekable MP4 into the
+// destination. No combined HLS Input or whole-file ArrayBuffer is involved.
+export async function exportSelection(
+  api,
+  record,
+  groups,
+  selection,
+  {
+    signal,
+    precise = false,
+    danmaku,
+    onProgress = () => {},
+    onSaved = () => {},
+    createFile,
+    createTemporary = createTemporaryMedia,
+  } = {},
+) {
+  signal?.throwIfAborted();
+  const parsed = {
+    groups: groups
+      .filter(group => selection.start < group.streamEnd - record.start)
+      .map(group => ({...group, offset: group.start - record.start})),
+  };
+  const plans = parsed.groups.flatMap(group =>
+    selectPlaylistRange({groups: [group]}, selection.start, selection.end).map(plan => ({...plan, group})),
+  );
+  if (!plans.length) throw new Error('选区中没有可用录像，请调整起止位置。');
+  const outputs = [],
+    downloaded = new Set();
+  const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
+  let completedDuration = 0;
+  const resources = new Set(
+    plans.flatMap(plan => (plan.map ? [plan.map, ...plan.segments] : plan.segments)).map(segmentKey),
+  );
+  let bytes = 0,
+    progress = 0,
+    processing = 0,
+    reconnecting = 0,
+    attempt = 0,
+    message;
+  function report(phase = 'preparing') {
+    onProgress({
+      progress,
+      processing,
+      bytes,
+      downloaded: downloaded.size,
+      count: resources.size,
+      phase,
+      reconnecting,
+      attempt,
+      message,
+    });
+  }
+  report();
+  const exportSignal = signal;
+  for (const [index, plan] of plans.entries()) {
+    const planController = new AbortController();
+    const abortPlan = () => planController.abort(exportSignal.reason);
+    exportSignal?.addEventListener('abort', abortPlan, {once: true});
+    if (exportSignal?.aborted) abortPlan();
+    const signal = planController.signal;
+    let temporary,
+      input,
+      destination,
+      compositor,
+      preparedComments,
+      saved = false;
+    const entries = new Map(),
+      cache = new Map();
+    const {group} = plan,
+      weight = plan.end - plan.start;
+    async function read(segment) {
+      const key = segmentKey(segment);
+      if (cache.has(key)) return cache.get(key);
+      resources.add(key);
+      const response = await requestWithRetry(
+        api,
+        segment.url,
+        {type: 'arraybuffer', range: segment.range, signal},
+        {
+          onRetry(state) {
+            reconnecting = state ? 1 : 0;
+            attempt = state?.attempt ?? 0;
+            report();
+          },
+        },
+      );
+      signal?.throwIfAborted();
+      const data = new Uint8Array(response.data);
+      bytes += data.byteLength;
+      downloaded.add(key);
+      report();
+      cache.set(key, data);
+      // Map plus the two boundary probes. Long undecodable prefixes cannot
+      // accumulate the whole selection in memory.
+      for (const old of cache.keys()) {
+        if (cache.size <= 3) break;
+        if (old !== (group.map && segmentKey(group.map))) cache.delete(old);
+      }
+      return data;
+    }
+    try {
+      if (danmaku) {
+        const {prepareComments} = await import('../../../src/danmaku/archive.js');
+        preparedComments = prepareComments(record, {signal});
+        // A failed archive must also stop the concurrent media download.
+        void preparedComments.catch(error => planController.abort(error));
+      }
+      temporary = await createTemporary({signal});
+      signal?.throwIfAborted();
+      let origin;
+      if (danmaku) {
+        message = '正在读取弹幕媒体时钟';
+        report();
+        const {partOrigin, firstVideoDecodeTime} = await import('../../../src/danmaku/clock.js');
+        const [first, init] = await Promise.all([
+          read(group.firstSegment),
+          group.firstMap ? read(group.firstMap) : null,
+        ]);
+        const probe = new Input({source: new BlobSource(new Blob(init ? [init, first] : [first])), formats: [MP4]});
+        try {
+          const track = await probe.getPrimaryVideoTrack();
+          if (!track) throw new Error('首分片没有视频轨，无法对齐弹幕。');
+          origin = partOrigin(group.part, firstVideoDecodeTime(first, track.id, await track.getTimeResolution()));
+        } finally {
+          probe.dispose();
+        }
+      }
+      message = '正在整理录像';
+      const expanded = await extendPlan(group, plan, read, signal);
+      for (const segment of expanded.segments) resources.add(segmentKey(segment));
+      const savingApi = {
+        async request(url, options) {
+          const key = segmentKey({url, range: options.range});
+          let data = cache.get(key);
+          if (data) {
+            cache.delete(key);
+            return {data};
+          }
+          const response = await api.request(url, options);
+          bytes += response.data.byteLength;
+          downloaded.add(key);
+          return response;
+        },
+      };
+      await saveRecording(savingApi, [expanded], temporary.handle, {
+        signal,
+        concurrency: 2,
+        onSegment(entry) {
+          entries.set(segmentKey(entry.segment), entry);
+        },
+        onProgress(state) {
+          reconnecting = state.reconnecting;
+          attempt = state.attempt;
+          processing = Math.max(processing, (completedDuration + weight * 0.65 * state.progress) / totalDuration);
+          progress = Math.max(progress, Math.min(0.99, processing));
+          report();
+        },
+      });
+      cache.clear();
+      signal?.throwIfAborted();
+      input = new Input({source: new BlobSource(await temporary.handle.getFile()), formats: [MP4]});
+      const duration = await input.computeDuration();
+      const start = Math.max(0, selectionTime(plan, entries, plan.start, false));
+      const end = Math.min(duration, selectionTime(plan, entries, plan.end, true));
+      if (end <= start) throw new Error('选区内没有可导出的音视频，请调整起止位置。');
+      destination = await createFile({
+        start: plan.offset + plan.start,
+        end: plan.offset + plan.end,
+        index,
+        count: plans.length,
+      });
+      signal?.throwIfAborted();
+      if (danmaku) {
+        message = '正在读取弹幕和表情';
+        report();
+        const {sourceClock} = await import('../../../src/danmaku/clock.js');
+        const {createDanmakuCompositor} = await import('../../../src/danmaku/compositor.js');
+        const track = await input.getPrimaryVideoTrack();
+        if (!(await track.canDecode())) throw new Error('当前浏览器无法解码视频，不能压制弹幕。');
+        if (await track.getRotation()) throw new Error('当前暂不支持旋转视频压制弹幕。');
+        const width = await track.getCodedWidth(),
+          height = await track.getCodedHeight();
+        if (!(await canEncodeVideo('avc', {width, height})))
+          throw new Error('当前浏览器无法编码此分辨率的 H.264，不能压制弹幕。');
+        compositor = await createDanmakuCompositor(record, {
+          origin,
+          start,
+          end,
+          sourceTime: sourceClock(entries.values()),
+          width,
+          height,
+          adjustment: danmaku.adjustment,
+          signal,
+          prepared: preparedComments,
+        });
+        preparedComments = undefined;
+      }
+      message = danmaku ? '正在重新编码并压制弹幕' : '正在裁剪';
+      const result = await convertInput(input, {
+        start,
+        end,
+        precise,
+        compositor,
+        signal,
+        fileHandle: destination.handle,
+        onProgress(value, detail) {
+          if (detail?.message) message = detail.message;
+          processing = Math.max(processing, (completedDuration + weight * (0.65 + 0.35 * value)) / totalDuration);
+          progress = Math.max(progress, Math.min(0.99, processing));
+          report('processing');
+        },
+      });
+      saved = true;
+      const output = {...result, name: destination.name, start: plan.offset + plan.start, end: plan.offset + plan.end};
+      outputs.push(output);
+      completedDuration += weight;
+      onSaved(output);
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      throw mediaStorageError(error);
+    } finally {
+      exportSignal?.removeEventListener('abort', abortPlan);
+      planController.abort();
+      await preparedComments?.catch(() => {});
+      compositor?.close();
+      input?.dispose();
+      cache.clear();
+      try {
+        if (destination && !saved) await destination.remove();
+      } finally {
+        if (temporary) await temporary.remove();
+      }
+    }
+  }
+  progress = processing = 1;
+  message = '已保存';
+  report('complete');
+  return outputs;
+}

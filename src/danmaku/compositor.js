@@ -27,6 +27,12 @@ export async function createDanmakuCompositor(
   prepared = undefined;
   const fontSize = (45 * height) / 1080;
   const resources = await loadEmotes(events.filter(visibleComment), record.room, fontSize, {signal, fetcher});
+  return createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal});
+}
+
+export function createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal}) {
+  if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
+  const fontSize = (45 * height) / 1080;
   try {
     const canvas = new OffscreenCanvas(width, height),
       overlay = new OffscreenCanvas(width, height);
@@ -80,6 +86,10 @@ export async function createDanmakuCompositor(
     let previous = [],
       regions = [];
     return {
+      layout,
+      clearMeasurements() {
+        cache.clear();
+      },
       render(sample, timestamp) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);

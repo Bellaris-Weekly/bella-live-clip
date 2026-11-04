@@ -104,7 +104,8 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
     },
   });
   output.addVideoTrack(source);
-  const samples = new VideoSampleSink(track).samples(start, end);
+  const endTime = typeof end === 'function' ? end : () => end;
+  const samples = new VideoSampleSink(track).samples(start, typeof end === 'function' ? Infinity : end);
   let rejectAbort;
   const aborted = new Promise((_, reject) => {
     rejectAbort = reject;
@@ -124,8 +125,12 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
       try {
         signal?.throwIfAborted();
         const clippedStart = Math.max(start, sample.timestamp);
-        const clippedEnd = Math.min(end, sample.timestamp + sample.duration);
+        const limit = endTime();
+        if (sample.timestamp >= limit) break;
+        const clippedEnd = Math.min(limit, sample.timestamp + sample.duration);
         if (clippedEnd <= clippedStart) continue;
+        const preparation = compositor?.prepare?.(clippedStart);
+        if (preparation) await preparation;
         const rendered = compositor?.render(sample, clippedStart);
         const frame = rendered ?? sample;
         frame.setTimestamp(clippedStart - origin);

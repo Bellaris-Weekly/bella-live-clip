@@ -17,6 +17,14 @@ export class DanmakuLayout {
     this.dropped = 0;
   }
 
+  append(events) {
+    this.events = this.events
+      .slice(this.cursor)
+      .concat(events.filter(visibleComment))
+      .sort((a, b) => a.time - b.time || a.order - b.order);
+    this.cursor = 0;
+  }
+
   x(item, time) {
     return item.mode === 1 ? this.width - (time - item.started) * item.speed : (this.width - item.width) / 2;
   }

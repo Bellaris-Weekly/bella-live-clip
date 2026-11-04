@@ -25,6 +25,8 @@ test('optimized compositor matches the 2.13.1 pixels at fractional positions, an
           build.onLoad({filter: /src\/danmaku\/emotes\.js$/}, () => ({
             contents: `
         export async function loadEmotes(events, room, fontSize){return window.compositorAssets(fontSize)}
+        export async function loadEmoteCatalog(){return new Map([['[花]',{}]])}
+        export const referencedEmotes=events=>new Set(events.flatMap(event=>textTokens(event.text).filter(text=>text.startsWith('['))));
         export const textTokens = text => String(text).split(/(\\[[^[\\]]+\\])/u).filter(Boolean);
         export function emoteFrame(asset, elapsed){const phase=Math.max(0,elapsed)%asset.ends.at(-1); return asset.frames[asset.ends.findIndex(end=>end>phase)]??asset.frames.at(-1)}
       `,
@@ -52,6 +54,8 @@ test('optimized compositor matches the 2.13.1 pixels at fractional positions, an
       const result = await page.evaluate(size => window.checkCompositor(size), {width, height});
       assert.equal(result.compared, 17);
     }
+    const windowed = await page.evaluate(() => window.checkCompositor({width: 1920, height: 1080, streaming: true}));
+    assert.equal(windowed.compared, 13);
     const fixed = await page.evaluate(() => window.checkCompositor({width: 640, height: 360, fixed: true}));
     assert.ok(fixed.currentCalls < fixed.referenceCalls / 2, JSON.stringify(fixed));
     const directory = await mkdtemp(path.join(tmpdir(), 'bella-compositor-yuv-'));
