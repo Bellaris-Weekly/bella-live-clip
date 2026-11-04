@@ -1,5 +1,4 @@
 import {commentTime, PLAYBACK_LATENCY} from './clock.js';
-import {mapConcurrent} from '../shared/concurrent.js';
 
 export const ARCHIVE_BASE = 'https://data.bellaris.fans/';
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -184,9 +183,7 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
     temporary = [],
     cache = new Map();
   let cachedBytes = 0,
-    closed = false,
-    firstRead = true,
-    preparing;
+    closed = false;
   async function open(index, part, initial, entry) {
     const finish = metrics?.start('archiveOpen');
     try {
@@ -227,36 +224,16 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
       finish?.();
     }
   }
-  function prepare(initial) {
-    if (!preparing) {
-      // File time bounds live in the footer, so the first demanded window must
-      // inspect each part. Bound opens, share them across callers, and decode
-      // row payloads only after their bounds intersect the requested window.
-      preparing = mapConcurrent(
-        initial.parts,
-        2,
-        (part, index) => {
-          if (closed) throw new Error('弹幕读取器已关闭。');
-          let entry = opened.get(index);
-          if (!entry) opened.set(index, (entry = {}));
-          if (!entry.promise) {
-            entry.promise = retryOpen(() => open(index, part, initial, entry), signal).catch(error => {
-              entry.promise = null;
-              throw error;
-            });
-          }
-          return entry.promise;
-        },
-        signal,
-      ).then(
-        () => {}, // Only opened owns files; close() can release all references.
-        error => {
-          preparing = null;
-          throw error;
-        },
-      );
+  function openNeeded(index, part, initial) {
+    let entry = opened.get(index);
+    if (!entry) opened.set(index, (entry = {}));
+    if (!entry.promise) {
+      entry.promise = retryOpen(() => open(index, part, initial, entry), signal).catch(error => {
+        entry.promise = null;
+        throw error;
+      });
     }
-    return preparing;
+    return entry.promise;
   }
   function readGroup(key, size, load) {
     if (cache.has(key)) {
@@ -306,10 +283,6 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
     return entry.promise;
   }
 
-  // The reader is created only for an actual danmaku export. Start the bounded
-  // metadata work while the media pipeline establishes its first video track.
-  const preparation = archive.then(initial => prepare(initial));
-  void preparation.catch(() => {});
   return {
     async read({origin, start, end, adjustment = 0}) {
       const finish = metrics?.start('archiveRead');
@@ -318,17 +291,16 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
         signal?.throwIfAborted();
         const initial = await archive;
         if (closed) throw new Error('弹幕读取器已关闭。');
-        const ready = firstRead ? preparation : prepare(initial);
-        firstRead = false;
-        await ready;
-        if (closed) throw new Error('弹幕读取器已关闭。');
         const from = start + origin + PLAYBACK_LATENCY - adjustment;
         const to = end + origin + PLAYBACK_LATENCY - adjustment;
         const events = [];
         let bytes = 0;
-        for (const index of initial.parts.keys()) {
+        // Consume the current part before opening later ones. No batch-wide
+        // metadata barrier or speculative archive requests on the video path.
+        for (const [index, part] of initial.parts.entries()) {
+          if (closed) throw new Error('弹幕读取器已关闭。');
           signal?.throwIfAborted();
-          const {file, metadata, bounds} = await opened.get(index).promise;
+          const {file, metadata, bounds} = await openNeeded(index, part, initial);
           if (bounds.to < from || bounds.from > to) continue;
           const rows = await readDanmaku(file, {
             from,
@@ -353,9 +325,7 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
     },
     async close() {
       closed = true;
-      await preparation.catch(() => {});
-      await preparing?.catch(() => {});
-      preparing = null;
+      await Promise.allSettled([...opened.values()].map(entry => entry.promise));
       cache.clear();
       opened.clear();
       await Promise.all(temporary.map(item => item.remove()));

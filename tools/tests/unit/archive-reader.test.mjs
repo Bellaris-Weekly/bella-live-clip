@@ -85,22 +85,47 @@ test('a snapshot survives a failed disk write, removes the partial file, and is 
   assert.equal(removed, 2);
 });
 
-test('metadata opens overlap with a limit of two and concurrent windows share the work', async () => {
-  const gates = [deferred(), deferred()],
-    both = deferred();
-  let requests = 0,
-    active = 0,
-    peak = 0;
+test('creating a reader does not start additional archive requests before demand', async () => {
+  let requests = 0;
   const reader = createCommentReader(
     {},
     {
       prepared: prepared(5),
       fetcher: async () => {
-        const index = requests++;
-        peak = Math.max(peak, ++active);
-        if (requests === 2) both.resolve();
-        await gates[index]?.promise;
-        active--;
+        requests++;
+        return new Response(fixture);
+      },
+    },
+  );
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(requests, 0, 'unused archive opens must not compete with video startup');
+  } finally {
+    await reader.close();
+  }
+});
+
+test('current rows start before later archive opens; concurrent windows reuse each read', async () => {
+  const payload = deferred(),
+    release = deferred();
+  let requests = 0,
+    slices = 0;
+  const initial = prepared(5);
+  initial.file = {
+    byteLength: fixture.byteLength,
+    async slice(a, b) {
+      slices++;
+      payload.resolve();
+      await release.promise;
+      return fixture.slice(a, b);
+    },
+  };
+  const reader = createCommentReader(
+    {},
+    {
+      prepared: initial,
+      fetcher: async () => {
+        requests++;
         return new Response(fixture);
       },
     },
@@ -108,12 +133,12 @@ test('metadata opens overlap with a limit of two and concurrent windows share th
   const one = reader.read(range),
     two = reader.read(range);
   try {
-    await both.promise;
-    assert.equal(requests, 2);
-    gates.forEach(gate => gate.resolve());
+    await payload.promise;
+    assert.equal(requests, 0, 'current row reads must not wait for later metadata');
+    assert.equal(slices, 1, 'concurrent callers share the row payload');
+    release.resolve();
     const results = await Promise.all([one, two]);
     assert.equal(requests, 4);
-    assert.equal(peak, 2);
     assert.equal(results[0].length, 10);
     assert.deepEqual(results[0], results[1]);
     assert.deepEqual(
@@ -121,14 +146,15 @@ test('metadata opens overlap with a limit of two and concurrent windows share th
       [0, 2, 4, 6, 8, 1, 3, 5, 7, 9],
     );
   } finally {
-    gates.forEach(gate => gate.resolve());
+    release.resolve();
+    await Promise.allSettled([one, two]);
     await reader.close();
   }
 });
 
-test('cancellation settles both metadata requests and never starts the remaining parts', async () => {
+test('cancellation stops the demanded archive and never starts later parts', async () => {
   const controller = new AbortController(),
-    both = deferred();
+    requested = deferred();
   let requests = 0,
     active = 0;
   const reader = createCommentReader(
@@ -137,8 +163,9 @@ test('cancellation settles both metadata requests and never starts the remaining
       signal: controller.signal,
       prepared: prepared(5),
       fetcher: async (_, {signal}) => {
+        requests++;
         active++;
-        if (++requests === 2) both.resolve();
+        requested.resolve();
         try {
           await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once: true}));
         } finally {
@@ -147,13 +174,12 @@ test('cancellation settles both metadata requests and never starts the remaining
       },
     },
   );
-  const reading = reader.read(range);
-  const rejected = assert.rejects(reading, {name: 'AbortError'});
-  await both.promise;
+  const rejected = assert.rejects(reader.read(range), {name: 'AbortError'});
+  await requested.promise;
   controller.abort();
   await rejected;
   await reader.close();
-  assert.equal(requests, 2);
+  assert.equal(requests, 1);
   assert.equal(active, 0);
 });
 
