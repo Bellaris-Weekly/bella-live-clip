@@ -184,7 +184,7 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
   }
 }
 
-async function muxPackets(session, streams, {start, end, signal, onProgress, stats}) {
+async function muxPackets(session, streams, {start, end, signal, onProgress, stats, metrics}) {
   const {output} = session;
   let progress = 0,
     canceling;
@@ -215,7 +215,12 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
       // The iterator still owns decode order; this never queues a whole clip.
       const next = stream.iterator.next();
       void next.catch(() => {});
-      await stream.source.add(packet, {decoderConfig});
+      const finishMux = metrics?.start('muxAdd');
+      try {
+        await stream.source.add(packet, {decoderConfig});
+      } finally {
+        finishMux?.();
+      }
       progress = Math.max(
         progress,
         Math.min(0.99, (packet.timestamp + packet.duration) / ((typeof end === 'function' ? end() : end) - start)),
@@ -242,7 +247,10 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
   }
 }
 
-async function encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor}) {
+async function encodeSelection(
+  tracks,
+  {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor, metrics},
+) {
   if (!tracks.some(track => track.type === 'video') || tracks.some(track => !['video', 'audio'].includes(track.type))) {
     throw new Error('这段录像无法精确导出，请改用原画导出。');
   }
@@ -253,17 +261,17 @@ async function encodeSelection(tracks, {start, end, signal, onProgress, onProces
   ) {
     throw new Error('精确导出需要 AAC 音频，请改用原画导出以保留声音。');
   }
-  const session = await createMediaOutput({fileHandle, signal}),
+  const session = await createMediaOutput({fileHandle, signal, metrics}),
     {output} = session;
   try {
     const streams = [];
     for (const track of tracks) {
       signal?.throwIfAborted();
-      const options = {start, end, origin: start, signal, compositor};
+      const options = {start, end, origin: start, signal, compositor, metrics};
       if (track.type === 'video') {
         if (!(await track.canDecode())) throw new Error('当前浏览器无法解码这段录像，请改用原画导出或更新浏览器。');
         const source = new EncodedVideoPacketSource('avc');
-        const settings = await readVideoEncodingSettings(track, {signal});
+        const settings = await readVideoEncodingSettings(track, {signal, metrics});
         output.addVideoTrack(source, {...(await trackMetadata(track)), rotation: await track.getRotation()});
         streams.push({source, isVideo: true, iterator: encodeVideoRange(track, {...options, settings})});
       } else {
@@ -273,7 +281,7 @@ async function encodeSelection(tracks, {start, end, signal, onProgress, onProces
       }
     }
     onProcessingStart();
-    return await muxPackets(session, streams, {start, end, signal, onProgress, stats: {strategy: 'full'}});
+    return await muxPackets(session, streams, {start, end, signal, onProgress, stats: {strategy: 'full'}, metrics});
   } finally {
     await session.cancel();
   }
@@ -281,7 +289,7 @@ async function encodeSelection(tracks, {start, end, signal, onProgress, onProces
 
 export async function trimPrecise(
   input,
-  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle, compositor} = {},
+  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle, compositor, metrics} = {},
 ) {
   signal?.throwIfAborted();
   end ??= await input.computeDuration();
@@ -293,17 +301,27 @@ export async function trimPrecise(
     onProcessingStart,
     fileHandle,
     compositor,
+    metrics,
   });
 }
 
 export async function trimPreciseTracks(
   tracks,
-  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle, compositor} = {},
+  {start = 0, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle, compositor, metrics} = {},
 ) {
   signal?.throwIfAborted();
   if (compositor) {
     onProgress(0, {strategy: 'full', message: '正在重新编码并压制弹幕'});
-    return encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor});
+    return encodeSelection(tracks, {
+      start,
+      end,
+      signal,
+      onProgress,
+      onProcessingStart,
+      fileHandle,
+      compositor,
+      metrics,
+    });
   }
   try {
     return await smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle});

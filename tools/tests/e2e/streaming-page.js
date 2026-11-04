@@ -101,6 +101,7 @@ window.startStreaming = async ({
       onProgress(progress) {
         state.frames = progress.videoFrames ?? state.frames;
         state.progress = progress.progress;
+        state.metrics = progress.metrics;
       },
     },
   )
@@ -310,6 +311,80 @@ window.checkEmoteCache = async pressure => {
     const times = pressure ? events.map(event => event.time) : [0, 10, 20, 30, 35];
     for (const time of times) await compositor.prepare(time);
     return reads;
+  } finally {
+    await compositor.close();
+  }
+};
+
+window.checkCatalogPrefetch = async cancel => {
+  const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
+  const {deferred} = await import('../../../src/shared/deferred.js');
+  const controller = new AbortController(),
+    requested = deferred(),
+    failed = deferred();
+  let indexes = 0,
+    images = 0,
+    canceled = false;
+  const events = [{time: 12, text: '[花]', mode: 5, color: 0xffffff, order: 0}];
+  const compositor = await createStreamingCompositor(
+    {room: 1},
+    {
+      origin: 0,
+      start: 0,
+      sourceTime: t => t,
+      width: 640,
+      height: 360,
+      signal: controller.signal,
+      reader: {
+        async read({start, end}) {
+          return events.filter(event => event.time >= start && event.time < end).map(event => ({...event}));
+        },
+        async close() {},
+      },
+      fetcher: async (url, {signal}) => {
+        if (url.endsWith('index.json')) {
+          indexes++;
+          requested.resolve();
+          if (indexes === 1) {
+            if (cancel) {
+              await new Promise((_, reject) =>
+                signal.addEventListener(
+                  'abort',
+                  () => {
+                    canceled = true;
+                    reject(signal.reason);
+                  },
+                  {once: true},
+                ),
+              );
+            }
+            failed.resolve();
+            throw new TypeError('prefetch temporarily unavailable');
+          }
+          return new Response(JSON.stringify({catalog: 'catalog.json'}));
+        }
+        if (url.endsWith('catalog.json'))
+          return new Response(
+            JSON.stringify({emotes: [{name: '花', kind: 'emoji', file: 'flower.png', width: 128, height: 128}]}),
+          );
+        images++;
+        return new Response(await (await fetch('/flower.png')).blob(), {headers: {'Content-Type': 'image/png'}});
+      },
+    },
+  );
+  try {
+    await requested.promise;
+    // Earlier frames must progress even if speculative catalog I/O is blocked.
+    await compositor.prepare(1);
+    const before = {indexes, images};
+    if (cancel) controller.abort();
+    else {
+      await failed.promise;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await compositor.prepare(10);
+      await compositor.prepare(12);
+    }
+    return {before, indexes, images, canceled};
   } finally {
     await compositor.close();
   }

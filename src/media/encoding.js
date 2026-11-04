@@ -23,74 +23,80 @@ async function supportsConfig(config, signal) {
   }
 }
 
-export async function readVideoEncodingSettings(track, {signal} = {}) {
-  signal?.throwIfAborted();
-  const [width, height, displayWidth, displayHeight, stats, sourceDecoderConfig] = await Promise.all([
-    track.getCodedWidth(),
-    track.getCodedHeight(),
-    track.getSquarePixelWidth(),
-    track.getSquarePixelHeight(),
-    track.computePacketStats(VIDEO_STATS_PACKETS),
-    track.getDecoderConfig(),
-  ]);
-  signal?.throwIfAborted();
-  const bitrate = Math.round(stats.averageBitrate),
-    frameRate = stats.averagePacketRate;
-  if (!(bitrate > 0 && Number.isFinite(bitrate) && frameRate > 0 && Number.isFinite(frameRate))) {
-    throw new Error('这段录像缺少码率或帧率信息，请改用原画导出。');
-  }
-  const quality = new Quality({bitrate, bitrateMode: 'variable'});
-  const options = {codec: 'avc', quality, latencyMode: 'quality'};
-  const codec = sourceDecoderConfig?.codec.replace(/^avc3\./i, 'avc1.');
-  const isAvc = /^avc1\.[\da-f]{6}$/i.test(codec ?? '');
-  let canSplice = false;
-  if (isAvc) {
-    for (const hardwareAcceleration of ['prefer-hardware', 'no-preference']) {
-      if (
-        await supportsConfig(
-          {
-            codec,
-            width,
-            height,
-            displayWidth,
-            displayHeight,
-            bitrate,
-            framerate: frameRate,
-            bitrateMode: 'variable',
-            latencyMode: 'quality',
-            hardwareAcceleration,
-            avc: {format: 'avc'},
-          },
-          signal,
-        )
-      ) {
-        Object.assign(options, {fullCodecString: codec, hardwareAcceleration});
-        canSplice = true;
-        break;
+export async function readVideoEncodingSettings(track, {signal, metrics} = {}) {
+  const finish = metrics?.start('encoderSetup');
+  try {
+    signal?.throwIfAborted();
+    const [width, height, displayWidth, displayHeight, stats, sourceDecoderConfig] = await Promise.all([
+      track.getCodedWidth(),
+      track.getCodedHeight(),
+      track.getSquarePixelWidth(),
+      track.getSquarePixelHeight(),
+      track.computePacketStats(VIDEO_STATS_PACKETS),
+      track.getDecoderConfig(),
+    ]);
+    signal?.throwIfAborted();
+    const bitrate = Math.round(stats.averageBitrate),
+      frameRate = stats.averagePacketRate;
+    if (!(bitrate > 0 && Number.isFinite(bitrate) && frameRate > 0 && Number.isFinite(frameRate))) {
+      throw new Error('这段录像缺少码率或帧率信息，请改用原画导出。');
+    }
+    const quality = new Quality({bitrate, bitrateMode: 'variable'});
+    const options = {codec: 'avc', quality, latencyMode: 'quality'};
+    const codec = sourceDecoderConfig?.codec.replace(/^avc3\./i, 'avc1.');
+    const isAvc = /^avc1\.[\da-f]{6}$/i.test(codec ?? '');
+    let canSplice = false;
+    if (isAvc) {
+      for (const hardwareAcceleration of ['prefer-hardware', 'no-preference']) {
+        if (
+          await supportsConfig(
+            {
+              codec,
+              width,
+              height,
+              displayWidth,
+              displayHeight,
+              bitrate,
+              framerate: frameRate,
+              bitrateMode: 'variable',
+              latencyMode: 'quality',
+              hardwareAcceleration,
+              avc: {format: 'avc'},
+            },
+            signal,
+          )
+        ) {
+          Object.assign(options, {fullCodecString: codec, hardwareAcceleration});
+          canSplice = true;
+          break;
+        }
       }
     }
+    if (!canSplice) {
+      const hardware = await canEncodeVideo('avc', {
+        width,
+        height,
+        quality,
+        latencyMode: 'quality',
+        hardwareAcceleration: 'prefer-hardware',
+      });
+      signal?.throwIfAborted();
+      options.hardwareAcceleration = hardware ? 'prefer-hardware' : 'no-preference';
+    }
+    // In pinned Mediabunny 1.56.1 this callback runs before support checks and configure.
+    // Setting transform.frameRate or output-track frameRate would instead resample/snap timestamps.
+    options.onEncoderConfig = config => {
+      config.framerate = frameRate;
+      metrics?.encoder(config);
+    };
+    return {width, height, bitrate, frameRate, sourceDecoderConfig, canSplice, encodingOptions: options};
+  } finally {
+    finish?.();
   }
-  if (!canSplice) {
-    const hardware = await canEncodeVideo('avc', {
-      width,
-      height,
-      quality,
-      latencyMode: 'quality',
-      hardwareAcceleration: 'prefer-hardware',
-    });
-    signal?.throwIfAborted();
-    options.hardwareAcceleration = hardware ? 'prefer-hardware' : 'no-preference';
-  }
-  // In pinned Mediabunny 1.56.1 this callback runs before support checks and configure.
-  // Setting transform.frameRate or output-track frameRate would instead resample/snap timestamps.
-  options.onEncoderConfig = config => {
-    config.framerate = frameRate;
-  };
-  return {width, height, bitrate, frameRate, sourceDecoderConfig, canSplice, encodingOptions: options};
 }
 
-export async function* encodeVideoRange(track, {start, end, origin = 0, settings, signal, compositor}) {
-  settings ??= await readVideoEncodingSettings(track, {signal});
+export async function* encodeVideoRange(track, {start, end, origin = 0, settings, signal, compositor, metrics}) {
+  settings ??= await readVideoEncodingSettings(track, {signal, metrics});
   signal?.throwIfAborted();
   const packets = [];
   let decoderConfig, canceling;
@@ -99,6 +105,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
   const source = new VideoSampleSource({
     ...settings.encodingOptions,
     onEncodedPacket(packet, metadata) {
+      metrics?.firstPacket();
       decoderConfig = metadata?.decoderConfig ?? decoderConfig;
       packets.push({packet, decoderConfig});
     },
@@ -121,7 +128,16 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
   try {
     await output.start();
     let first = true;
-    for await (const sample of samples) {
+    while (true) {
+      const finishRead = metrics?.start('sampleWait');
+      let next;
+      try {
+        next = await samples.next();
+      } finally {
+        finishRead?.();
+      }
+      if (next.done) break;
+      const sample = next.value;
       try {
         signal?.throwIfAborted();
         const clippedStart = Math.max(start, sample.timestamp);
@@ -129,16 +145,29 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         if (sample.timestamp >= limit) break;
         const clippedEnd = Math.min(limit, sample.timestamp + sample.duration);
         if (clippedEnd <= clippedStart) continue;
-        const preparation = compositor?.prepare?.(clippedStart);
-        if (preparation) await preparation;
-        const rendered = compositor?.render(sample, clippedStart);
+        const finishPreparation = metrics?.start('danmakuPrepare');
+        try {
+          const preparation = compositor?.prepare?.(clippedStart);
+          if (preparation) await preparation;
+        } finally {
+          finishPreparation?.();
+        }
+        const finishRender = metrics?.start('render');
+        let rendered;
+        try {
+          rendered = compositor?.render(sample, clippedStart);
+        } finally {
+          finishRender?.();
+        }
         const frame = rendered ?? sample;
         frame.setTimestamp(clippedStart - origin);
         frame.setDuration(clippedEnd - clippedStart);
         // add() enforces the codec's four-input backpressure; drain every emitted batch before reading more.
+        const finishEncode = metrics?.start('encodeSubmit');
         try {
           await Promise.race([source.add(frame, first ? {keyFrame: true} : undefined), aborted]);
         } finally {
+          finishEncode?.();
           rendered?.close();
         }
         first = false;
@@ -151,7 +180,12 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
       }
     }
     signal?.throwIfAborted();
-    await output.finalize();
+    const finishFlush = metrics?.start('encoderFlush');
+    try {
+      await output.finalize();
+    } finally {
+      finishFlush?.();
+    }
     while (packets.length) {
       signal?.throwIfAborted();
       yield packets.shift();

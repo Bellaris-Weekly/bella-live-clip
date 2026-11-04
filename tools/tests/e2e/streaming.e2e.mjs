@@ -132,6 +132,26 @@ test(
       assert.ok(state.result.videoTimes.length > 1200);
       assert.equal(state.result.decoded, true);
       assert.deepEqual(state.temporary, []);
+      assert.ok(state.metrics.firstPacketMs > 0 && state.metrics.firstPacketMs < state.metrics.elapsedMs);
+      for (const name of [
+        'mediaRequest',
+        'archiveSetup',
+        'archiveRead',
+        'sampleWait',
+        'danmakuPrepare',
+        'render',
+        'encodeSubmit',
+        'encoderFlush',
+        'muxAdd',
+        'fileWrite',
+        'fileClose',
+        'outputFinalize',
+      ]) {
+        assert.ok(state.metrics.stages[name].count > 0, name);
+        assert.ok(state.metrics.stages[name].totalMs >= 0, name);
+      }
+      assert.equal(state.metrics.stages.render.count, state.result.videoTimes.length);
+      assert.equal(state.metrics.encoder.width, fullHD ? 1920 : 640);
     } finally {
       await page.close();
     }
@@ -309,3 +329,23 @@ test(
     }
   },
 );
+
+test('catalog prefetch overlaps earlier frames, retries on demand, and cancels cleanly', async () => {
+  const page = await open();
+  try {
+    assert.deepEqual(await page.evaluate(() => window.checkCatalogPrefetch(false)), {
+      before: {indexes: 1, images: 0},
+      indexes: 2,
+      images: 1,
+      canceled: false,
+    });
+    assert.deepEqual(await page.evaluate(() => window.checkCatalogPrefetch(true)), {
+      before: {indexes: 1, images: 0},
+      indexes: 1,
+      images: 0,
+      canceled: true,
+    });
+  } finally {
+    await page.close();
+  }
+});

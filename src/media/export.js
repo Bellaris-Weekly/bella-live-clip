@@ -6,6 +6,7 @@ import {saveRecording} from './recording.js';
 import {createMediaOutput} from './file-output.js';
 import {createTemporaryMedia, mediaStorageError} from './temporary-media.js';
 import {requestWithRetry} from '../services/retry-request.js';
+import {createExportMetrics} from './export-metrics.js';
 
 // The caller owns the Input so HLS and Blob inputs use the same conversion path.
 export async function convertInput(
@@ -19,11 +20,12 @@ export async function convertInput(
     onProgress = () => {},
     onProcessingStart = () => {},
     fileHandle,
+    metrics,
   } = {},
 ) {
   signal?.throwIfAborted();
   if (precise || compositor)
-    return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor});
+    return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor, metrics});
   const session = await createMediaOutput({fileHandle, signal}),
     {output} = session;
   let conversion, canceling;
@@ -149,6 +151,9 @@ export async function exportSelection(
   if (!plans.length) throw new Error('选区中没有可用录像，请调整起止位置。');
   const outputs = [],
     downloaded = new Set();
+  const metrics = danmaku ? createExportMetrics() : undefined;
+  let metricsAt = -Infinity,
+    metricSnapshot;
   const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
   let completedDuration = 0;
   const resources = new Set(
@@ -163,6 +168,10 @@ export async function exportSelection(
     videoFrames = 0,
     processedSeconds = 0;
   function report(phase = 'preparing') {
+    if (metrics && (phase === 'complete' || performance.now() - metricsAt >= 1000)) {
+      metricSnapshot = metrics.snapshot();
+      metricsAt = performance.now();
+    }
     onProgress({
       progress,
       processing,
@@ -175,6 +184,7 @@ export async function exportSelection(
       message,
       videoFrames,
       processedSeconds,
+      ...(metrics ? {metrics: metricSnapshot} : {}),
     });
   }
   report();
@@ -198,18 +208,24 @@ export async function exportSelection(
       const key = segmentKey(segment);
       if (cache.has(key)) return cache.get(key);
       resources.add(key);
-      const response = await requestWithRetry(
-        api,
-        segment.url,
-        {type: 'arraybuffer', range: segment.range, signal},
-        {
-          onRetry(state) {
-            reconnecting = state ? 1 : 0;
-            attempt = state?.attempt ?? 0;
-            report();
+      const finishRequest = metrics?.start('mediaRequest');
+      let response;
+      try {
+        response = await requestWithRetry(
+          api,
+          segment.url,
+          {type: 'arraybuffer', range: segment.range, signal},
+          {
+            onRetry(state) {
+              reconnecting = state ? 1 : 0;
+              attempt = state?.attempt ?? 0;
+              report();
+            },
           },
-        },
-      );
+        );
+      } finally {
+        finishRequest?.();
+      }
       signal?.throwIfAborted();
       const data = new Uint8Array(response.data);
       bytes += data.byteLength;
@@ -227,7 +243,8 @@ export async function exportSelection(
     try {
       if (danmaku) {
         const {prepareComments} = await import('../danmaku/archive.js');
-        preparedComments = prepareComments(record, {signal});
+        const finishArchive = metrics.start('archiveSetup');
+        preparedComments = prepareComments(record, {signal}).finally(finishArchive);
         // A failed archive must also stop the concurrent media download.
         void preparedComments.catch(error => planController.abort(error));
       }
@@ -263,7 +280,13 @@ export async function exportSelection(
             cache.delete(key);
             return {data};
           }
-          const response = await api.request(url, options);
+          const finishRequest = metrics?.start('mediaRequest');
+          let response;
+          try {
+            response = await api.request(url, options);
+          } finally {
+            finishRequest?.();
+          }
           bytes += response.data.byteLength;
           downloaded.add(key);
           return response;
@@ -283,6 +306,7 @@ export async function exportSelection(
           preparedComments,
           createTemporary,
           fileHandle: destination.handle,
+          metrics,
           signal,
           abort: error => planController.abort(error),
           onSegment: entry => entries.set(segmentKey(entry.segment), entry),
@@ -306,6 +330,7 @@ export async function exportSelection(
         saved = true;
         const output = {
           ...result,
+          metrics: metrics.snapshot(),
           name: destination.name,
           start: plan.offset + plan.start,
           end: plan.offset + plan.end,

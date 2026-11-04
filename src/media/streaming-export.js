@@ -26,6 +26,7 @@ export async function exportStreamingDanmaku(
     selectionEnd,
     onProgress = () => {},
     onDownload = () => {},
+    metrics,
   },
 ) {
   const producerController = new AbortController(),
@@ -51,6 +52,7 @@ export async function exportStreamingDanmaku(
     signal: resourcesController.signal,
     prepared: preparedComments,
     createTemporary,
+    metrics,
   });
   const firstIndex = expanded.segments.indexOf(plan.segments[0]);
   const lastIndex = expanded.segments.indexOf(plan.segments.at(-1));
@@ -108,6 +110,7 @@ export async function exportStreamingDanmaku(
       throw new Error('当前浏览器无法编码此分辨率的 H.264，不能压制弹幕。');
     compositor = await createStreamingCompositor(record, {
       reader,
+      metrics,
       origin,
       start,
       sourceTime: time => clock(time),
@@ -124,6 +127,7 @@ export async function exportStreamingDanmaku(
         return end;
       },
       compositor,
+      metrics,
       signal,
       fileHandle,
       onProgress: (value, detail) => onProgress(value, detail),

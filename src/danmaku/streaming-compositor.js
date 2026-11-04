@@ -8,7 +8,7 @@ const WINDOW_SECONDS = 10;
 
 export async function createStreamingCompositor(
   record,
-  {reader, origin, start, sourceTime, width, height, adjustment, signal, fetcher, endTime = () => Infinity},
+  {reader, origin, start, sourceTime, width, height, adjustment, signal, fetcher, endTime = () => Infinity, metrics},
 ) {
   const assets = new Map(),
     budget = {used: 0, compressed: 0};
@@ -23,6 +23,18 @@ export async function createStreamingCompositor(
     assets.clear();
   };
   const read = (from, to) => reader.read({origin, start: from, end: to, adjustment});
+  const getCatalog = () => {
+    if (!catalog) {
+      const finish = metrics?.start('emoteCatalog');
+      catalog = loadEmoteCatalog(record.room, {signal, fetcher})
+        .catch(error => {
+          catalog = null;
+          throw error;
+        })
+        .finally(() => finish?.());
+    }
+    return catalog;
+  };
   const prefetch = () => {
     const end = endTime();
     if (until >= end) {
@@ -33,7 +45,15 @@ export async function createStreamingCompositor(
     next = {from: until, to, promise: read(until, to)};
     // Speculation is not a required stage yet. Observe its rejection now, but
     // only retry/report it if playback actually reaches this window.
-    void next.promise.catch(() => {});
+    void next.promise
+      .then(events => {
+        signal?.throwIfAborted();
+        // Only metadata is speculative. Images still wait for actual layout
+        // admission, so filtered/queued/dropped comments never fetch pictures.
+        if (referencedEmotes(events.filter(event => event.time < endTime() && visibleComment(event))).size)
+          return getCatalog();
+      })
+      .catch(() => {});
   };
   // Assets referenced by current layout/window state are pinned. Idle assets
   // remain reusable until an entry or byte budget actually needs their space.
@@ -67,8 +87,7 @@ export async function createStreamingCompositor(
       }
     const missing = [...names].filter(name => !assets.has(name));
     if (missing.length) {
-      catalog ??= loadEmoteCatalog(record.room, {signal, fetcher});
-      const selected = await catalog;
+      const selected = await getCatalog();
       const added = missing.filter(name => selected.has(name)).length;
       evictUntil(() => assets.size + added <= 128);
       if (assets.size + added > 128) throw new Error('弹幕窗口表情种类超过缓存上限。');
@@ -135,6 +154,7 @@ export async function createStreamingCompositor(
       render: (sample, timestamp) => painter.render(sample, timestamp),
       async close() {
         await next?.promise.catch(() => {});
+        await catalog?.catch(() => {});
         painter.close();
         await reader.close();
       },

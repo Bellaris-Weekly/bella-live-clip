@@ -2,7 +2,7 @@ import {BufferTarget, StreamTarget, Output, Mp4OutputFormat} from 'mediabunny';
 
 // Each attempt owns a fresh transaction. A failed smart splice can abort and
 // restart with full encoding without retaining bytes or committing a partial file.
-export async function createMediaOutput({fileHandle, signal} = {}) {
+export async function createMediaOutput({fileHandle, signal, metrics} = {}) {
   signal?.throwIfAborted();
   let file = fileHandle ? await fileHandle.createWritable() : null;
   let bytes = 0;
@@ -11,7 +11,12 @@ export async function createMediaOutput({fileHandle, signal} = {}) {
         new WritableStream({
           async write(chunk) {
             signal?.throwIfAborted();
-            await file.write(chunk);
+            const finish = metrics?.start('fileWrite');
+            try {
+              await file.write(chunk);
+            } finally {
+              finish?.();
+            }
             bytes = Math.max(bytes, chunk.position + chunk.data.byteLength);
           },
         }),
@@ -22,10 +27,20 @@ export async function createMediaOutput({fileHandle, signal} = {}) {
   return {
     output,
     async finish() {
-      if (output.state !== 'finalized') await output.finalize();
+      const finish = metrics?.start('outputFinalize');
+      try {
+        if (output.state !== 'finalized') await output.finalize();
+      } finally {
+        finish?.();
+      }
       signal?.throwIfAborted();
       if (!fileHandle) return new Blob([target.buffer], {type: 'video/mp4'});
-      await file.close();
+      const finishClose = metrics?.start('fileClose');
+      try {
+        await file.close();
+      } finally {
+        finishClose?.();
+      }
       file = null;
       return {bytes};
     },

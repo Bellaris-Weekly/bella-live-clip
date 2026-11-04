@@ -37,6 +37,7 @@ try {
       contents: `
       import {Input, BlobSource, MP4} from 'mediabunny';
       import {convertInput} from './src/media/export.js';
+      import {createExportMetrics} from './src/media/export-metrics.js';
       import {createDanmakuCompositor as current} from './src/danmaku/compositor.js';
       import {createDanmakuCompositor as reference} from './tools/tests/fixtures/danmaku-compositor-reference.js';
       window.measure = async ({implementation, scene}) => {
@@ -49,10 +50,11 @@ try {
           origin:0,start:0,end:3,sourceTime:t=>t,width:1920,height:1080,adjustment:0,
         });
         const started=performance.now();
+        const metrics=createExportMetrics();
         try {
-          await convertInput(input,{start:0,end:3,compositor});
+          await convertInput(input,{start:0,end:3,compositor,metrics});
           const seconds=(performance.now()-started)/1000;
-          return {implementation,scene,seconds,fps:90/seconds};
+          return {implementation,scene,seconds,fps:90/seconds,metrics:metrics.snapshot()};
         } finally {compositor.close();input.dispose();}
       };
     `,
@@ -69,6 +71,8 @@ try {
         export async function loadComments(){return window.events}
         export function boundedFetch(){throw new Error('Unexpected emote request')}
         export function publicUrl(){} export function readJson(){}
+        export function createCommentReader(){throw new Error('Unexpected streaming reader')}
+        export function prepareComments(){throw new Error('Unexpected archive preparation')}
       `,
             loader: 'js',
           }));

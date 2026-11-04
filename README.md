@@ -49,8 +49,10 @@
 
 预览截图浏览器验证：运行 `npm run serve`，打开 `http://127.0.0.1:8765/?screenshot`，选择场次后移入预览并点击相机，再移出预览。测试页应显示 `hoverShown`、`leaveHidden`、`png` 和 `nativeSize` 均为 `true`，并实际下载原尺寸 PNG。
 
-弹幕性能对照：运行 `node tools/scripts/benchmark-danmaku.mjs`（需要 FFmpeg 和 Playwright Chromium）。对同一 1080p/30fps 素材比较 2.13.1 合成器与当前实现，预热后交替测量三次，输出空弹幕、固定弹幕和滚动弹幕的中位耗时。测量仅覆盖解码、合成、编码和内存封装，不包含网络或写盘，不能当作真实导出的提速承诺。`npm run test:e2e` 另外验证合成前后逐像素一致、动态表情、原尺寸和 AAC 音频保留。
+弹幕性能对照：运行 `node tools/scripts/benchmark-danmaku.mjs`（需要 FFmpeg 和 Playwright Chromium）。对同一 1080p/30fps 素材比较 2.13.1 合成器与当前实现，预热后交替测量三次，输出空弹幕、固定弹幕和滚动弹幕的中位耗时，以及各次的 `metrics` 阶段统计。测量仅覆盖解码、合成、编码和内存封装，不包含网络或写盘，不能当作真实导出的提速承诺。`npm run test:e2e` 另外验证合成前后逐像素一致、动态表情、原尺寸和 AAC 音频保留。
 
 弹幕流水线验证：`node --test tools/tests/e2e/streaming.e2e.mjs` 会故意阻塞后续分片、写盘和后续表情，检查前段仍可编码、尾部探测不阻塞启动、下载能响应下游压力、取消能够清理资源。测试还覆盖未使用预取失败、需求重试及缓存淘汰，并对照旧流程的视频帧时间和 AAC 音频包。
 
 1080p 流程复测：`STREAMING_TEST_1080P=1 node --test --test-name-pattern="encoding begins" tools/tests/e2e/streaming.e2e.mjs`。默认流水线回归使用较小素材以缩短运行时间。
+
+弹幕阶段测量：`onProgress` 和导出结果包含本地 `metrics`，记录首包延迟、取帧等待、弹幕准备、合成、编码提交、合封和写盘。各阶段会重叠，不能直接相加；`encodeSubmit` 含编码队列等待，`sampleWait` 含上游素材等待，均不代表纯 CPU 耗时。硬件偏好也不代表实际硬件使用情况。
