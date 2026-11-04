@@ -388,3 +388,78 @@ test('windowed archive reads freeze a live snapshot once and release its tempora
   await reader.close();
   assert.equal(removed, 1);
 });
+
+test('three archive partitions reuse their row groups across windows and retry failed payloads', async () => {
+  const {createCommentReader} = await import('../../../src/danmaku/archive.js');
+  const {parquetMetadataAsync} = await import('hyparquet');
+  const metadata = await parquetMetadataAsync(fixture);
+  const footer = fixture.byteLength - metadata.metadata_length - 8;
+  let payloadReads = 0,
+    fail = false;
+  const fetcher = async (url, options) => {
+    if (url.endsWith('index.json'))
+      return new Response(
+        JSON.stringify({
+          schemaVersion: 1,
+          sessions: [0, 1, 2].map(part => ({
+            live_key: 'cache',
+            part,
+            path: `live-archive/v1/1/p${part}.parquet`,
+          })),
+        }),
+      );
+    const [, a, b] = /^bytes=(\d+)-(\d+)$/.exec(options.headers.Range);
+    const start = Number(a),
+      end = Number(b) + 1;
+    if (start > 0 && end < footer) {
+      payloadReads++;
+      if (fail) {
+        fail = false;
+        throw new TypeError('network failure');
+      }
+    }
+    return new Response(fixture.slice(start, end), {
+      status: 206,
+      headers: {ETag: 'fixture', 'Content-Range': `bytes ${start}-${end - 1}/${fixture.byteLength}`},
+    });
+  };
+  const reader = createCommentReader({room: 1, key: 'cache'}, {fetcher});
+  try {
+    fail = true;
+    await assert.rejects(reader.read({origin: 0, start: 90, end: 99}), /读取失败/);
+    const first = await reader.read({origin: 0, start: 90, end: 99});
+    const count = payloadReads;
+    const second = await reader.read({origin: 0, start: 99, end: 110});
+    assert.equal(first.length, 3);
+    assert.equal(second.length, 3);
+    assert.equal(payloadReads, count, 'all three row groups stay cached within the byte budget');
+  } finally {
+    await reader.close();
+  }
+});
+
+test('archive time bounds remain conservative when received timestamps can be null', async () => {
+  const {danmakuBounds} = await import('../../../src/danmaku/parquet.js');
+  const metadata = nullCount => ({
+    key_value_metadata: [
+      {key: 'live_archive_version', value: '1'},
+      {key: 'sections', value: '{"danmaku":[0]}'},
+    ],
+    row_groups: [
+      {
+        num_rows: 2n,
+        total_byte_size: 100n,
+        columns: [
+          {
+            meta_data: {
+              path_in_schema: ['t'],
+              statistics: {null_count: nullCount, min_value: 100000n, max_value: 120000n},
+            },
+          },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(danmakuBounds(metadata(0n)), {from: 100, to: 120});
+  assert.deepEqual(danmakuBounds(metadata(1n)), {from: -Infinity, to: Infinity});
+});

@@ -57,7 +57,7 @@ export async function convertInput(
 // Boundary probes use native packet times, never the HLS clock heuristic. A
 // GOP may span any number of files; extend until a real random-access point is
 // found, not a fixed "one extra segment" rule. Only boundary files are cached.
-async function extendPlan(group, plan, read, signal) {
+async function extendPlan(group, plan, read, signal, streaming = false) {
   const first = group.segments.indexOf(plan.segments[0]);
   const last = group.segments.indexOf(plan.segments.at(-1));
   let from = first,
@@ -86,6 +86,9 @@ async function extendPlan(group, plan, read, signal) {
     if (times.some(time => time <= (from === first ? plan.start : Infinity))) break;
     from--;
   }
+  // A streaming export discovers its tail as packets arrive. Only the head's
+  // decode dependency is a prerequisite for starting the pipeline.
+  if (streaming) return {segments: group.segments.slice(from), map: group.map};
   const lastStart = plan.segments.slice(0, -1).reduce((sum, segment) => sum + segment.duration, 0);
   while (to < group.segments.length - 1) {
     const times = await keys(to);
@@ -249,11 +252,12 @@ export async function exportSelection(
         }
       }
       message = '正在整理录像';
-      const expanded = await extendPlan(group, plan, read, signal);
-      for (const segment of expanded.segments) resources.add(segmentKey(segment));
+      const expanded = await extendPlan(group, plan, read, signal, Boolean(danmaku));
+      if (!danmaku) for (const segment of expanded.segments) resources.add(segmentKey(segment));
       const savingApi = {
         async request(url, options) {
           const key = segmentKey({url, range: options.range});
+          resources.add(key);
           let data = cache.get(key);
           if (data) {
             cache.delete(key);

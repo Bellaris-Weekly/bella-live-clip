@@ -248,3 +248,64 @@ test('canceling a blocked output aborts all stages and cleans snapshots', {timeo
     await page.close();
   }
 });
+
+test(
+  'tail boundary requests cannot block startup and never prefetch past the confirmed keyframe',
+  {timeout: fullHD ? 180000 : 60000},
+  async () => {
+    const page = await open();
+    try {
+      await page.evaluate(() => window.startStreaming({blockMedia: true, blockIndex: 21}));
+      await page.waitForFunction(() => window.streamingState.blockedMedia || window.streamingState.error, null, {
+        timeout: fullHD ? 90000 : 30000,
+      });
+      const blocked = await page.evaluate(() => window.streamingState);
+      assert.equal(blocked.error, undefined, JSON.stringify(blocked.error));
+      assert.ok(blocked.framesAtBlock > 0, 'encoding must precede the first tail request');
+      await page.evaluate(() => window.releaseStreamingMedia());
+      await page.waitForFunction(() => window.streamingState.done, null, {timeout: fullHD ? 90000 : 30000});
+      const done = await page.evaluate(() => window.streamingState);
+      assert.equal(done.error, undefined, JSON.stringify(done.error));
+      assert.ok(done.requests.includes(22), 'decode dependencies include the next keyframe');
+      assert.ok(!done.requests.includes(23), 'do not speculatively fetch past the confirmed boundary');
+      assert.deepEqual(done.temporary, []);
+    } finally {
+      await page.close();
+    }
+  },
+);
+
+test('unused prefetch failures are isolated; required windows retry with the confirmed end and still report real errors', async () => {
+  const page = await open();
+  try {
+    const result = await page.evaluate(() => window.checkWindowPolicies());
+    assert.deepEqual(result.reads, [
+      [-15, 10],
+      [10, 20],
+    ]);
+    assert.deepEqual(result.retried, [
+      [-15, 10],
+      [10, 20],
+      [10, 12],
+    ]);
+    assert.equal(result.requiredError, 'required window failed');
+  } finally {
+    await page.close();
+  }
+});
+
+test(
+  'idle emotes are reused across windows and evicted under byte pressure in LRU order',
+  {timeout: 30000},
+  async () => {
+    const page = await open();
+    try {
+      assert.deepEqual(await page.evaluate(() => window.checkEmoteCache(false)), {0: 1});
+      const pressure = await page.evaluate(() => window.checkEmoteCache(true));
+      assert.equal(pressure[0], 2, 'the oldest idle asset must be evicted to respect the bitmap budget');
+      assert.equal(pressure[20], 1, 'a recently used asset must remain cached');
+    } finally {
+      await page.close();
+    }
+  },
+);

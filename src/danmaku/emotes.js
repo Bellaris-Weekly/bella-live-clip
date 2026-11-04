@@ -103,6 +103,7 @@ export async function loadEmotes(
           if (typeof ImageDecoder === 'undefined')
             throw new Error('当前浏览器无法解码弹幕表情，请更新 Chrome / Edge。');
           if (lazy) {
+            budget.makeRoom?.('compressed', bytes.byteLength);
             if (budget.compressed + bytes.byteLength > 16 * 1024 * 1024)
               throw new Error('弹幕表情压缩数据超过 16 MiB，请缩短选区。');
             compressed = bytes.byteLength;
@@ -125,6 +126,7 @@ export async function loadEmotes(
             readSignal?.throwIfAborted();
             if (closed) throw new Error('弹幕表情已释放。');
             const size = asset.width * asset.height * 4;
+            budget.makeRoom?.('used', size);
             if (budget.used + size > 32 * 1024 * 1024) throw new Error('弹幕表情缓存超过 32 MiB，请缩短选区。');
             budget.used += size;
             retained += size;

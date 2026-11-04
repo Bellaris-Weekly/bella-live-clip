@@ -51,6 +51,6 @@
 
 弹幕性能对照：运行 `node tools/scripts/benchmark-danmaku.mjs`（需要 FFmpeg 和 Playwright Chromium）。对同一 1080p/30fps 素材比较 2.13.1 合成器与当前实现，预热后交替测量三次，输出空弹幕、固定弹幕和滚动弹幕的中位耗时。测量仅覆盖解码、合成、编码和内存封装，不包含网络或写盘，不能当作真实导出的提速承诺。`npm run test:e2e` 另外验证合成前后逐像素一致、动态表情、原尺寸和 AAC 音频保留。
 
-弹幕流水线验证：`node --test tools/tests/e2e/streaming.e2e.mjs` 会故意阻塞后续分片、写盘和后续表情，检查前段仍可编码、下载能响应下游压力、取消能够清理资源，并对照旧流程的视频帧时间和 AAC 音频包。
+弹幕流水线验证：`node --test tools/tests/e2e/streaming.e2e.mjs` 会故意阻塞后续分片、写盘和后续表情，检查前段仍可编码、尾部探测不阻塞启动、下载能响应下游压力、取消能够清理资源。测试还覆盖未使用预取失败、需求重试及缓存淘汰，并对照旧流程的视频帧时间和 AAC 音频包。
 
 1080p 流程复测：`STREAMING_TEST_1080P=1 node --test --test-name-pattern="encoding begins" tools/tests/e2e/streaming.e2e.mjs`。默认流水线回归使用较小素材以缩短运行时间。

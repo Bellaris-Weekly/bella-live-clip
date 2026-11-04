@@ -161,7 +161,7 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
     closed = false;
   async function open(index, part, initial) {
     let file = index === 0 ? initial.file : await archiveFile(part, options);
-    const {readMetadata} = await import('./parquet.js');
+    const {readMetadata, danmakuBounds} = await import('./parquet.js');
     const metadata = index === 0 ? initial.metadata : await readMetadata(file);
     if (file.withSignal) file = file.withSignal(signal);
     if (file instanceof ArrayBuffer && createTemporary) {
@@ -179,7 +179,7 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
       file = {byteLength: blob.size, slice: (from, to) => blob.slice(from, to).arrayBuffer()};
       if (index === 0) initial.file = file;
     }
-    return {file, metadata};
+    return {file, metadata, bounds: danmakuBounds(metadata)};
   }
   function readGroup(key, size, load) {
     if (cache.has(key)) {
@@ -188,17 +188,47 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
       cache.set(key, entry);
       return entry.promise;
     }
-    while (cache.size && (cache.size >= 2 || cachedBytes + size > 16 * 1024 * 1024)) {
-      const oldest = cache.keys().next().value;
-      cachedBytes -= cache.get(oldest).size;
-      cache.delete(oldest);
-    }
-    const promise = load();
-    void promise.catch(() => {});
-    cache.set(key, {promise, size});
-    cachedBytes += size;
-    return promise;
+    const entry = {size: Math.max(1024, size), promise: null};
+    const trim = () => {
+      while (cachedBytes > 16 * 1024 * 1024 && cache.size) {
+        const oldest = cache.keys().next().value;
+        cachedBytes -= cache.get(oldest).size;
+        cache.delete(oldest);
+      }
+    };
+    const remove = () => {
+      if (cache.get(key) === entry) {
+        cachedBytes -= entry.size;
+        cache.delete(key);
+      }
+    };
+    entry.promise = Promise.resolve()
+      .then(load)
+      .then(
+        values => {
+          if (cache.get(key) === entry) {
+            cachedBytes -= entry.size;
+            entry.size = Math.max(
+              entry.size,
+              values.reduce((bytes, row) => bytes + String(row.text).length * 2 + 128, 0),
+            );
+            cachedBytes += entry.size;
+            trim();
+          }
+          return values;
+        },
+        error => {
+          remove();
+          throw error;
+        },
+      );
+    void entry.promise.catch(() => {});
+    cache.set(key, entry);
+    cachedBytes += entry.size;
+    trim();
+    return entry.promise;
   }
+
   return {
     async read({origin, start, end, adjustment = 0}) {
       if (closed) throw new Error('弹幕读取器已关闭。');
@@ -211,7 +241,8 @@ export function createCommentReader(record, {signal, fetcher = fetch, prepared, 
       for (const [index, part] of initial.parts.entries()) {
         signal?.throwIfAborted();
         if (!opened.has(index)) opened.set(index, open(index, part, initial));
-        const {file, metadata} = await opened.get(index);
+        const {file, metadata, bounds} = await opened.get(index);
+        if (bounds.to < from || bounds.from > to) continue;
         const rows = await readDanmaku(file, {
           from,
           to,

@@ -1,3 +1,4 @@
+import {recordingTime} from './recording-timeline.js';
 import {canEncodeVideo} from 'mediabunny';
 import {deferred} from '../shared/deferred.js';
 import {saveRecording} from './recording.js';
@@ -53,12 +54,14 @@ export async function exportStreamingDanmaku(
   });
   const firstIndex = expanded.segments.indexOf(plan.segments[0]);
   const lastIndex = expanded.segments.indexOf(plan.segments.at(-1));
+  let downloadLimit = lastIndex + 1;
   try {
     producer = saveRecording(api, [expanded], media.handle, {
       signal: producerController.signal,
       fragmented: true,
       concurrency: 2,
-      onSegment(entry) {
+      downloadLimit: () => downloadLimit,
+      onSegment(entry, tracks) {
         onSegment(entry);
         entries.push(entry);
         clock = sourceClock(entries);
@@ -67,7 +70,19 @@ export async function exportStreamingDanmaku(
           start = selectionStart();
           ready.resolve(start);
         }
-        if (index >= lastIndex) end = selectionEnd();
+        if (index >= lastIndex) {
+          end = selectionEnd();
+          const boundary = tracks.some(
+            track =>
+              track.key.startsWith('video:') &&
+              track.packets.some(
+                packet => packet.type === 'key' && recordingTime(packet.timestamp + entry.sourceOffset) >= end,
+              ),
+          );
+          // Beyond the selection, admit only one additional fragment at a time
+          // until the real keyframe boundary is found. Never prefetch past it.
+          downloadLimit = Math.min(expanded.segments.length, index + (boundary ? 1 : 2));
+        }
       },
       onProgress: onDownload,
     });
@@ -100,7 +115,6 @@ export async function exportStreamingDanmaku(
       height,
       adjustment,
       signal: resourcesController.signal,
-      onError: abort,
       endTime: () => (Number.isFinite(end) ? clock(end) : Infinity),
     });
     const result = await trimPrecise(media.input, {

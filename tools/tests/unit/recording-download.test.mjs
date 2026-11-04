@@ -139,3 +139,32 @@ test('failure or cancellation aborts the other requests and leaves no speculativ
     assert.equal(active, 0);
   }
 });
+
+test('a demand limit admits tail fragments one by one and stops without fetching the next one', async () => {
+  let limit = 2;
+  const seen = [];
+  const download = createRecordingDownload(
+    {
+      request: async url => {
+        seen.push(url);
+        return {data: new ArrayBuffer(4)};
+      },
+    },
+    groups(6),
+    {concurrency: 2, limit: () => limit},
+  );
+  const iterator = download.segments();
+  try {
+    assert.equal((await iterator.next()).value.index, 0);
+    assert.equal((await iterator.next()).value.index, 1);
+    await tick();
+    assert.deepEqual(seen, ['0', '1']);
+    limit = 3; // No keyframe yet; inspect one more fragment.
+    assert.equal((await iterator.next()).value.index, 2);
+    assert.equal((await iterator.next()).done, true);
+    assert.deepEqual(seen, ['0', '1', '2']);
+  } finally {
+    await iterator.return();
+    await download.close();
+  }
+});

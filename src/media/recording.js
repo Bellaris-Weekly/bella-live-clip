@@ -16,7 +16,15 @@ export async function saveRecording(
   api,
   groups,
   fileHandle,
-  {signal, stopSignal, onProgress = () => {}, onSegment = () => {}, concurrency = 6, fragmented = false} = {},
+  {
+    signal,
+    stopSignal,
+    onProgress = () => {},
+    onSegment = () => {},
+    concurrency = 6,
+    fragmented = false,
+    downloadLimit,
+  } = {},
 ) {
   let file,
     input,
@@ -56,6 +64,7 @@ export async function saveRecording(
   const download = createRecordingDownload(api, groups, {
     signal: requests.signal,
     concurrency,
+    limit: downloadLimit,
     onRead: size => {
       bytes += size;
       samples.push({at: performance.now(), bytes});
@@ -157,12 +166,16 @@ export async function saveRecording(
         }
         const offset = timeline.append(segmentTracks, pendingDiscontinuity);
         pendingDiscontinuity = false;
-        onSegment({
-          segment: item.segment,
-          sourceOffset: offset,
-          start: recordingTime(sourceStart + offset),
-          end: recordingTime(sourceEnd + offset),
-        });
+        // Packet views are borrowed only for this synchronous callback.
+        onSegment(
+          {
+            segment: item.segment,
+            sourceOffset: offset,
+            start: recordingTime(sourceStart + offset),
+            end: recordingTime(sourceEnd + offset),
+          },
+          segmentTracks,
+        );
         if (output.state === 'pending') await output.start();
         // Interleave tracks in small batches without changing each track's decode order.
         const cursors = segmentTracks.map(() => 0);

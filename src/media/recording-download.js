@@ -5,7 +5,14 @@ import {requestWithRetry} from '../services/retry-request.js';
 export function createRecordingDownload(
   api,
   groups,
-  {signal, concurrency = 6, maxBytes = 64 * 1024 * 1024, onRead = () => {}, onRetry = () => {}} = {},
+  {
+    signal,
+    concurrency = 6,
+    maxBytes = 64 * 1024 * 1024,
+    onRead = () => {},
+    onRetry = () => {},
+    limit = () => Infinity,
+  } = {},
 ) {
   const items = groups.flatMap((group, groupIndex) => group.segments.map(segment => ({segment, groupIndex})));
   const controller = new AbortController(),
@@ -41,7 +48,13 @@ export function createRecordingDownload(
     return data;
   }
   function pump() {
-    while (!controller.signal.aborted && active < concurrency && next < items.length && next < cursor + concurrency) {
+    while (
+      !controller.signal.aborted &&
+      active < concurrency &&
+      next < items.length &&
+      next < limit() &&
+      next < cursor + concurrency
+    ) {
       const reservation = items[next].segment.range?.length ?? average;
       if (next !== cursor && held + reserved + reservation > maxBytes) break;
       const index = next++,
@@ -75,13 +88,13 @@ export function createRecordingDownload(
     signal: controller.signal,
     readMap: read,
     async *segments() {
-      for (; cursor < items.length; cursor++) {
+      for (; cursor < items.length && cursor < limit(); cursor++) {
         controller.signal.throwIfAborted();
         pump();
         const entry = entries.get(cursor),
           data = await entry.promise;
         controller.signal.throwIfAborted();
-        yield {...items[cursor], data, index: cursor, count: items.length};
+        yield {...items[cursor], data, index: cursor, count: Math.min(items.length, limit())};
         held -= entry.size;
         entries.delete(cursor);
       }

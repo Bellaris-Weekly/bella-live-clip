@@ -8,19 +8,7 @@ const WINDOW_SECONDS = 10;
 
 export async function createStreamingCompositor(
   record,
-  {
-    reader,
-    origin,
-    start,
-    sourceTime,
-    width,
-    height,
-    adjustment,
-    signal,
-    fetcher,
-    endTime = () => Infinity,
-    onError = () => {},
-  },
+  {reader, origin, start, sourceTime, width, height, adjustment, signal, fetcher, endTime = () => Infinity},
 ) {
   const assets = new Map(),
     budget = {used: 0, compressed: 0};
@@ -28,7 +16,8 @@ export async function createStreamingCompositor(
     painter,
     next,
     until = sourceTime(start) + WINDOW_SECONDS,
-    order = 0;
+    order = 0,
+    pinned = new Set();
   const closeAssets = () => {
     for (const asset of assets.values()) asset.close();
     assets.clear();
@@ -41,10 +30,27 @@ export async function createStreamingCompositor(
       return;
     }
     const to = Math.min(until + WINDOW_SECONDS, end);
-    next = {to, promise: read(until, to)};
-    void next.promise.catch(error => {
-      if (!signal?.aborted) onError(error);
-    });
+    next = {from: until, to, promise: read(until, to)};
+    // Speculation is not a required stage yet. Observe its rejection now, but
+    // only retry/report it if playback actually reaches this window.
+    void next.promise.catch(() => {});
+  };
+  // Assets referenced by current layout/window state are pinned. Idle assets
+  // remain reusable until an entry or byte budget actually needs their space.
+  function evictUntil(fits) {
+    let evicted = false;
+    for (const [name, asset] of assets) {
+      if (fits()) break;
+      if (pinned.has(name)) continue;
+      asset.close();
+      assets.delete(name);
+      evicted = true;
+    }
+    if (evicted) painter?.clearMeasurements();
+  }
+  budget.makeRoom = (kind, bytes) => {
+    const limit = (kind === 'used' ? 32 : 16) * 1024 * 1024;
+    evictUntil(() => budget[kind] + bytes <= limit);
   };
   async function supply(events) {
     signal?.throwIfAborted();
@@ -52,20 +58,20 @@ export async function createStreamingCompositor(
       ? [...painter.layout.active, ...painter.layout.waiting, ...painter.layout.events.slice(painter.layout.cursor)]
       : [];
     const names = referencedEmotes(retained.concat(events).filter(visibleComment));
-    let evicted = false;
-    for (const [name, asset] of assets)
-      if (!names.has(name)) {
-        asset.close();
+    pinned = names;
+    for (const name of names)
+      if (assets.has(name)) {
+        const asset = assets.get(name);
         assets.delete(name);
-        evicted = true;
+        assets.set(name, asset);
       }
-    if (evicted) painter?.clearMeasurements();
     const missing = [...names].filter(name => !assets.has(name));
     if (missing.length) {
       catalog ??= loadEmoteCatalog(record.room, {signal, fetcher});
       const selected = await catalog;
-      if (assets.size + missing.filter(name => selected.has(name)).length > 128)
-        throw new Error('弹幕窗口表情种类超过缓存上限。');
+      const added = missing.filter(name => selected.has(name)).length;
+      evictUntil(() => assets.size + added <= 128);
+      if (assets.size + added > 128) throw new Error('弹幕窗口表情种类超过缓存上限。');
       const loaded = await loadEmotes(
         missing.map(text => ({text})),
         record.room,
@@ -78,7 +84,9 @@ export async function createStreamingCompositor(
   }
   try {
     until = Math.min(until, endTime());
-    const initial = await read(sourceTime(start) - PREROLL, until);
+    const loaded = await read(sourceTime(start) - PREROLL, until);
+    until = Math.min(until, endTime());
+    const initial = loaded.filter(event => event.time < until);
     await supply(initial);
     for (const event of initial) event.order = order++;
     painter = createDanmakuPainter(initial, {assets, close: closeAssets}, {start, sourceTime, width, height, signal});
@@ -92,11 +100,21 @@ export async function createStreamingCompositor(
           // comments. Nothing is re-prerolled at a window boundary.
           painter.layout.advance(Math.max((painter.layout.tick - 1) / 60, until - 1e-7));
           const pending = next;
-          const events = await pending.promise;
+          const to = Math.min(pending.to, endTime());
+          let loaded;
+          try {
+            loaded = await pending.promise;
+          } catch (error) {
+            signal?.throwIfAborted();
+            // A transient prefetch failure or an over-wide speculative query
+            // gets one demand read with the now-confirmed end boundary.
+            loaded = await read(pending.from, to);
+          }
+          const events = loaded.filter(event => event.time < to);
           await supply(events);
           for (const event of events) event.order = order++;
           painter.layout.append(events);
-          until = pending.to;
+          until = to;
           prefetch();
         }
         const active = painter.layout.advance(time);
