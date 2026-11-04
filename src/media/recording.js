@@ -24,6 +24,7 @@ export async function saveRecording(
     concurrency = 6,
     fragmented = false,
     downloadLimit,
+    metrics,
   } = {},
 ) {
   let file,
@@ -65,8 +66,10 @@ export async function saveRecording(
     signal: requests.signal,
     concurrency,
     limit: downloadLimit,
+    metrics,
     onRead: size => {
       bytes += size;
+      metrics?.add('downloadedBytes', size);
       samples.push({at: performance.now(), bytes});
       report();
     },
@@ -84,13 +87,24 @@ export async function saveRecording(
   try {
     signal?.throwIfAborted();
     if (stopSignal?.aborted) return {stopped: true, saved: false, bytes: 0, duration: 0};
-    file = await fileHandle.createWritable();
+    const finishOpen = metrics?.start('fileOpen');
+    try {
+      file = await fileHandle.createWritable();
+    } finally {
+      finishOpen?.();
+    }
     // A graceful stop cancels requests, not the disk transaction. Index writes
     // must remain possible after the network signal has been aborted.
     const writable = new WritableStream({
       async write(chunk) {
         signal?.throwIfAborted();
-        await file.write(chunk);
+        const finish = metrics?.start('fileWrite');
+        try {
+          await file.write(chunk);
+          metrics?.add('writtenBytes', chunk.data.byteLength);
+        } finally {
+          finish?.();
+        }
         written = Math.max(written, chunk.position + chunk.data.byteLength);
         report();
       },
@@ -212,9 +226,19 @@ export async function saveRecording(
     phase = 'finalizing';
     report();
     for (const track of tracks.values()) track.source.close();
-    await output.finalize();
+    const finishMux = metrics?.start('outputFinalize');
+    try {
+      await output.finalize();
+    } finally {
+      finishMux?.();
+    }
     signal?.throwIfAborted();
-    await file.close();
+    const finishClose = metrics?.start('fileClose');
+    try {
+      await file.close();
+    } finally {
+      finishClose?.();
+    }
     file = null;
     phase = 'saved';
     report(true);

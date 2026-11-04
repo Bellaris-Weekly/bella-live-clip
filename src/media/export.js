@@ -26,7 +26,7 @@ export async function convertInput(
   signal?.throwIfAborted();
   if (precise || compositor)
     return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor, metrics});
-  const session = await createMediaOutput({fileHandle, signal}),
+  const session = await createMediaOutput({fileHandle, signal, metrics}),
     {output} = session;
   let conversion, canceling;
   const cancel = () => {
@@ -137,6 +137,7 @@ export async function exportSelection(
     onSaved = () => {},
     createFile,
     createTemporary = createTemporaryMedia,
+    metrics = createExportMetrics(),
   } = {},
 ) {
   signal?.throwIfAborted();
@@ -151,7 +152,6 @@ export async function exportSelection(
   if (!plans.length) throw new Error('选区中没有可用录像，请调整起止位置。');
   const outputs = [],
     downloaded = new Set();
-  const metrics = danmaku ? createExportMetrics() : undefined;
   let metricsAt = -Infinity,
     metricSnapshot;
   const totalDuration = plans.reduce((sum, plan) => sum + plan.end - plan.start, 0);
@@ -229,6 +229,7 @@ export async function exportSelection(
       signal?.throwIfAborted();
       const data = new Uint8Array(response.data);
       bytes += data.byteLength;
+      metrics?.add('downloadedBytes', data.byteLength);
       downloaded.add(key);
       report();
       cache.set(key, data);
@@ -288,6 +289,7 @@ export async function exportSelection(
             finishRequest?.();
           }
           bytes += response.data.byteLength;
+          metrics?.add('downloadedBytes', response.data.byteLength);
           downloaded.add(key);
           return response;
         },
@@ -340,20 +342,25 @@ export async function exportSelection(
         onSaved(output);
         continue;
       }
-      await saveRecording(savingApi, [expanded], temporary.handle, {
-        signal,
-        concurrency: 2,
-        onSegment(entry) {
-          entries.set(segmentKey(entry.segment), entry);
-        },
-        onProgress(state) {
-          reconnecting = state.reconnecting;
-          attempt = state.attempt;
-          processing = Math.max(processing, (completedDuration + weight * 0.65 * state.progress) / totalDuration);
-          progress = Math.max(progress, Math.min(0.99, processing));
-          report();
-        },
-      });
+      const finishMedia = metrics?.start('mediaPrepare');
+      try {
+        await saveRecording(savingApi, [expanded], temporary.handle, {
+          signal,
+          concurrency: 2,
+          onSegment(entry) {
+            entries.set(segmentKey(entry.segment), entry);
+          },
+          onProgress(state) {
+            reconnecting = state.reconnecting;
+            attempt = state.attempt;
+            processing = Math.max(processing, (completedDuration + weight * 0.65 * state.progress) / totalDuration);
+            progress = Math.max(progress, Math.min(0.99, processing));
+            report();
+          },
+        });
+      } finally {
+        finishMedia?.();
+      }
       cache.clear();
       signal?.throwIfAborted();
       input = new Input({source: new BlobSource(await temporary.handle.getFile()), formats: [MP4]});
@@ -374,9 +381,12 @@ export async function exportSelection(
         end,
         precise,
         signal,
+        metrics,
         fileHandle: destination.handle,
         onProgress(value, detail) {
           if (detail?.message) message = detail.message;
+          videoFrames = detail?.videoFrames ?? videoFrames;
+          processedSeconds = detail?.processedSeconds ?? processedSeconds;
           processing = Math.max(processing, (completedDuration + weight * (0.65 + 0.35 * value)) / totalDuration);
           progress = Math.max(progress, Math.min(0.99, processing));
           report('processing');

@@ -11,6 +11,7 @@ export function createRecordingDownload(
     maxBytes = 64 * 1024 * 1024,
     onRead = () => {},
     onRetry = () => {},
+    metrics,
     limit = () => Infinity,
   } = {},
 ) {
@@ -36,16 +37,21 @@ export function createRecordingDownload(
     onRetry({count: reconnects.size, attempt: Math.max(0, ...[...reconnects.values()].map(value => value.attempt))});
   }
   async function read(segment) {
-    const response = await requestWithRetry(
-      api,
-      segment.url,
-      {type: 'arraybuffer', range: segment.range, signal: controller.signal},
-      {onRetry: state => retry(segment, state)},
-    );
-    controller.signal.throwIfAborted();
-    const data = new Uint8Array(response.data);
-    onRead(data.byteLength);
-    return data;
+    const finish = metrics?.start('mediaRequest');
+    try {
+      const response = await requestWithRetry(
+        api,
+        segment.url,
+        {type: 'arraybuffer', range: segment.range, signal: controller.signal},
+        {onRetry: state => retry(segment, state)},
+      );
+      controller.signal.throwIfAborted();
+      const data = new Uint8Array(response.data);
+      onRead(data.byteLength);
+      return data;
+    } finally {
+      finish?.();
+    }
   }
   function pump() {
     while (

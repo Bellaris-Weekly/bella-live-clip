@@ -1,6 +1,7 @@
 import {redactText} from '../shared/log-redaction.js';
+import {performanceLog} from '../shared/performance-log.js';
 
-const idle = Object.freeze({stage() {}, progress() {}, fail() {}});
+const idle = Object.freeze({stage() {}, progress() {}, observe() {}, finish() {}, fail() {}});
 function text(value, limit) {
   if (typeof value !== 'string') return undefined;
   // Errors from media/network libraries may embed signed URLs with unknown key
@@ -82,73 +83,225 @@ export function createDiagnosticReporter({
   online = () => globalThis.navigator?.onLine !== false,
   id = () => crypto.randomUUID(),
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  now = () => performance.now(),
+  clock = () => new Date().toISOString(),
+  every = (fn, ms) => setInterval(fn, ms),
+  cancelTimer = timer => clearInterval(timer),
+  visibility = () => globalThis.document?.visibilityState ?? 'unknown',
 } = {}) {
-  let pending = 0;
-  async function send(body) {
+  let pending = 0,
+    dropped = 0;
+  const queue = [];
+  async function send(item) {
     try {
-      if (await transfer(request, endpoint, body)) {
+      if (await transfer(request, endpoint, item.body)) {
         await wait(1000);
-        if (online()) await transfer(request, endpoint, body);
+        if (online()) await transfer(request, endpoint, item.body);
       }
     } catch {
-      /* Diagnostics must never become a user operation failure. */
+      /* Logging never fails the operation. */
     } finally {
       pending--;
+      pump();
     }
+  }
+  function pump() {
+    while (pending < 2 && queue.length) {
+      pending++;
+      void send(queue.shift());
+    }
+  }
+  function enqueue(item) {
+    if (!online()) {
+      dropped++;
+      return;
+    }
+    // A delayed heartbeat is superseded by a newer snapshot or a terminal event.
+    const obsolete = queue.findIndex(old => old.operation === item.operation && old.periodic);
+    if (obsolete >= 0) queue.splice(obsolete, 1);
+    if (queue.length >= 32) {
+      const expendable = queue.findIndex(old => old.periodic);
+      if (item.periodic && expendable < 0) {
+        dropped++;
+        return;
+      }
+      queue.splice(Math.max(0, expendable), 1);
+      dropped++;
+    }
+    queue.push(item);
+    pump();
   }
   return {
     begin(action, details = {}) {
       if (!endpoint || typeof request !== 'function') return idle;
-      // All values are copied before asynchronous work or route changes begin.
       const context = {...snapshot(details), stage: 'starting'};
-      let reported = false;
+      const operation = id(),
+        started = now(),
+        startedAt = clock(),
+        stageTimes = {};
+      const exporting = action === 'export' || action === 'recording_download';
+      let finished = false,
+        sequence = 0,
+        timer,
+        provider,
+        latestMetrics;
+      let stageStarted = started,
+        lastAdvance = started,
+        lastProgress = started,
+        signature;
+      let nextHeartbeat = started + 10000;
+      function stage(value) {
+        const next = text(value, 64);
+        if (finished || !next || next === context.stage) return;
+        const time = now();
+        stageTimes[context.stage] = (stageTimes[context.stage] ?? 0) + Math.max(0, time - stageStarted);
+        context.stage = next;
+        stageStarted = time;
+        lastAdvance = time;
+      }
+      function publish(outcome, message, error, periodic = false) {
+        try {
+          const time = now();
+          const elapsedMs = Math.max(0, time - started);
+          const timings = {
+            ...stageTimes,
+            [context.stage]: (stageTimes[context.stage] ?? 0) + Math.max(0, time - stageStarted),
+          };
+          let metrics = latestMetrics;
+          try {
+            metrics = provider?.snapshot() ?? metrics;
+          } catch {
+            /* Keep the last snapshot. */
+          }
+          const performance = performanceLog(metrics);
+          const processed = ['completed', 'stopped'].includes(outcome)
+            ? (context.result?.mediaSeconds ?? context.progress?.processedSeconds)
+            : context.progress?.processedSeconds;
+          const processingMs = performance?.elapsedMs;
+          const runtime = {
+            visibility: visibility(),
+            noAdvanceMs: Math.max(0, time - lastAdvance),
+            lastProgressMs: Math.max(0, time - lastProgress),
+            timerDelayMs: periodic ? Math.max(0, time - nextHeartbeat) : 0,
+            droppedLogs: dropped,
+            hardwareConcurrency: number(globalThis.navigator?.hardwareConcurrency),
+            deviceMemoryGiB: number(globalThis.navigator?.deviceMemory),
+          };
+          const heap = globalThis.performance?.memory;
+          if (heap) runtime.jsHeapBytes = number(heap.usedJSHeapSize);
+          const suffix = outcome;
+          const payload = {
+            id: `${operation}:${sequence++}`,
+            source: 'bella-live-clip',
+            event: `${action}_${suffix}`,
+            level: outcome === 'failed' ? 'error' : outcome === 'stalled' ? 'warn' : 'info',
+            version,
+            message: text(message, 4096) || '运行记录',
+            context: {
+              ...context,
+              browser: text(userAgent, 512),
+              operation: {
+                id: operation,
+                action,
+                outcome,
+                sequence: sequence - 1,
+                startedAt,
+                clientAt: clock(),
+                elapsedMs,
+              },
+              stageTimes: timings,
+              runtime,
+              metrics: performance,
+              throughput:
+                processingMs > 0
+                  ? {
+                      realtime: processed === undefined ? undefined : processed / (processingMs / 1000),
+                      fps:
+                        performance.counters.videoFrames === undefined
+                          ? undefined
+                          : performance.counters.videoFrames / (processingMs / 1000),
+                    }
+                  : undefined,
+              ...(error ? {errorName: text(error.name, 128), stack: text(error.stack, 8192)} : {}),
+            },
+          };
+          let body = JSON.stringify(payload);
+          if (new TextEncoder().encode(body).byteLength > 65536) {
+            payload.context.stack = undefined;
+            payload.context.truncated = true;
+            payload.message = payload.message.slice(0, 1024);
+            body = JSON.stringify(payload);
+          }
+          if (new TextEncoder().encode(body).byteLength <= 65536) enqueue({body, operation, periodic});
+        } catch {
+          /* No recursive diagnostics or user-facing logging errors. */
+        }
+      }
+      function complete(outcome, message, error) {
+        if (finished) return;
+        finished = true;
+        if (timer !== undefined) cancelTimer(timer);
+        publish(outcome, message, error);
+      }
+      // Preview errors can occur long after loading. Only jobs with a known end
+      // emit start/success events; preview's existing failure boundary stays live.
+      if (action !== 'preview') publish('started', exporting ? '导出开始' : '操作开始');
+      if (exporting) {
+        timer = every(() => {
+          if (finished) return;
+          const stalled = context.stage !== 'select_destination' && now() - lastAdvance >= 30000;
+          publish(stalled ? 'stalled' : 'progress', stalled ? '导出进度暂未推进' : '导出运行中', undefined, true);
+          nextHeartbeat = now() + 10000;
+        }, 10000);
+        timer?.unref?.();
+      }
       return {
-        stage(value) {
-          context.stage = text(value, 64);
+        stage,
+        observe(metrics) {
+          provider = metrics;
         },
         progress(value) {
-          context.stage = text(value.phase, 64) || context.stage;
+          if (finished) return;
+          stage(value.phase);
+          const next = [value.progress, value.bytes, value.written, value.videoFrames, value.processedSeconds].join(
+            ':',
+          );
+          if (next !== signature) {
+            signature = next;
+            lastAdvance = now();
+          }
+          lastProgress = now();
+          if (value.metrics) latestMetrics = value.metrics;
           context.progress = {
             fraction: number(value.progress),
             bytes: number(value.bytes),
             written: number(value.written),
             estimatedBytes: number(value.estimatedBytes),
             attempt: number(value.attempt),
+            downloaded: number(value.downloaded),
+            count: number(value.count),
+            reconnecting: number(value.reconnecting),
+            videoFrames: number(value.videoFrames),
+            processedSeconds: number(value.processedSeconds),
+            message: text(value.message, 256),
           };
         },
+        finish(result = {}) {
+          if (finished) return;
+          context.result = {
+            files: number(result.files),
+            writtenBytes: number(result.writtenBytes),
+            mediaSeconds: number(result.mediaSeconds),
+          };
+          const outcome = ['canceled', 'stopped'].includes(result.status) ? result.status : 'completed';
+          complete(
+            outcome,
+            outcome === 'completed' ? '操作完成' : outcome === 'stopped' ? '已停止并保存' : '操作已取消',
+          );
+        },
         fail(error, signal) {
-          if (reported || signal?.aborted || error?.name === 'AbortError') return;
-          reported = true;
-          try {
-            if (!online() || pending >= 2) return;
-            const payload = {
-              id: id(),
-              source: 'bella-live-clip',
-              event: `${action}_failed`,
-              level: 'error',
-              version,
-              message: text(error?.message || String(error), 4096) || 'Unknown error',
-              context: {
-                ...context,
-                browser: text(userAgent, 512),
-                errorName: text(error?.name, 128),
-                stack: text(error?.stack, 8192),
-              },
-            };
-            // Bounded allowlisted strings normally fit; JSON escaping may expand them.
-            let body = JSON.stringify(payload);
-            if (new TextEncoder().encode(body).byteLength > 65536) {
-              payload.context.stack = undefined;
-              payload.context.truncated = true;
-              payload.message = payload.message.slice(0, 1024);
-              body = JSON.stringify(payload);
-            }
-            if (new TextEncoder().encode(body).byteLength > 65536) return;
-            pending++;
-            void send(body);
-          } catch {
-            /* No UI, console output, storage or recursive reporting. */
-          }
+          if (signal?.aborted || error?.name === 'AbortError') complete('canceled', '操作已取消');
+          else complete('failed', error?.message || String(error), error);
         },
       };
     },

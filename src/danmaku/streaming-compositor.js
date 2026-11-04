@@ -22,7 +22,12 @@ export async function createStreamingCompositor(
     for (const asset of assets.values()) asset.close();
     assets.clear();
   };
-  const read = (from, to) => reader.read({origin, start: from, end: to, adjustment});
+  const read = async (from, to) => {
+    const events = await reader.read({origin, start: from, end: to, adjustment});
+    metrics?.add('archiveWindows');
+    metrics?.add('commentsRead', events.length);
+    return events;
+  };
   const getCatalog = () => {
     if (!catalog) {
       const finish = metrics?.start('emoteCatalog');
@@ -95,7 +100,7 @@ export async function createStreamingCompositor(
         missing.map(text => ({text})),
         record.room,
         (45 * height) / 1080,
-        {signal, fetcher, selected, lazy: true, budget},
+        {signal, fetcher, selected, lazy: true, budget, metrics},
       );
       for (const [name, asset] of loaded.assets) assets.set(name, asset);
       loaded.assets.clear(); // Ownership moves into this windowed store.
@@ -108,7 +113,11 @@ export async function createStreamingCompositor(
     const initial = loaded.filter(event => event.time < until);
     await supply(initial);
     for (const event of initial) event.order = order++;
-    painter = createDanmakuPainter(initial, {assets, close: closeAssets}, {start, sourceTime, width, height, signal});
+    painter = createDanmakuPainter(
+      initial,
+      {assets, close: closeAssets},
+      {start, sourceTime, width, height, signal, metrics},
+    );
     prefetch();
     return {
       async prepare(timestamp) {
@@ -136,7 +145,15 @@ export async function createStreamingCompositor(
           until = to;
           prefetch();
         }
-        const active = painter.layout.advance(time);
+        const finishLayout = metrics?.start('layout');
+        let active;
+        try {
+          active = painter.layout.advance(time);
+        } finally {
+          finishLayout?.();
+        }
+        metrics?.gauge('activeComments', active.length);
+        metrics?.gauge('waitingComments', painter.layout.waiting.length);
         // Multiple appearances of one asset share its decoder and clock table.
         const needed = new Map();
         for (const item of active)
@@ -151,7 +168,11 @@ export async function createStreamingCompositor(
             signal,
           );
       },
-      render: (sample, timestamp) => painter.render(sample, timestamp),
+      render(sample, timestamp) {
+        metrics?.gauge('emoteDecodedBytes', budget.used);
+        metrics?.gauge('emoteCompressedBytes', budget.compressed);
+        return painter.render(sample, timestamp);
+      },
       async close() {
         await next?.promise.catch(() => {});
         await catalog?.catch(() => {});

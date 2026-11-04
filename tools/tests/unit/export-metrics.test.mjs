@@ -27,3 +27,26 @@ test('overlapping stage waits are independent of elapsed time; snapshots stay im
   after.stages.sampleWait.totalMs = 0;
   assert.equal(metrics.snapshot().stages.sampleWait.totalMs, 10);
 });
+
+test('live waits, histogram bounds and buffer peaks remain observable without per-frame events', () => {
+  let time = 0;
+  const metrics = createExportMetrics({now: () => time});
+  const pending = metrics.start('mediaRequest');
+  time = 2500;
+  assert.deepEqual(metrics.snapshot().active.mediaRequest, {count: 1, oldestMs: 2500});
+  pending();
+  for (const ms of [1, 2, 3, 20, 40, 100]) {
+    const stop = metrics.start('render');
+    time += ms;
+    stop();
+  }
+  metrics.add('videoFrames', 6);
+  metrics.gauge('bufferedMediaBytes', 1024);
+  metrics.gauge('bufferedMediaBytes', 128);
+  const result = metrics.snapshot();
+  assert.deepEqual(result.active, {});
+  assert.equal(result.latency.render.p50UpperMs, 4);
+  assert.equal(result.latency.render.p95UpperMs, 100);
+  assert.equal(result.counters.videoFrames, 6);
+  assert.deepEqual(result.gauges.bufferedMediaBytes, {current: 128, peak: 1024});
+});

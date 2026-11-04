@@ -39,7 +39,10 @@ export async function planVideoCut(track, {start, end, normalizer, signal}) {
   };
 }
 
-async function* videoPackets(track, {start, end, settings, normalizer, plan, signal, stats, onProcessingStart}) {
+async function* videoPackets(
+  track,
+  {start, end, settings, normalizer, plan, signal, stats, onProcessingStart, metrics},
+) {
   const boundaries = [];
   try {
     for (const [from, to] of [
@@ -50,7 +53,7 @@ async function* videoPackets(track, {start, end, settings, normalizer, plan, sig
         boundaries.push(null);
         continue;
       }
-      const iterator = encodeVideoRange(track, {start: from, end: to, origin: start, settings, signal});
+      const iterator = encodeVideoRange(track, {start: from, end: to, origin: start, settings, signal, metrics});
       const boundary = {iterator};
       boundaries.push(boundary);
       boundary.next = await iterator.next();
@@ -138,7 +141,7 @@ async function trackMetadata(track) {
   return {languageCode, name: name ?? undefined, disposition};
 }
 
-async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle}) {
+async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle, metrics}) {
   const videos = tracks.filter(track => track.type === 'video'),
     audios = tracks.filter(track => track.type === 'audio');
   if (
@@ -150,7 +153,7 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
     throw new UnsupportedAvcError('当前音视频格式不支持安全拼接');
   }
   const track = videos[0],
-    settings = await readVideoEncodingSettings(track, {signal});
+    settings = await readVideoEncodingSettings(track, {signal, metrics});
   const firstPacket = await new EncodedPacketSink(track).getFirstKeyPacket(verified);
   if (!firstPacket) throw new UnsupportedAvcError('录像缺少可用关键帧');
   const normalizer = createAvcNormalizer(settings.sourceDecoderConfig, firstPacket);
@@ -161,7 +164,7 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
   const stats = {strategy: 'smart', encodedFrames: 0, copiedFrames: 0, sourceBitrate: settings.bitrate};
   onProgress(0, {...stats, message: plan.first ? '仅编码头尾，中间保留原画' : '选区较短，按原码率编码'});
 
-  const session = await createMediaOutput({fileHandle, signal}),
+  const session = await createMediaOutput({fileHandle, signal, metrics}),
     {output} = session;
   try {
     const video = new EncodedVideoPacketSource('avc');
@@ -170,7 +173,17 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
       {
         source: video,
         isVideo: true,
-        iterator: videoPackets(track, {start, end, settings, normalizer, plan, signal, stats, onProcessingStart}),
+        iterator: videoPackets(track, {
+          start,
+          end,
+          settings,
+          normalizer,
+          plan,
+          signal,
+          stats,
+          onProcessingStart,
+          metrics,
+        }),
       },
     ];
     for (const audio of audios) {
@@ -178,7 +191,7 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
       output.addAudioTrack(source, await trackMetadata(audio));
       streams.push({source, iterator: audioPackets(audio, {start, end, signal})});
     }
-    return await muxPackets(session, streams, {start, end, signal, onProgress, stats});
+    return await muxPackets(session, streams, {start, end, signal, onProgress, stats, metrics});
   } finally {
     await session.cancel();
   }
@@ -324,12 +337,12 @@ export async function trimPreciseTracks(
     });
   }
   try {
-    return await smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle});
+    return await smartTrim(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle, metrics});
   } catch (error) {
     if (signal?.aborted) throw signal.reason;
     if (!(error instanceof UnsupportedAvcError)) throw error;
     onProgress(0, {strategy: 'full', message: '当前素材无法安全拼接，已改为按原码率整段编码'});
-    return encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle});
+    return encodeSelection(tracks, {start, end, signal, onProgress, onProcessingStart, fileHandle, metrics});
   }
 }
 
@@ -337,7 +350,7 @@ export async function trimPreciseTracks(
 // Audio uses the same origin, preserving offsets across separate DASH inputs.
 export async function trimCopyTracks(
   tracks,
-  {start, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle},
+  {start, end, signal, onProgress = () => {}, onProcessingStart = () => {}, fileHandle, metrics},
 ) {
   signal?.throwIfAborted();
   const track = tracks.find(item => item.type === 'video');
@@ -361,7 +374,7 @@ export async function trimCopyTracks(
   // Tracks can start later or end earlier than one another. Keep their offsets.
   const origin = Math.min(start, first.timestamp);
   const limit = Math.max(end, last?.timestamp ?? (await track.computeDuration()));
-  const session = await createMediaOutput({fileHandle, signal}),
+  const session = await createMediaOutput({fileHandle, signal, metrics}),
     {output} = session;
   try {
     const video = new EncodedVideoPacketSource('avc');
@@ -387,6 +400,7 @@ export async function trimCopyTracks(
       end: limit,
       signal,
       onProgress,
+      metrics,
       stats: {strategy: 'copy', message: '原画导出保留完整关键帧组，起止位置可能略有扩展'},
     });
   } finally {

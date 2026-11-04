@@ -1,3 +1,4 @@
+import {createExportMetrics} from '../media/export-metrics.js';
 import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
 import {estimateSelectionBytes} from '../media/recording-estimate.js';
 import {fileName} from '../media/file-name.js';
@@ -33,29 +34,41 @@ export function createExportActions({
     $('downloads').append(line);
   };
 
-  async function exportVideo(record, selection, destination, {signal, onProgress}) {
+  async function loadPlan(signal, metrics) {
+    const finish = metrics?.start('playlistLoad');
+    try {
+      return await session.plan().load(signal);
+    } finally {
+      finish?.();
+    }
+  }
+
+  async function exportVideo(record, selection, destination, {signal, onProgress, metrics}) {
     const {exportSubmission} = await import('../media/submission-export.js');
     const output = await exportSubmission(mediaRequest, record, selection, {
       signal,
       precise: session.exportMode() === 'precise',
       onProgress,
+      metrics,
       fileHandle: destination,
     });
     showSaved({...output, name: destination.name});
+    return output;
   }
 
-  async function exportClip(record, selection, destination, {signal, onProgress, danmaku}) {
+  async function exportClip(record, selection, destination, {signal, onProgress, danmaku, metrics}) {
     const estimate = session.estimate();
     if (!danmaku)
       await ensureTemporarySpace(storage, estimate ? estimateSelectionBytes(estimate, record.start, selection) : 0);
     const segmentIndex = session.segmentIndex();
-    const groups = (await session.plan().load(signal)).filter(group => group.streamIndex === segmentIndex);
+    const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === segmentIndex);
     const {exportSelection} = await import('../media/export.js');
-    await exportSelection(mediaApi, record, groups, selection, {
+    return await exportSelection(mediaApi, record, groups, selection, {
       signal,
       precise: session.exportMode() !== 'copy',
       onProgress,
       danmaku,
+      metrics,
       createTemporary: options => createTemporaryMedia({...options, storage}),
       createFile: () => ({handle: destination, name: destination.name, remove: async () => {}}),
       onSaved: showSaved,
@@ -86,6 +99,8 @@ export function createExportActions({
         clearDownloads();
         status('正在导出…');
         diagnostic.stage('preparing');
+        const metrics = createExportMetrics();
+        diagnostic.observe?.(metrics);
         const updateProgress = limitProgress(progress => {
           renderExportProgress($('progress'), status, progress, submission);
           if (submission && progress.estimatedBytes !== null)
@@ -95,7 +110,18 @@ export function createExportActions({
           diagnostic.progress(progress);
           updateProgress(progress);
         };
-        await (submission ? exportVideo : exportClip)(record, selection, destination, {signal, onProgress, danmaku});
+        const result = await (submission ? exportVideo : exportClip)(record, selection, destination, {
+          signal,
+          onProgress,
+          danmaku,
+          metrics,
+        });
+        const files = Array.isArray(result) ? result : [result];
+        diagnostic.finish?.({
+          files: files.length,
+          writtenBytes: files.reduce((sum, file) => sum + (file?.bytes ?? 0), 0),
+          mediaSeconds: selection.end - selection.start,
+        });
         status('导出完成。');
       },
       'export',
@@ -133,13 +159,16 @@ export function createExportActions({
         clearDownloads();
         status('正在导出整场…');
         diagnostic.stage('preparing');
-        const groups = (await session.plan().load(signal)).filter(group => group.streamIndex === index);
+        const metrics = createExportMetrics();
+        diagnostic.observe?.(metrics);
+        const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === index);
         signal.throwIfAborted();
         wholeStop = new AbortController();
         refreshControls();
         const {saveRecording} = await import('../media/recording.js');
         const result = await saveRecording(mediaApi, groups, handle, {
           signal,
+          metrics,
           stopSignal: wholeStop.signal,
           onProgress: progress => {
             diagnostic.progress(progress);
@@ -155,9 +184,16 @@ export function createExportActions({
           },
         });
         if (!result.saved) {
+          diagnostic.finish?.({status: 'canceled', files: 0});
           status('已停止。');
           return;
         }
+        diagnostic.finish?.({
+          status: result.stopped ? 'stopped' : 'completed',
+          files: 1,
+          writtenBytes: result.bytes,
+          mediaSeconds: result.duration,
+        });
         status(result.stopped ? '已停止。' : '导出完成。');
         const message = document.createElement('p');
         message.textContent = `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;

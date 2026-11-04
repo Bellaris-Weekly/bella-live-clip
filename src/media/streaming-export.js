@@ -39,7 +39,11 @@ export async function exportStreamingDanmaku(
   };
   signal?.addEventListener('abort', cancel, {once: true});
   if (signal?.aborted) cancel();
-  const media = createStreamingMedia({signal: producerController.signal, onCancel: () => producerController.abort()});
+  const media = createStreamingMedia({
+    metrics,
+    signal: producerController.signal,
+    onCancel: () => producerController.abort(),
+  });
   const entries = [];
   let clock,
     compositor,
@@ -100,7 +104,12 @@ export async function exportStreamingDanmaku(
         ready.reject(error);
         media.fail(error);
       });
-    start = await ready.promise;
+    const finishReady = metrics?.start('streamReady');
+    try {
+      start = await ready.promise;
+    } finally {
+      finishReady?.();
+    }
     const track = await media.input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error('当前浏览器无法解码视频，不能压制弹幕。');
     if (await track.getRotation()) throw new Error('当前暂不支持旋转视频压制弹幕。');

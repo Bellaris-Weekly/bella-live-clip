@@ -106,6 +106,8 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
     ...settings.encodingOptions,
     onEncodedPacket(packet, metadata) {
       metrics?.firstPacket();
+      metrics?.add('encodedPackets');
+      metrics?.add('encodedBytes', packet.data.byteLength);
       decoderConfig = metadata?.decoderConfig ?? decoderConfig;
       packets.push({packet, decoderConfig});
     },
@@ -145,6 +147,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         if (sample.timestamp >= limit) break;
         const clippedEnd = Math.min(limit, sample.timestamp + sample.duration);
         if (clippedEnd <= clippedStart) continue;
+        metrics?.add('videoFrames');
         const finishPreparation = metrics?.start('danmakuPrepare');
         try {
           const preparation = compositor?.prepare?.(clippedStart);

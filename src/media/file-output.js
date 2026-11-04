@@ -4,7 +4,15 @@ import {BufferTarget, StreamTarget, Output, Mp4OutputFormat} from 'mediabunny';
 // restart with full encoding without retaining bytes or committing a partial file.
 export async function createMediaOutput({fileHandle, signal, metrics} = {}) {
   signal?.throwIfAborted();
-  let file = fileHandle ? await fileHandle.createWritable() : null;
+  let file = null;
+  if (fileHandle) {
+    const finish = metrics?.start('fileOpen');
+    try {
+      file = await fileHandle.createWritable();
+    } finally {
+      finish?.();
+    }
+  }
   let bytes = 0;
   const target = file
     ? new StreamTarget(
@@ -14,6 +22,7 @@ export async function createMediaOutput({fileHandle, signal, metrics} = {}) {
             const finish = metrics?.start('fileWrite');
             try {
               await file.write(chunk);
+              metrics?.add('writtenBytes', chunk.data.byteLength);
             } finally {
               finish?.();
             }

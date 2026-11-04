@@ -189,6 +189,7 @@ function start({
     URL,
     AbortController,
     DOMException,
+    performance,
     innerWidth: 1200,
     innerHeight: 900,
     setInterval: () => 0,
@@ -236,7 +237,10 @@ function start({
   return {
     app,
     modes,
-    requests,
+    events: requests,
+    get failures() {
+      return requests.filter(event => event.level === 'error');
+    },
     seeks,
     scenario,
     timers,
@@ -389,8 +393,8 @@ test('实际导出失败在清理 abort 前上报，路由变更仍使用原始�
   fixture.navigate('https://www.bilibili.com/video/BV0987654321');
   reject(new Error('timestamp backwards'));
   await exporting;
-  assert.equal(fixture.requests.length, 1);
-  const payload = fixture.requests[0];
+  assert.equal(fixture.failures.length, 1);
+  const payload = fixture.failures[0];
   assert.equal(payload.event, 'export_failed');
   assert.equal(payload.context.record.cid, 12);
   assert.equal(payload.context.page, 'https://www.bilibili.com/video/BV1234567890');
@@ -399,7 +403,7 @@ test('实际导出失败在清理 abort 前上报，路由变更仍使用原始�
   assert.equal(fixture.$('status').textContent, 'timestamp backwards');
 });
 
-test('保存位置取消和运行中取消都保持原有 UI，均不上报', async () => {
+test('保存位置取消和运行中取消都保持原有 UI，均不记录为错误', async () => {
   const pickerCancel = start({
     picker: async () => {
       throw new DOMException('picker cancelled', 'AbortError');
@@ -407,7 +411,7 @@ test('保存位置取消和运行中取消都保持原有 UI，均不上报', as
   });
   await pickerCancel.app.open();
   await pickerCancel.$('download').onclick();
-  assert.equal(pickerCancel.requests.length, 0);
+  assert.equal(pickerCancel.failures.length, 0);
   assert.equal(pickerCancel.$('status').textContent, '已停止。');
   let started;
   const gate = new Promise(resolve => {
@@ -425,15 +429,15 @@ test('保存位置取消和运行中取消都保持原有 UI，均不上报', as
   await gate;
   running.$('cancel').onclick();
   await download;
-  assert.equal(running.requests.length, 0);
+  assert.equal(running.failures.length, 0);
 });
 
 test('缺少浏览器保存能力仍走统一失败入口，保留原有说明', async () => {
   const fixture = start({picker: null});
   await fixture.app.open();
   await fixture.$('download').onclick();
-  assert.equal(fixture.requests.length, 1);
-  assert.equal(fixture.requests[0].context.stage, 'select_destination');
+  assert.equal(fixture.failures.length, 1);
+  assert.equal(fixture.failures[0].context.stage, 'select_destination');
   assert.match(fixture.$('status').textContent, /浏览器不支持保存文件/);
 });
 
@@ -444,7 +448,7 @@ test('已捕获的视频和直播加载错误仍上报，正常未开播不当�
     },
   });
   await video.app.open();
-  assert.equal(video.requests[0].event, 'video_load_failed');
+  assert.equal(video.failures[0].event, 'video_load_failed');
   assert.equal(video.$('offlineReason').textContent, 'video metadata unavailable');
   const live = start({
     url: 'https://live.bilibili.com/123',
@@ -453,12 +457,12 @@ test('已捕获的视频和直播加载错误仍上报，正常未开播不当�
     },
   });
   await live.app.open();
-  assert.equal(live.requests[0].event, 'room_load_failed');
-  assert.equal(live.requests[0].context.record.room, 123);
+  assert.equal(live.failures[0].event, 'room_load_failed');
+  assert.equal(live.failures[0].context.record.room, 123);
   assert.equal(live.$('offlineReason').textContent, 'room API unavailable');
   const offline = start({url: 'https://live.bilibili.com/456'});
   await offline.app.open();
-  assert.equal(offline.requests.length, 0);
+  assert.equal(offline.failures.length, 0);
   assert.match(offline.$('offlineReason').textContent, /当前没有直播/);
 });
 
@@ -571,7 +575,7 @@ for (const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999']
     assert.equal(f.$('segments').children.length, 2);
     assert.deepEqual(f.seeks, [85], '播放位置不变');
     assert.deepEqual(f.scenario.selection, selection);
-    assert.equal(f.requests.length, 0);
+    assert.equal(f.failures.length, 0);
     assert.equal(f.$('editPage').hidden, false);
     assert.match(f.$('refreshEditor').innerHTML, /glyph-refresh/);
     assert.equal(f.$('refreshEditor').getAttribute('aria-label'), '刷新录像');
@@ -766,7 +770,7 @@ test('直播自动增长同步分段、缩略图和导出计划，保留原选�
   f.$('wholeRecording').checked = true;
   f.$('wholeRecording').onchange();
   await f.$('download').onclick();
-  assert.equal(f.requests.length, 0);
+  assert.equal(f.failures.length, 0);
   assert.equal(f.timers.size, 1);
   f.$('close').onclick();
   assert.equal(f.timers.size, 0);
@@ -889,4 +893,28 @@ test('旧弹幕开关迁移为弹幕模式，投稿与直播分别记住选择',
   const again = start(options);
   await again.app.open();
   assert.equal(again.modes[0].getAttribute('aria-pressed'), 'true');
+});
+
+test('successful exports include normal lifecycle logs and live performance aggregates', async () => {
+  const f = start({
+    exportWork: async options => {
+      const stop = options.metrics.start('render');
+      stop();
+      options.metrics.add('videoFrames', 60);
+      options.onProgress({phase: 'complete', progress: 1, videoFrames: 60, processedSeconds: 2});
+      return {bytes: 4096};
+    },
+  });
+  await f.app.open();
+  await f.$('download').onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  const events = f.events.filter(event => event.context.operation.action === 'export');
+  assert.deepEqual(
+    events.map(event => event.event),
+    ['export_started', 'export_completed'],
+  );
+  assert.equal(events[1].context.metrics.stages.render.count, 1);
+  assert.equal(events[1].context.metrics.counters.videoFrames, 60);
+  assert.equal(events[1].context.result.writtenBytes, 4096);
+  assert.equal(f.failures.length, 0);
 });

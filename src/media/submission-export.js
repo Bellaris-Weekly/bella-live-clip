@@ -6,7 +6,7 @@ export async function exportSubmission(
   request,
   submission,
   selection,
-  {signal, precise = false, onProgress = () => {}, fileHandle} = {},
+  {signal, precise = false, onProgress = () => {}, fileHandle, metrics} = {},
 ) {
   signal?.throwIfAborted();
   const {start, end} = selection;
@@ -44,6 +44,7 @@ export async function exportSubmission(
     signal,
     onRead(size) {
       bytes += size;
+      metrics?.add('downloadedBytes', size);
       report();
     },
     onIndex(segments, descriptor) {
@@ -67,13 +68,20 @@ export async function exportSubmission(
   });
   try {
     report();
-    const tracks = await media.getTracks();
+    const finishIndex = metrics?.start('mediaIndex');
+    let tracks;
+    try {
+      tracks = await media.getTracks();
+    } finally {
+      finishIndex?.();
+    }
     const trim = precise ? trimPreciseTracks : trimCopyTracks;
     const result = await trim(tracks, {
       start,
       end,
       signal,
       fileHandle,
+      metrics,
       onProcessingStart() {
         phase = 'processing';
         report();

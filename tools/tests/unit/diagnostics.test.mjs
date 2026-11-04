@@ -7,11 +7,12 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 const endpoint = 'https://logs.example.com/v1/logs';
 function setup(overrides = {}) {
   const requests = [];
+  let serial = 0;
   const reporter = createDiagnosticReporter({
     endpoint,
     version: '1.2.3',
     userAgent: 'Test/1',
-    id: () => 'stable-event',
+    id: () => `operation-${serial++}`,
     online: () => true,
     wait: async () => {},
     request: options => {
@@ -49,8 +50,8 @@ test('快照保留失败操作身份，白名单不带媒体/会话，敏感文�
     'Error at https://cdn.example.com/segment?token=stack-secret&newSignatureScheme=unknown-signature&cid=12#opaque-fragment';
   assert.equal(operation.fail(error), undefined);
   await settle();
-  assert.equal(requests.length, 1);
-  const options = requests[0],
+  assert.equal(requests.length, 2);
+  const options = requests.at(-1),
     payload = JSON.parse(options.data);
   assert.equal(options.anonymous, true);
   assert.equal(options.timeout, 8000);
@@ -102,12 +103,13 @@ test('失败重试使用相同事件与内容，永久拒绝不重试，重复fa
     operation.fail(new Error('failed'));
     operation.fail(new Error('again'));
     await settle();
-    assert.equal(requests.length, status >= 500 || status === 429 ? 2 : 1);
-    if (requests.length === 2) assert.equal(requests[0].data, requests[1].data);
+    const failures = requests.filter(item => JSON.parse(item.data).event === 'export_failed');
+    assert.equal(failures.length, status >= 500 || status === 429 ? 2 : 1);
+    if (failures.length === 2) assert.equal(failures[0].data, failures[1].data);
   }
 });
 
-test('取消、离线和无配置不上传；同步请求异常和网络失败不会逃逸', async () => {
+test('取消记录正常事件，离线和无配置不上传；传输异常不会逃逸', async () => {
   const {reporter, requests} = setup();
   reporter.begin('export').fail(new DOMException('cancel', 'AbortError'));
   const controller = new AbortController();
@@ -117,7 +119,10 @@ test('取消、离线和无配置不上传；同步请求异常和网络失败�
     .reporter.begin('export')
     .fail(new Error('offline'));
   createDiagnosticReporter().begin('export').fail(new Error('unconfigured'));
-  assert.equal(requests.length, 0);
+  await settle();
+  const cancellations = requests.map(item => JSON.parse(item.data)).filter(item => item.event === 'export_canceled');
+  assert.equal(cancellations.length, 2);
+  assert.ok(cancellations.every(item => item.level === 'info'));
   for (const request of [
     () => {
       throw new Error('transport');
@@ -130,7 +135,7 @@ test('取消、离线和无配置不上传；同步请求异常和网络失败�
   await settle();
 });
 
-test('没有无限队列：两条待上传占满后丢弃新增，完成后恢复', async () => {
+test('上传并发有界，有限队列完成后继续发送', async () => {
   const requests = [];
   const {reporter} = setup({request: options => requests.push(options)});
   for (let i = 0; i < 100; i++) reporter.begin('export').fail(new Error('failed'));
@@ -151,8 +156,116 @@ test('超长多字节和 JSON 转义错误仍满足实际 UTF8 限制', async ()
     error.stack = unit.repeat(60000);
     reporter.begin('export').fail(error);
     await settle();
-    assert.equal(requests.length, 1);
-    assert.ok(new TextEncoder().encode(requests[0].data).byteLength <= 65536);
-    assert.ok(JSON.parse(requests[0].data).message.length <= 16384);
+    assert.equal(requests.length, 2);
+    assert.ok(new TextEncoder().encode(requests.at(-1).data).byteLength <= 65536);
+    assert.ok(JSON.parse(requests.at(-1).data).message.length <= 16384);
   }
+});
+
+test('正常导出持续上报实时等待，成功后终止心跳并保留同一任务身份', async () => {
+  const {createExportMetrics} = await import('../../../src/media/export-metrics.js');
+  let time = 0;
+  const timers = new Map();
+  const {reporter, requests} = setup({
+    now: () => time,
+    clock: () => new Date(time).toISOString(),
+    every: fn => {
+      timers.set(1, fn);
+      return 1;
+    },
+    cancelTimer: id => timers.delete(id),
+    visibility: () => 'visible',
+  });
+  const job = reporter.begin('export', {mode: 'danmaku', selection: {start: 0, end: 20}});
+  const metrics = createExportMetrics({now: () => time});
+  job.observe(metrics);
+  job.stage('processing');
+  job.progress({phase: 'processing', progress: 0.1, videoFrames: 30, processedSeconds: 1});
+  const read = metrics.start('sampleWait');
+  time = 10000;
+  timers.get(1)();
+  await settle();
+  let event = JSON.parse(requests.at(-1).data);
+  assert.equal(event.event, 'export_progress');
+  assert.equal(event.context.metrics.active.sampleWait.oldestMs, 10000);
+  time = 40000;
+  timers.get(1)();
+  await settle();
+  event = JSON.parse(requests.at(-1).data);
+  assert.equal(event.event, 'export_stalled');
+  assert.equal(event.level, 'warn');
+  assert.equal(event.context.runtime.noAdvanceMs, 40000);
+  read();
+  metrics.add('videoFrames', 600);
+  job.progress({phase: 'complete', progress: 1, videoFrames: 600, processedSeconds: 20});
+  job.finish({files: 1, writtenBytes: 4096, mediaSeconds: 20});
+  job.finish();
+  job.fail(new Error('late'));
+  await settle();
+  const logs = requests.map(item => JSON.parse(item.data));
+  assert.equal(logs.at(-1).event, 'export_completed');
+  assert.equal(logs.at(-1).context.throughput.realtime, 0.5);
+  assert.equal(logs.at(-1).context.throughput.fps, 15);
+  assert.equal(logs.at(-1).context.result.writtenBytes, 4096);
+  assert.equal(new Set(logs.map(item => item.context.operation.id)).size, 1);
+  assert.equal(new Set(logs.map(item => item.id)).size, logs.length);
+  assert.equal(timers.size, 0);
+});
+
+test('metrics use a numeric allowlist and cannot transmit URLs, emote text or credentials', async () => {
+  const {reporter, requests} = setup();
+  const job = reporter.begin('export', {mode: 'danmaku'});
+  job.progress({
+    phase: 'processing',
+    metrics: {
+      elapsedMs: 123,
+      cookie: 'private-value',
+      url: 'https://private.test/token',
+      encoder: {
+        codec: 'avc1.42e01e',
+        width: 1920,
+        height: 1080,
+        hardwarePreference: 'prefer-hardware',
+        token: 'private-value',
+      },
+      stages: {render: {count: 1, totalMs: 4, maxMs: 4, headers: 'private-value'}, 'private-value': {count: 2}},
+      counters: {videoFrames: 1, commentText: 'private-value'},
+    },
+  });
+  job.finish();
+  await settle();
+  const body = requests.at(-1).data,
+    context = JSON.parse(body).context;
+  assert.doesNotMatch(body, /private/);
+  assert.equal(context.metrics.stages.render.totalMs, 4);
+  assert.equal(context.metrics.encoder.hardwarePreference, 'prefer-hardware');
+});
+
+test('backlogged heartbeat snapshots coalesce and the queue remains bounded', async () => {
+  const requests = [],
+    callbacks = new Map();
+  let time = 0;
+  const {reporter} = setup({
+    request: options => requests.push(options),
+    now: () => time,
+    every: fn => {
+      callbacks.set(1, fn);
+      return 1;
+    },
+    cancelTimer: id => callbacks.delete(id),
+  });
+  const job = reporter.begin('export');
+  for (let i = 1; i <= 100; i++) {
+    time = i * 10000;
+    callbacks.get(1)();
+  }
+  job.finish();
+  assert.equal(requests.length, 2);
+  for (let i = 0; i < requests.length; i++) {
+    requests[i].onload({status: 201});
+    await settle();
+  }
+  const events = requests.map(item => JSON.parse(item.data).event);
+  assert.equal(events.at(-1), 'export_completed');
+  assert.ok(events.length <= 4);
 });

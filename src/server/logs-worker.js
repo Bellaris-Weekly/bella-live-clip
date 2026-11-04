@@ -1,3 +1,5 @@
+import {logsPage, startLogViewer} from './logs-page.js';
+import {listLogs, downloadLogs} from './logs-query.js';
 import {redactContext, redactText} from '../shared/log-redaction.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -105,7 +107,40 @@ function removeExpired(database) {
 
 export default {
   async fetch(request, env, context) {
-    if (new URL(request.url).pathname !== '/v1/logs') return error(404, 'not_found');
+    const url = new URL(request.url);
+    if (url.pathname === '/' || url.pathname === '/viewer.js') {
+      if (!['GET', 'HEAD'].includes(request.method)) return error(405, 'method_not_allowed', {Allow: 'GET, HEAD'});
+      const page = url.pathname === '/';
+      return new Response(request.method === 'HEAD' ? null : page ? logsPage : `(${startLogViewer.toString()})();`, {
+        headers: {
+          'Content-Type': page ? 'text/html; charset=utf-8' : 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy':
+            "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        },
+      });
+    }
+    if (url.pathname === '/api/logs' || url.pathname === '/api/logs/download') {
+      const download = url.pathname.endsWith('/download');
+      if (request.method !== 'GET' && !(download && request.method === 'HEAD'))
+        return error(405, 'method_not_allowed', {Allow: download ? 'GET, HEAD' : 'GET'});
+      try {
+        if (download) return await downloadLogs(env.LOGS_DB, url.searchParams, request.method === 'HEAD');
+        return json(200, await listLogs(env.LOGS_DB, url.searchParams));
+      } catch (failure) {
+        const clientError = [
+          'invalid_filter',
+          'invalid_time',
+          'invalid_cursor',
+          'invalid_time_range',
+          'invalid_limit',
+          'export_too_large',
+        ].includes(failure.message);
+        return error(clientError ? failure.status : 503, clientError ? failure.message : 'storage_unavailable');
+      }
+    }
+    if (url.pathname !== '/v1/logs') return error(404, 'not_found');
     if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});
     if (request.method !== 'POST') return error(405, 'method_not_allowed', {Allow: 'POST, OPTIONS'});
     if (request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
@@ -121,12 +156,27 @@ export default {
     }
     if (!validLog(log)) return error(400, 'invalid_log');
     try {
+      const exists = await env.LOGS_DB.prepare('SELECT 1 AS present FROM logs WHERE source = ? AND id = ?')
+        .bind(log.source, log.id)
+        .first();
+      if (exists?.present === 1) return json(200, {ok: true, duplicate: true});
+      const operation = log.context.operation?.id;
+      const tracked = typeof operation === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(operation);
+      const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+      if (tracked) {
+        const recentOperation = await env.LOGS_DB.prepare(
+          "SELECT COUNT(*) AS count FROM logs WHERE source = ? AND json_extract(context, '$.operation.id') = ? AND received_at > ?",
+        )
+          .bind(log.source, operation, since)
+          .first();
+        if (recentOperation?.count >= 12) return error(429, 'rate_limited', {'Retry-After': '60'});
+      }
       const recent = await env.LOGS_DB.prepare(
         'SELECT COUNT(*) AS count FROM logs WHERE source = ? AND received_at > ?',
       )
-        .bind(log.source, new Date(Date.now() - RATE_WINDOW_MS).toISOString())
+        .bind(log.source, since)
         .first();
-      if (recent?.count >= RATE_LIMIT) return error(429, 'rate_limited', {'Retry-After': '60'});
+      if (recent?.count >= (tracked ? 600 : RATE_LIMIT)) return error(429, 'rate_limited', {'Retry-After': '60'});
       const result = await env.LOGS_DB.prepare(
         `
         INSERT INTO logs (source, id, received_at, level, event, version, message, context)
@@ -146,7 +196,7 @@ export default {
         )
         .run();
       if (!result.success) return error(503, 'storage_unavailable');
-      // Writes are rare, so an occasional sweep needs no scheduled job or extra permissions.
+      // An indexed occasional sweep needs no scheduled job or extra permissions.
       if (Math.random() < CLEANUP_CHANCE) context?.waitUntil?.(removeExpired(env.LOGS_DB));
       const duplicate = result.meta.changes === 0;
       return json(duplicate ? 200 : 201, {ok: true, duplicate});

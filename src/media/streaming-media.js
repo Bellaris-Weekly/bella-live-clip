@@ -3,7 +3,7 @@ import {deferred} from '../shared/deferred.js';
 
 // One pending append, plus the reader's bounded seek cache. A small startup
 // prefix can arrive before the selection clock is known; it is never unbounded.
-export function createMediaPipe({signal, onCancel = () => {}, maxStartupBytes = 64 * 1024 * 1024} = {}) {
+export function createMediaPipe({signal, onCancel = () => {}, maxStartupBytes = 64 * 1024 * 1024, metrics} = {}) {
   const chunks = [];
   let position = 0,
     buffered = 0,
@@ -20,6 +20,7 @@ export function createMediaPipe({signal, onCancel = () => {}, maxStartupBytes = 
     failure ??= error;
     chunks.length = 0;
     buffered = 0;
+    metrics?.gauge('bufferedMediaBytes', buffered);
     wake();
     drained.resolve();
   };
@@ -35,6 +36,7 @@ export function createMediaPipe({signal, onCancel = () => {}, maxStartupBytes = 
         if (!chunks.length) return controller.close();
         const chunk = chunks.shift();
         buffered -= chunk.byteLength;
+        metrics?.gauge('bufferedMediaBytes', buffered);
         controller.enqueue(chunk);
         if (!chunks.length) drained.resolve();
       },
@@ -57,9 +59,17 @@ export function createMediaPipe({signal, onCancel = () => {}, maxStartupBytes = 
         if (!chunks.length) drained = deferred();
         chunks.push(bytes);
         buffered += bytes.byteLength;
+        metrics?.gauge('bufferedMediaBytes', buffered);
         if (!reading && buffered > maxStartupBytes) throw new Error('关键帧预读超过内存预算，请调整选区起点。');
         wake();
-        if (reading && chunks.length) await drained.promise;
+        if (reading && chunks.length) {
+          const finish = metrics?.start('streamWriteWait');
+          try {
+            await drained.promise;
+          } finally {
+            finish?.();
+          }
+        }
         if (failure) throw failure;
       }
     },

@@ -30,7 +30,7 @@ export async function createDanmakuCompositor(
   return createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal});
 }
 
-export function createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal}) {
+export function createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal, metrics}) {
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
   const fontSize = (45 * height) / 1080;
   try {
@@ -94,7 +94,14 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
         const commands = [];
-        for (const item of layout.advance(time)) {
+        const finishLayout = metrics?.start('layout');
+        let active;
+        try {
+          active = layout.advance(time);
+        } finally {
+          finishLayout?.();
+        }
+        for (const item of active) {
           const x = layout.x(item, time);
           for (const part of item.parts) {
             const y = item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;
@@ -121,45 +128,66 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             );
           });
         if (changed) {
-          for (const [top, bottom] of regions) ink.clearRect(0, top, width, bottom - top);
-          const rows = [];
-          for (const {item, part, x, y, frame} of commands) {
-            const top = Math.max(0, Math.floor(y + (frame ? -2 : part.top)));
-            const bottom = Math.min(height, Math.ceil(y + (frame ? part.asset.height + 2 : part.bottom)));
-            if (Number.isFinite(top) && Number.isFinite(bottom)) {
-              if (bottom > top) rows.push([top, bottom]);
-            } else rows.push([0, height]);
-            ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
-            if (frame) ink.drawImage(frame, x, y);
-            else {
-              ink.font = part.font;
-              if (!part.emoji) ink.strokeText(part.text, x, y);
-              ink.fillText(part.text, x, y);
+          metrics?.add('overlayRedraws');
+          const finishOverlay = metrics?.start('overlayDraw');
+          try {
+            for (const [top, bottom] of regions) ink.clearRect(0, top, width, bottom - top);
+            const rows = [];
+            for (const {item, part, x, y, frame} of commands) {
+              const top = Math.max(0, Math.floor(y + (frame ? -2 : part.top)));
+              const bottom = Math.min(height, Math.ceil(y + (frame ? part.asset.height + 2 : part.bottom)));
+              if (Number.isFinite(top) && Number.isFinite(bottom)) {
+                if (bottom > top) rows.push([top, bottom]);
+              } else rows.push([0, height]);
+              ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
+              if (frame) ink.drawImage(frame, x, y);
+              else {
+                ink.font = part.font;
+                if (!part.emoji) ink.strokeText(part.text, x, y);
+                ink.fillText(part.text, x, y);
+              }
             }
+            regions = [];
+            for (const row of rows.sort((a, b) => a[0] - b[0])) {
+              const last = regions.at(-1);
+              if (last && row[0] <= last[1]) last[1] = Math.max(last[1], row[1]);
+              else regions.push(row);
+            }
+            previous = commands;
+          } finally {
+            finishOverlay?.();
           }
-          regions = [];
-          for (const row of rows.sort((a, b) => a[0] - b[0])) {
-            const last = regions.at(-1);
-            if (last && row[0] <= last[1]) last[1] = Math.max(last[1], row[1]);
-            else regions.push(row);
-          }
-          previous = commands;
-        }
+        } else metrics?.add('overlayReuses');
         // The export entry rejects rotation. Avoid the generic per-frame
         // save/translate/rotate path while keeping the same full-frame scaling.
-        context.drawImage(sample.toCanvasImageSource(), 0, 0, width, height);
-        if (regions.length) {
-          context.save();
-          context.beginPath();
-          for (const [top, bottom] of regions) context.rect(0, top, width, bottom - top);
-          context.clip();
-          context.globalAlpha = 0.65;
-          // Keep the original image transform: slicing drawImage's source can
-          // change browser sampling/rounding even at apparently identical size.
-          context.drawImage(overlay, 0, 0);
-          context.restore();
+        const finishVideo = metrics?.start('videoDraw');
+        try {
+          context.drawImage(sample.toCanvasImageSource(), 0, 0, width, height);
+        } finally {
+          finishVideo?.();
         }
-        return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});
+        if (regions.length) {
+          const finishComposite = metrics?.start('overlayComposite');
+          try {
+            context.save();
+            context.beginPath();
+            for (const [top, bottom] of regions) context.rect(0, top, width, bottom - top);
+            context.clip();
+            context.globalAlpha = 0.65;
+            // Keep the original image transform: slicing drawImage's source can
+            // change browser sampling/rounding even at apparently identical size.
+            context.drawImage(overlay, 0, 0);
+            context.restore();
+          } finally {
+            finishComposite?.();
+          }
+        }
+        const finishSnapshot = metrics?.start('frameSnapshot');
+        try {
+          return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});
+        } finally {
+          finishSnapshot?.();
+        }
       },
       close() {
         resources.close();

@@ -414,6 +414,7 @@ export function createApp({
     controls();
     try {
       await action(own.signal, diagnostic);
+      diagnostic.finish?.();
     } catch (e) {
       diagnostic.fail(e, own.signal);
       own.abort();

@@ -1,12 +1,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {readFileSync} from 'node:fs';
+import {readFileSync, readdirSync} from 'node:fs';
 import worker from '../../../src/server/logs-worker.js';
 
 function database(t) {
   const db = new DatabaseSync(':memory:');
-  db.exec(readFileSync(new URL('../../../server/logs/migrations/0001_logs.sql', import.meta.url), 'utf8'));
+  const migrations = new URL('../../../server/logs/migrations/', import.meta.url);
+  for (const file of readdirSync(migrations)
+    .filter(file => file.endsWith('.sql'))
+    .sort())
+    db.exec(readFileSync(new URL(file, migrations), 'utf8'));
   t.after(() => db.close());
   return {
     db,
@@ -19,6 +23,9 @@ function database(t) {
                 async run() {
                   const result = db.prepare(sql).run(...params);
                   return {success: true, meta: {changes: Number(result.changes)}};
+                },
+                async all() {
+                  return {success: true, results: db.prepare(sql).all(...params)};
                 },
                 async first() {
                   return db.prepare(sql).get(...params);
@@ -239,7 +246,7 @@ test('分块流达到限制立即停止读取，多字节 UTF8 跨块仍正确�
   assert.equal(db.prepare('SELECT message FROM logs').get().message, '导出错误');
 });
 
-test('路由、CORS 和 JSON 错误返回稳定状态且没有公开读写接口', async t => {
+test('写入路由、CORS 和 JSON 错误返回稳定状态', async t => {
   const {db, env} = database(t);
   for (const [input, status, code] of [
     [new Request('https://logs.example.com/v1/logs'), 405, 'method_not_allowed'],
@@ -338,5 +345,143 @@ test('写入时偶尔清理 90 天前的日志，只删过期数据', async t =>
       .all()
       .map(row => row.id),
     ['kept', 'quiet', 'sweep'],
+  );
+});
+
+const get = path => new Request('https://logs.example.com' + path);
+function seed(db, count, context = {}) {
+  const insert = db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  for (let i = 0; i < count; i++)
+    insert.run(
+      'bella-live-clip',
+      `log-${String(i).padStart(5, '0')}`,
+      '2026-01-01T12:00:00.000Z',
+      i % 2 ? 'info' : 'error',
+      'export_completed',
+      '2.13.1',
+      '完成',
+      JSON.stringify({
+        mode: i % 2 ? 'danmaku' : 'copy',
+        operation: {id: `task-${i % 3}`, outcome: 'completed'},
+        ...context,
+      }),
+    );
+}
+
+test('anonymous viewer and its script are served by the existing Worker', async () => {
+  const page = await worker.fetch(get('/'), {});
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('Content-Type'), /text\/html/);
+  assert.match(await page.text(), /下载筛选日志/);
+  const script = await worker.fetch(get('/viewer.js'), {});
+  assert.equal(script.status, 200);
+  assert.match(await script.text(), /\/api\/logs/);
+});
+
+test('keyset pagination has no gaps or duplicates at equal timestamps and applies all filters', async t => {
+  const {db, env} = database(t);
+  seed(db, 17);
+  const found = [];
+  let cursor;
+  do {
+    const params = new URLSearchParams({
+      source: 'bella-live-clip',
+      mode: 'danmaku',
+      level: 'info',
+      version: '2.13.1',
+      outcome: 'completed',
+      from: '2026-01-01',
+      to: '2026-01-02',
+      limit: '3',
+    });
+    if (cursor) params.set('cursor', cursor);
+    const response = await worker.fetch(get('/api/logs?' + params), env);
+    assert.equal(response.status, 200);
+    const page = await response.json();
+    found.push(...page.logs.map(log => log.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(
+    found,
+    [15, 13, 11, 9, 7, 5, 3, 1].map(i => `log-${String(i).padStart(5, '0')}`),
+  );
+  const task = await (await worker.fetch(get('/api/logs?operation=task-1'), env)).json();
+  assert.ok(task.logs.every(log => log.context.operation.id === 'task-1'));
+  assert.equal(task.logs.length, 6);
+});
+
+test('read filters and malformed cursors cannot alter SQL or expose internal errors', async t => {
+  const {db, env} = database(t);
+  seed(db, 1);
+  for (const params of [
+    'source=x%27%20OR%201%3D1',
+    'cursor=invalid',
+    'from=not-a-date',
+    'from=2027-01-01&to=2026-01-01',
+    'limit=9999',
+  ]) {
+    assert.equal((await worker.fetch(get('/api/logs?' + params), env)).status, 400);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM logs').get().count, 1);
+  const failure = await worker.fetch(get('/api/logs'), {
+    LOGS_DB: {
+      prepare() {
+        throw new Error('secret connection detail');
+      },
+    },
+  });
+  assert.equal(failure.status, 503);
+  assert.doesNotMatch(await failure.text(), /secret/);
+});
+
+test('download contains every matching page and the complete structured context', async t => {
+  const {db, env} = database(t);
+  seed(db, 405, {detail: '<script>alert(1)</script>\n中文'});
+  const url = '/api/logs/download?source=bella-live-clip';
+  const head = await worker.fetch(new Request('https://logs.example.com' + url, {method: 'HEAD'}), env);
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get('X-Log-Count'), '405');
+  assert.equal(await head.text(), '');
+  const response = await worker.fetch(get(url), env);
+  assert.match(response.headers.get('Content-Disposition'), /attachment.*jsonl/);
+  const rows = (await response.text())
+    .trim()
+    .split('\n')
+    .map(line => JSON.parse(line));
+  assert.equal(rows.length, 405);
+  assert.equal(new Set(rows.map(row => row.id)).size, 405);
+  assert.equal(rows[0].context.detail, '<script>alert(1)</script>\n中文');
+});
+
+test('oversized download fails before returning a partial file; cancellation stops paging', async t => {
+  const {db, env} = database(t);
+  seed(db, 5001);
+  assert.equal((await worker.fetch(get('/api/logs/download'), env)).status, 413);
+  db.prepare('DELETE FROM logs WHERE id > ?').run('log-00450');
+  const prepare = env.LOGS_DB.prepare;
+  let queries = 0;
+  env.LOGS_DB.prepare = sql => {
+    queries++;
+    return prepare(sql);
+  };
+  const response = await worker.fetch(get('/api/logs/download'), env);
+  const reader = response.body.getReader();
+  await reader.read();
+  const before = queries;
+  await reader.cancel();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(queries, before);
+});
+
+test('normal operation logs have a per-operation budget and retry remains idempotent at the limit', async t => {
+  const {env} = database(t);
+  const context = {operation: {id: 'export-123'}};
+  for (let i = 0; i < 12; i++)
+    assert.equal((await worker.fetch(request(sample({id: `normal-${i}`, context})), env)).status, 201);
+  assert.equal((await worker.fetch(request(sample({id: 'normal-over', context})), env)).status, 429);
+  assert.equal((await worker.fetch(request(sample({id: 'normal-0', context})), env)).status, 200);
+  assert.equal(
+    (await worker.fetch(request(sample({id: 'other-export', context: {operation: {id: 'export-456'}}})), env)).status,
+    201,
   );
 });
