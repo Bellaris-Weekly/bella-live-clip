@@ -39,17 +39,28 @@ export async function createStreamingCompositor(
     metrics?.add('commentsRead', events.length);
     return events;
   };
-  const getCatalog = () => {
-    if (!catalog) {
-      const finish = metrics?.start('emoteCatalog');
-      catalog = loadEmoteCatalog(record.room, {signal, fetcher})
-        .catch(error => {
-          catalog = null;
-          throw error;
-        })
-        .finally(() => finish?.());
+  const fetchCatalog = () => {
+    const finish = metrics?.start('emoteCatalog');
+    return loadEmoteCatalog(record.room, {signal, fetcher}).finally(() => finish?.());
+  };
+  const getCatalog = async (speculative = false) => {
+    catalog ??= fetchCatalog();
+    if (speculative) return catalog;
+    try {
+      return await catalog;
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error?.name === 'AbortError') throw error;
+      // Keep speculative rejection until demand, then retry once and cache the
+      // text-only result if the directory remains unavailable.
+      catalog = fetchCatalog().catch(retryError => {
+        signal?.throwIfAborted();
+        if (retryError?.name === 'AbortError') throw retryError;
+        metrics?.add('emoteFailures');
+        return new Map();
+      });
+      return catalog;
     }
-    return catalog;
   };
   const prefetch = () => {
     const end = endTime();
@@ -110,7 +121,7 @@ export async function createStreamingCompositor(
       }
     const missing = [...names].filter(name => !assets.has(name));
     if (missing.length) {
-      const selected = await getCatalog();
+      const selected = await getCatalog(speculative);
       const added = missing.filter(name => selected.has(name)).length;
       evictUntil(() => assets.size + added <= 128);
       if (assets.size + added > 128) throw new Error('弹幕窗口表情种类超过缓存上限。');
@@ -129,7 +140,7 @@ export async function createStreamingCompositor(
   }
   try {
     until = Math.min(until, endTime());
-    void getCatalog().catch(() => {});
+    void getCatalog(true).catch(() => {});
     const finishInitial = metrics?.start('commentWindowInitial');
     let loaded;
     try {

@@ -50,6 +50,7 @@ export function startLogViewer() {
     activeRequests: '并发媒体请求',
     emotePrefetches: '表情预取次数',
     emotePrefetchHits: '表情预取命中',
+    emoteFailures: '表情失败回退次数',
     longTaskMs: '主线程长任务毫秒',
     longTasks: '主线程长任务次数',
     firstFrameMs: '首帧延迟',

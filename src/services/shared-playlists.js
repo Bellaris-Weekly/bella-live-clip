@@ -1,3 +1,4 @@
+import {measureMediaRequest} from '../shared/media-metrics.js';
 const KEPT = 4;
 
 // A playlist runs to over a megabyte, and the player, the export plan and the
@@ -26,9 +27,14 @@ export function sharePlaylists(request) {
       }),
     ]).finally(() => signal.removeEventListener('abort', abort));
   }
+  const route =
+    read =>
+    (url, options = {}) =>
+      options.type === 'arraybuffer' || options.range ? read(url, options) : playlist(url, options.signal);
+  const sharedRequest = route(request);
+  sharedRequest.withMetrics = metrics => route(measureMediaRequest(request, metrics));
   return {
-    request: (url, options = {}) =>
-      options.type === 'arraybuffer' || options.range ? request(url, options) : playlist(url, options.signal),
+    request: sharedRequest,
     clear: () => playlists.clear(),
   };
 }

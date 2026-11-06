@@ -14,6 +14,8 @@ window.startStreaming = async ({
   const controller = new AbortController();
   const state = (window.streamingState = {
     requests: [],
+    networkRequests: 0,
+    mediaBytes: 0,
     frames: 0,
     writes: 0,
     blockedMedia: false,
@@ -67,6 +69,7 @@ window.startStreaming = async ({
   window.streamingTask = (reference ? exportReference : exportSelection)(
     {
       async request(url, {signal}) {
+        state.networkRequests++;
         const match = url.match(/seg(\d+)\.m4s/);
         if (match) {
           const index = Number(match[1]);
@@ -77,7 +80,9 @@ window.startStreaming = async ({
             await wait(mediaGate, signal);
           }
         }
-        return {data: await (await fetch(url, {signal})).arrayBuffer()};
+        const data = await (await fetch(url, {signal})).arrayBuffer();
+        state.mediaBytes += data.byteLength;
+        return {data};
       },
     },
     {room: 1, key: 'test', start: 98, end: 146},
@@ -429,4 +434,84 @@ window.checkInitialCatalogOverlap = async () => {
   );
   await compositor.close();
   return {catalogStarted, readStarted, count: metrics.snapshot().stages.commentWindowInitial.count};
+};
+
+window.checkEmoteFallbackPixels = async kind => {
+  const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
+  const {createExportMetrics} = await import('../../../src/media/export-metrics.js');
+  const {VideoSample} = await import('mediabunny');
+  const events = [{time: 0, text: '前[坏]后', mode: 5, color: 0x66ccff, order: 0}];
+  const frame = new OffscreenCanvas(640, 360);
+  frame.getContext('2d').fillRect(0, 0, 640, 360);
+  const sample = new VideoSample(frame, {timestamp: 0, duration: 1 / 30});
+  async function render(fail) {
+    const metrics = createExportMetrics();
+    let requests = 0;
+    const compositor = await createStreamingCompositor(
+      {room: 1},
+      {
+        origin: 0,
+        start: 0,
+        sourceTime: t => t,
+        width: 640,
+        height: 360,
+        endTime: () => 4,
+        metrics,
+        reader: {read: async () => events.map(event => ({...event})), async close() {}},
+        fetcher: async url => {
+          if (fail && kind === 'catalog') {
+            requests++;
+            return new Response('', {status: 503});
+          }
+          if (url.endsWith('index.json')) return new Response(JSON.stringify({catalog: 'catalog.json'}));
+          if (url.endsWith('catalog.json'))
+            return new Response(
+              JSON.stringify({
+                emotes: fail
+                  ? [
+                      {
+                        name: '坏',
+                        kind: 'emoji',
+                        file: 'bad.png',
+                        width: 128,
+                        height: 128,
+                      },
+                    ]
+                  : [],
+              }),
+            );
+          requests++;
+          return kind === 'http'
+            ? new Response('', {status: 404})
+            : new Response(new Uint8Array([0]), {headers: {'Content-Type': 'image/png'}});
+        },
+      },
+    );
+    const frames = [];
+    try {
+      for (const timestamp of [0, 1]) {
+        await compositor.prepare(timestamp);
+        const result = compositor.render(sample, timestamp);
+        const canvas = new OffscreenCanvas(640, 360),
+          context = canvas.getContext('2d');
+        context.drawImage(result.toCanvasImageSource(), 0, 0);
+        frames.push(context.getImageData(0, 0, 640, 360).data);
+        result.close();
+      }
+      return {frames, requests, failures: metrics.snapshot().counters.emoteFailures};
+    } finally {
+      await compositor.close();
+    }
+  }
+  try {
+    const plain = await render(false),
+      failed = await render(true);
+    return {
+      equal: plain.frames.every((pixels, i) => pixels.every((value, j) => value === failed.frames[i][j])),
+      requests: failed.requests,
+      failures: failed.failures,
+    };
+  } finally {
+    sample.close();
+  }
 };

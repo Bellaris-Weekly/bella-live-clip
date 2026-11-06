@@ -629,37 +629,6 @@ test('SQL upsert checks sequence atomically when concurrent reads see the same r
   assert.equal(JSON.parse(db.prepare('SELECT context FROM logs').get().context).operation.sequence, 5);
 });
 
-test('operation migration collapses existing rows and keeps first receive time and ordinary logs', t => {
-  const {db} = database(t);
-  const insert = db.prepare(
-    'INSERT INTO logs (source, id, received_at, level, event, version, message, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  );
-  for (const sequence of [2, 0, 1])
-    insert.run(
-      's',
-      `op:${sequence}`,
-      `2026-01-01T00:00:0${sequence}.000Z`,
-      'info',
-      sequence === 2 ? 'export_completed' : 'export_progress',
-      '1',
-      'm',
-      JSON.stringify({operation: {id: 'op', sequence}}),
-    );
-  insert.run('s', 'plain', '2026-01-01', 'error', 'e', '1', 'm', '{}');
-  db.exec(readFileSync(new URL('../../../server/logs/migrations/0003_operation_rows.sql', import.meta.url), 'utf8'));
-  const rows = db.prepare('SELECT * FROM logs ORDER BY id').all();
-  assert.deepEqual(
-    rows.map(row => row.id),
-    ['op', 'plain'],
-  );
-  assert.equal(rows[0].event, 'export_completed');
-  assert.deepEqual(JSON.parse(rows[0].context).operation, {
-    id: 'op',
-    sequence: 2,
-    firstReceivedAt: '2026-01-01T00:00:00.000Z',
-  });
-});
-
 test('all log reads live beneath /admin; old public routes return 404 without touching storage', async () => {
   const env = {
     LOGS_DB: {

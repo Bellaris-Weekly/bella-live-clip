@@ -150,3 +150,33 @@ test('a body that stalls after the headers also gives up', async () => {
   );
   assert.equal((await f.request(media, {})).data, 'fallback');
 });
+
+test('media metrics count direct and fallback network attempts separately and share concurrency', async () => {
+  const {measureMediaRequest} = await import('../../../src/shared/media-metrics.js');
+  const {sharePlaylists} = await import('../../../src/services/shared-playlists.js');
+  const {createExportMetrics} = await import('../../../src/media/export-metrics.js');
+  const metrics = createExportMetrics();
+  let direct = 0,
+    fallback = 0;
+  const request = measureMediaRequest(
+    sharePlaylists(
+      createMediaRequest({
+        pageFetch: async () => {
+          direct++;
+          throw new TypeError('offline');
+        },
+        fallback: async () => {
+          fallback++;
+          return {data: new ArrayBuffer(4)};
+        },
+      }),
+    ),
+    metrics,
+  );
+  await Promise.all([request(media, {type: 'arraybuffer'}), request(media, {type: 'arraybuffer'})]);
+  const snapshot = metrics.snapshot();
+  assert.equal(snapshot.stages.mediaRequest.count, direct + fallback);
+  assert.equal(snapshot.stages.mediaRequest.count, 4);
+  assert.equal(snapshot.counters.mediaRequestBytes, 8);
+  assert.deepEqual(snapshot.gauges.activeRequests, {current: 0, peak: 2});
+});

@@ -20,7 +20,7 @@ Worker 和 D1 由你创建，域名由你管理。工作流只核对现有 Worke
 
 页面、脚本、查询和下载接口均位于 `/admin/` 下；访问 `/admin` 会跳转到 `/admin/`。原来的 `/`、`/viewer.js`、`/api/logs` 和 `/api/logs/download` 返回 404，不保留公开读取入口。当前应用代码仍按要求不做鉴权。后续可以用 Cloudflare Access 统一保护 `/admin` 和 `/admin/*`；为用户脚本保留匿名写入的 `/v1/logs`，邮箱鉴权无需加入前端代码。
 
-迁移 `0002_log_queries.sql` 增加排序、任务和导出方式索引；`0003_operation_rows.sql` 将已有任务事件按客户端序号合并为一行，并保留首次收到时间。前端 HTML、CSS 和脚本由同一个 Worker 返回，不需要另建 Pages 或静态资源部署。
+迁移 `0002_log_queries.sql` 增加排序、任务和导出方式索引。前端 HTML、CSS 和脚本由同一个 Worker 返回，不需要另建 Pages 或静态资源部署。
 
 ## 运行事件和性能字段
 

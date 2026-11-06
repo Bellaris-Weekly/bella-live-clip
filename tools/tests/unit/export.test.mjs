@@ -1,3 +1,4 @@
+import {createExportMetrics} from '../../../src/media/export-metrics.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -91,11 +92,15 @@ async function sampleApi(kind, absolute = false) {
   const starts = [],
     finishes = [];
   let active = 0,
+    received = 0,
     peak = 0;
   return {
     starts,
     finishes,
     segments,
+    get received() {
+      return received;
+    },
     get peak() {
       return peak;
     },
@@ -113,6 +118,7 @@ async function sampleApi(kind, absolute = false) {
         signal?.throwIfAborted();
         const data = files.get(url);
         finishes.push(url);
+        received += data.byteLength;
         return {data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)};
       } finally {
         active--;
@@ -166,7 +172,11 @@ for (const [kind, absolute] of [
       },
     };
     api.groups[0].segments.forEach(segment => (segment.duration = 1.8));
-    await saveRecording(api, api.groups, file);
+    const metrics = createExportMetrics();
+    await saveRecording(api, api.groups, file, {metrics});
+    assert.equal(metrics.snapshot().stages.mediaRequest.count, api.starts.length);
+    assert.equal(metrics.snapshot().counters.mediaRequestBytes, api.received);
+    assert.deepEqual(metrics.snapshot().gauges.activeRequests, {current: 0, peak: api.peak});
     const bytes = new Uint8Array(Math.max(...writes.map(chunk => chunk.position + chunk.data.length)));
     for (const chunk of writes) bytes.set(chunk.data, chunk.position);
     const result = await inspect(new Blob([bytes]));
@@ -247,6 +257,9 @@ for (const [kind, absolute] of [
     assert.deepEqual(media.counts, {video: 360, audio: 558});
     assert.equal(events.at(-1).progress, 1);
     assert.equal(events.at(-1).phase, 'complete');
+    assert.equal(events.at(-1).metrics.stages.mediaRequest.count, api.starts.length);
+    assert.equal(events.at(-1).metrics.counters.mediaRequestBytes, events.at(-1).bytes);
+    assert.deepEqual(events.at(-1).metrics.gauges.activeRequests, {current: 0, peak: api.peak});
     assert.deepEqual(events.at(-1).metrics.gauges.downloadConcurrency, {current: 8, peak: 8});
     assert.equal(events.at(-1).downloaded, kind === 'map' ? 7 : 6);
     assert.ok(
@@ -336,6 +349,9 @@ test('选区预读网络失败会等待重连，保持处理进度并完成同�
   assert.equal(events.at(-1).progress, 1);
   assert.equal((await inspect(outputs[0].blob)).counts.video, 360);
   assert.equal(api.starts.filter(url => url === 'part1').length, 2);
+  assert.equal(events.at(-1).metrics.stages.mediaRequest.count, api.starts.length);
+  assert.equal(events.at(-1).metrics.counters.mediaRequestBytes, events.at(-1).bytes);
+  assert.equal(events.at(-1).metrics.gauges.activeRequests.current, 0);
   assert.equal(api.finishes.length, new Set(api.finishes).size);
 });
 

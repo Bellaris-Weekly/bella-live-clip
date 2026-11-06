@@ -225,6 +225,14 @@ export async function runStreamingExportChecks() {
     if (!info.hasAudio || !info.hasVideo || Math.abs(info.duration - (duration - 2)) > 0.05)
       throw new Error('分片导出音画或时间轴错误');
     if (!overlapped || peak > 8) throw new Error('下载与处理没有有界并行');
+    const metrics = events.at(-1).metrics;
+    if (
+      metrics.stages.mediaRequest.count !== started.length ||
+      metrics.counters.mediaRequestBytes !== events.at(-1).bytes
+    )
+      throw new Error('媒体统计必须逐次对应实际请求，不计缓存命中');
+    if (metrics.gauges.activeRequests.current !== 0 || metrics.gauges.activeRequests.peak !== peak)
+      throw new Error('媒体并发统计与实际请求不一致');
     if (!events.every((event, i) => !i || event.progress >= events[i - 1].progress)) throw new Error('并行进度倒退');
     if (events.slice(0, -1).some(event => event.progress === 1)) throw new Error('尚未封装完成就报告 100%');
     await playback(output);

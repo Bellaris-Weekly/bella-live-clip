@@ -61,7 +61,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         height = fontSize * 1.2;
       for (const text of textTokens(event.text)) {
         const asset = resources.assets.get(text.normalize('NFC'));
-        if (asset) {
+        if (asset && !asset.failed) {
           parts.push({asset, x: width});
           width += asset.width;
           height = Math.max(height, asset.height);
@@ -108,6 +108,10 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           finishLayout?.();
         }
         for (const item of active) {
+          if (item.parts.some(part => part.asset?.failed)) {
+            cache.delete(item.text);
+            Object.assign(item, measure(item));
+          }
           const x = layout.x(item, time);
           for (const part of item.parts) {
             const y = item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;

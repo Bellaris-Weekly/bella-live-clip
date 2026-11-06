@@ -10,7 +10,7 @@ import {sourceClock} from '../danmaku/clock.js';
 import {createCommentReader} from '../danmaku/archive.js';
 import {createStreamingCompositor} from '../danmaku/streaming-compositor.js';
 
-const DANMAKU_DOWNLOAD_CONCURRENCY = 6;
+const DANMAKU_DOWNLOAD_CONCURRENCY = 3;
 
 export async function exportStreamingDanmaku(
   api,

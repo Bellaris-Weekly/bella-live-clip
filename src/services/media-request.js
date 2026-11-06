@@ -1,3 +1,4 @@
+import {measureMediaRequest} from '../shared/media-metrics.js';
 const MEDIA_HOST = /(^|\.)(bilivideo\.com|bilivideo\.cn|acgvideo\.com|hdslb\.com)$/;
 const RESPONSE_TIMEOUT = 15000,
   BODY_TIMEOUT = 45000,
@@ -57,11 +58,11 @@ export function createMediaRequest({
       signal?.removeEventListener('abort', abort);
     }
   }
-  return async (url, options = {}) => {
-    if (!direct(url, options)) return fallback(url, options);
+  const request = async (url, options = {}, readDirect = read, readFallback = fallback) => {
+    if (!direct(url, options)) return readFallback(url, options);
     options.signal?.throwIfAborted();
     try {
-      const result = await read(url, options);
+      const result = await readDirect(url, options);
       failures = 0;
       return result;
     } catch (error) {
@@ -70,7 +71,13 @@ export function createMediaRequest({
         failures = 0;
         pausedUntil = now() + RETRY_DIRECT_AFTER;
       }
-      return fallback(url, options);
+      return readFallback(url, options);
     }
   };
+  request.withMetrics = metrics => {
+    const readDirect = measureMediaRequest(read, metrics),
+      readFallback = measureMediaRequest(fallback, metrics);
+    return (url, options) => request(url, options, readDirect, readFallback);
+  };
+  return request;
 }

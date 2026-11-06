@@ -150,9 +150,12 @@ test(
         assert.ok(state.metrics.stages[name].count > 0, name);
         assert.ok(state.metrics.stages[name].totalMs >= 0, name);
       }
+      assert.equal(state.metrics.stages.mediaRequest.count, state.networkRequests);
+      assert.equal(state.metrics.counters.mediaRequestBytes, state.mediaBytes);
+      assert.equal(state.metrics.gauges.activeRequests.current, 0);
       assert.equal(state.metrics.stages.render.count, state.result.videoTimes.length);
       assert.equal(state.metrics.encoder.width, fullHD ? 1920 : 640);
-      assert.deepEqual(state.metrics.gauges.downloadConcurrency, {current: 6, peak: 6});
+      assert.deepEqual(state.metrics.gauges.downloadConcurrency, {current: 3, peak: 3});
     } finally {
       await page.close();
     }
@@ -335,7 +338,7 @@ test('catalog prefetch overlaps earlier frames, retries on demand, and cancels c
   const page = await open();
   try {
     assert.deepEqual(await page.evaluate(() => window.checkCatalogPrefetch(false)), {
-      before: {indexes: 2, images: 0},
+      before: {indexes: 1, images: 0},
       indexes: 2,
       images: 1,
       canceled: false,
@@ -363,3 +366,39 @@ test('emote catalog starts alongside the initial archive window', {timeout: 3000
     await page.close();
   }
 });
+
+for (const kind of ['http', 'decode', 'catalog'])
+  test(`${kind} emote failures render the original token pixel-identically to styled plain text`, async () => {
+    const page = await open();
+    try {
+      const result = await page.evaluate(kind => window.checkEmoteFallbackPixels(kind), kind);
+      assert.equal(result.equal, true);
+      assert.equal(result.failures, 1);
+      assert.equal(result.requests, 2);
+    } finally {
+      await page.close();
+    }
+  });
+
+test(
+  'permanent image failure still completes a danmaku export with audio and a fallback counter',
+  {timeout: 60000},
+  async () => {
+    const page = await open();
+    try {
+      await page.route('https://data.bellaris.fans/emotes/flower.png', route =>
+        route.fulfill({status: 404, body: '', headers: {'Access-Control-Allow-Origin': '*'}}),
+      );
+      await page.evaluate(() => window.startStreaming());
+      await page.waitForFunction(() => window.streamingState.done, null, {timeout: 45000});
+      const state = await page.evaluate(() => window.streamingState);
+      assert.equal(state.error, undefined, JSON.stringify(state));
+      assert.ok(state.result.videoTimes.length > 1200);
+      assert.ok(state.result.audioPackets.length > 0);
+      assert.equal(state.metrics.counters.emoteFailures, 1);
+      assert.deepEqual(state.temporary, []);
+    } finally {
+      await page.close();
+    }
+  },
+);

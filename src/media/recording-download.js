@@ -1,3 +1,4 @@
+import {measureMediaRequest} from '../shared/media-metrics.js';
 import {requestWithRetry} from '../services/retry-request.js';
 
 export const RECORDING_DOWNLOAD_CONCURRENCY = 8;
@@ -19,7 +20,7 @@ export function createRecordingDownload(
   } = {},
 ) {
   metrics?.gauge('downloadConcurrency', concurrency);
-  let activeRequests = 0;
+  const mediaApi = {request: measureMediaRequest(api, metrics)};
   const items = groups.flatMap((group, groupIndex) => group.segments.map(segment => ({segment, groupIndex})));
   const controller = new AbortController(),
     entries = new Map(),
@@ -42,24 +43,16 @@ export function createRecordingDownload(
     onRetry({count: reconnects.size, attempt: Math.max(0, ...[...reconnects.values()].map(value => value.attempt))});
   }
   async function read(segment) {
-    const finish = metrics?.start('mediaRequest');
-    metrics?.gauge('activeRequests', ++activeRequests);
-    try {
-      const response = await requestWithRetry(
-        api,
-        segment.url,
-        {type: 'arraybuffer', range: segment.range, signal: controller.signal},
-        {onRetry: state => retry(segment, state), missingRetries},
-      );
-      controller.signal.throwIfAborted();
-      const data = new Uint8Array(response.data);
-      onRead(data.byteLength);
-      metrics?.add('mediaRequestBytes', data.byteLength);
-      return data;
-    } finally {
-      finish?.();
-      metrics?.gauge('activeRequests', --activeRequests);
-    }
+    const response = await requestWithRetry(
+      mediaApi,
+      segment.url,
+      {type: 'arraybuffer', range: segment.range, signal: controller.signal},
+      {onRetry: state => retry(segment, state), missingRetries},
+    );
+    controller.signal.throwIfAborted();
+    const data = new Uint8Array(response.data);
+    onRead(data.byteLength);
+    return data;
   }
   function pump() {
     while (

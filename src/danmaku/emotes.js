@@ -30,7 +30,7 @@ export const textTokens = text =>
     .filter(Boolean);
 
 export async function loadEmoteCatalog(room, {signal, fetcher = fetch} = {}) {
-  const options = {signal, fetcher};
+  const options = {signal, fetcher, operation: 'emoteFetch'};
   const index = await readJson(publicUrl('index.json', 'emotes/'), options);
   return selectEmotes(await readJson(publicUrl(index.catalog, 'emotes/'), options), room);
 }
@@ -54,7 +54,20 @@ export async function loadEmotes(
 ) {
   const names = referencedEmotes(events);
   if (!names.size) return {assets: new Map(), close() {}};
-  selected ??= await loadEmoteCatalog(room, {signal, fetcher});
+  if (!selected) {
+    for (let attempt = 0; !selected; attempt++) {
+      try {
+        selected = await loadEmoteCatalog(room, {signal, fetcher});
+      } catch (error) {
+        signal?.throwIfAborted();
+        if (error?.name === 'AbortError') throw error;
+        if (attempt) {
+          metrics?.add('emoteFailures');
+          return {assets: new Map(), close() {}};
+        }
+      }
+    }
+  }
   const required = [...names].filter(name => selected.has(name));
   const assets = new Map();
   const close = () => {
@@ -76,7 +89,8 @@ export async function loadEmotes(
           initializing,
           fetching,
           fetched,
-          prefetched = false;
+          prefetched = false,
+          speculativeFailure = false;
         const controller = new AbortController();
         const cancelFetch = () => asset.close();
         const asset = {
@@ -90,16 +104,20 @@ export async function loadEmotes(
             closed = true;
             controller.abort();
             signal?.removeEventListener('abort', cancelFetch);
-            fetched = fetching = null;
-            decoder?.close();
-            decoder = null;
-            for (const frame of asset.frames) frame.close();
-            asset.frames.length = 0;
-            budget.used -= retained;
-            budget.compressed -= compressed;
-            retained = compressed = 0;
+            reset();
           },
         };
+        function reset() {
+          fetched = fetching = initializing = null;
+          frameCount = 0;
+          decoder?.close();
+          decoder = null;
+          for (const frame of asset.frames) frame.close();
+          asset.frames.length = asset.ends.length = 0;
+          budget.used -= retained;
+          budget.compressed -= compressed;
+          retained = compressed = 0;
+        }
         assets.set(name, asset);
         signal?.addEventListener('abort', cancelFetch, {once: true});
         async function fetchBytes() {
@@ -107,7 +125,7 @@ export async function loadEmotes(
           try {
             const result = await boundedFetch(
               publicUrl(entry.file.split('/').map(encodeURIComponent).join('/'), 'emotes/'),
-              {signal: controller.signal, fetcher, limit: 2 * 1024 * 1024},
+              {signal: controller.signal, fetcher, limit: 2 * 1024 * 1024, operation: 'emoteFetch'},
             );
             controller.signal.throwIfAborted();
             if (lazy) {
@@ -133,10 +151,12 @@ export async function loadEmotes(
           return fetching;
         };
         asset.prefetch = () => {
-          if (closed || initializing || fetching) return fetching?.catch(() => {});
+          if (closed || speculativeFailure || initializing || fetching) return fetching?.catch(() => {});
           prefetched = true;
           metrics?.add('emotePrefetches');
-          return getBytes().catch(() => {});
+          return getBytes().catch(() => {
+            speculativeFailure = true;
+          });
         };
         async function initialize(readSignal) {
           const finish = metrics?.start('emoteLoad');
@@ -201,42 +221,46 @@ export async function loadEmotes(
             }
           }
           asset.needsPreparation = elapsed =>
-            !initializing || (asset.frames.length < frameCount && (asset.ends.at(-1) ?? 0) <= Math.max(0, elapsed));
+            !asset.failed &&
+            (!initializing || (asset.frames.length < frameCount && (asset.ends.at(-1) ?? 0) <= Math.max(0, elapsed)));
           asset.prepare = async (elapsed, readSignal = signal) => {
-            const cancel = () => asset.close();
             readSignal?.throwIfAborted();
+            if (asset.failed) return;
+            const cancel = () => asset.close();
             readSignal?.addEventListener('abort', cancel, {once: true});
             try {
-              initializing ??= initialize(readSignal);
-              await initializing;
-              while (asset.frames.length < frameCount && (asset.ends.at(-1) ?? 0) <= Math.max(0, elapsed))
-                await decodeNext(readSignal);
-              if (asset.frames.length === frameCount && decoder) {
-                decoder.close();
-                decoder = null;
-                budget.compressed -= compressed;
-                compressed = 0;
+              // A failed prefetch already used the first attempt. Decode failures
+              // restart from fresh bytes too, including failures in later frames.
+              for (let attempt = speculativeFailure ? 1 : 0; attempt < 2; attempt++) {
+                try {
+                  initializing ??= initialize(readSignal);
+                  await initializing;
+                  while (asset.frames.length < frameCount && (asset.ends.at(-1) ?? 0) <= Math.max(0, elapsed))
+                    await decodeNext(readSignal);
+                  if (asset.frames.length === frameCount && decoder) {
+                    decoder.close();
+                    decoder = null;
+                    budget.compressed -= compressed;
+                    compressed = 0;
+                  }
+                  return;
+                } catch (error) {
+                  readSignal?.throwIfAborted();
+                  signal?.throwIfAborted();
+                  if (closed || error?.name === 'AbortError') throw error;
+                  reset();
+                  if (attempt === 1) {
+                    asset.failed = true;
+                    metrics?.add('emoteFailures');
+                    asset.close();
+                  }
+                }
               }
-            } catch (error) {
-              asset.close();
-              throw error;
             } finally {
               readSignal?.removeEventListener('abort', cancel);
             }
           };
-          if (!lazy) {
-            const cancel = () => asset.close();
-            taskSignal.addEventListener('abort', cancel, {once: true});
-            try {
-              initializing = initialize(taskSignal);
-              await initializing;
-              while (asset.frames.length < frameCount) await decodeNext(taskSignal);
-              decoder.close();
-              decoder = null;
-            } finally {
-              taskSignal.removeEventListener('abort', cancel);
-            }
-          }
+          if (!lazy) await asset.prepare(Infinity, taskSignal);
         } catch (error) {
           asset.close();
           throw error;

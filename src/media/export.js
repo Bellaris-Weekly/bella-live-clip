@@ -1,3 +1,4 @@
+import {measureMediaRequest} from '../shared/media-metrics.js';
 import {Input, BlobSource, MP4, MPEG_TS, EncodedPacketSink, Conversion} from 'mediabunny';
 import {segmentKey, selectPlaylistRange} from './playlist.js';
 import {trimPrecise} from './smart-trim.js';
@@ -168,6 +169,7 @@ export async function exportSelection(
     });
   }
   const missingRetries = record.live ? LIVE_MISSING_RETRIES : 0;
+  const mediaApi = {request: measureMediaRequest(api, metrics)};
   const outputs = [],
     downloaded = new Set();
   let metricsAt = -Infinity,
@@ -227,32 +229,23 @@ export async function exportSelection(
       const key = segmentKey(segment);
       if (cache.has(key)) return cache.get(key);
       resources.add(key);
-      const finishRequest = metrics?.start('mediaRequest');
-      metrics?.gauge('activeRequests', ++activeRequests);
-      let response;
-      try {
-        response = await requestWithRetry(
-          api,
-          segment.url,
-          {type: 'arraybuffer', range: segment.range, signal},
-          {
-            missingRetries,
-            onRetry(state) {
-              reconnecting = state ? 1 : 0;
-              attempt = state?.attempt ?? 0;
-              report();
-            },
+      const response = await requestWithRetry(
+        mediaApi,
+        segment.url,
+        {type: 'arraybuffer', range: segment.range, signal},
+        {
+          missingRetries,
+          onRetry(state) {
+            reconnecting = state ? 1 : 0;
+            attempt = state?.attempt ?? 0;
+            report();
           },
-        );
-      } finally {
-        finishRequest?.();
-        metrics?.gauge('activeRequests', --activeRequests);
-      }
+        },
+      );
       signal?.throwIfAborted();
       const data = new Uint8Array(response.data);
       bytes += data.byteLength;
       metrics?.add('downloadedBytes', data.byteLength);
-      metrics?.add('mediaRequestBytes', data.byteLength);
       downloaded.add(key);
       report();
       cache.set(key, data);
@@ -264,7 +257,6 @@ export async function exportSelection(
       }
       return data;
     }
-    let activeRequests = 0;
     try {
       if (danmaku) {
         const {prepareComments} = await import('../danmaku/archive.js');
@@ -316,18 +308,9 @@ export async function exportSelection(
             cache.delete(key);
             return {data};
           }
-          const finishRequest = metrics?.start('mediaRequest');
-          metrics?.gauge('activeRequests', ++activeRequests);
-          let response;
-          try {
-            response = await api.request(url, options);
-          } finally {
-            finishRequest?.();
-            metrics?.gauge('activeRequests', --activeRequests);
-          }
+          const response = await mediaApi.request(url, options);
           bytes += response.data.byteLength;
           metrics?.add('downloadedBytes', response.data.byteLength);
-          metrics?.add('mediaRequestBytes', response.data.byteLength);
           downloaded.add(key);
           return response;
         },

@@ -1,3 +1,4 @@
+import {createExportMetrics} from '../../../src/media/export-metrics.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -186,13 +187,14 @@ for (const combined of [false, true])
     [2, 6, 4],
   ]) {
     test(`投稿原画 ${combined ? '合并' : '分轨'} ${start}–${end} 保留完整 GOP 与声音`, async () => {
+      const metrics = createExportMetrics();
       const calls = [],
         events = [];
       const blob = await exportSubmission(
         transport({video: await fixture(combined ? 'combined' : 'video'), audio: await fixture('audio')}, calls),
         submission(combined),
         {start, end},
-        {onProgress: e => events.push(e)},
+        {metrics, onProgress: e => events.push(e)},
       );
       const input = new Input({source: new BufferSource(await blob.arrayBuffer()), formats: [MP4]});
       try {
@@ -207,6 +209,12 @@ for (const combined of [false, true])
         assert.ok(
           calls.every(call => call.referer === submission(combined).referer && call.range.length <= 1024 * 1024),
         );
+        assert.equal(metrics.snapshot().stages.mediaRequest.count, calls.length);
+        assert.equal(
+          metrics.snapshot().counters.mediaRequestBytes,
+          calls.reduce((sum, call) => sum + call.range.length, 0),
+        );
+        assert.equal(metrics.snapshot().gauges.activeRequests.current, 0);
         assert.equal(events.at(-1).progress, 1);
         assert.ok(events.every((event, i) => !i || event.progress >= events[i - 1].progress));
       } finally {

@@ -229,7 +229,7 @@ test('metrics use a numeric allowlist and cannot transmit URLs, emote text or cr
         token: 'private-value',
       },
       stages: {render: {count: 1, totalMs: 4, maxMs: 4, headers: 'private-value'}, 'private-value': {count: 2}},
-      counters: {videoFrames: 1, commentText: 'private-value'},
+      counters: {videoFrames: 1, emoteFailures: 2, commentText: 'private-value'},
     },
   });
   job.finish();
@@ -238,6 +238,7 @@ test('metrics use a numeric allowlist and cannot transmit URLs, emote text or cr
     context = JSON.parse(body).context;
   assert.doesNotMatch(body, /private/);
   assert.equal(context.metrics.stages.render.totalMs, 4);
+  assert.equal(context.metrics.counters.emoteFailures, 2);
   assert.equal(context.metrics.encoder.hardwarePreference, 'prefer-hardware');
 });
 

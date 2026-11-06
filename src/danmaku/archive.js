@@ -1,3 +1,4 @@
+import {annotate} from '../shared/errors.js';
 import {commentTime, PLAYBACK_LATENCY} from './clock.js';
 
 export const ARCHIVE_BASE = 'https://data.bellaris.fans/';
@@ -33,11 +34,13 @@ export async function boundedFetch(url, options = {}) {
   );
   try {
     return await readBounded(url, {...options, signal: controller.signal});
-  } catch (error) {
-    if (controller.signal.aborted) throw controller.signal.reason;
-    if (error instanceof TypeError)
-      throw Object.assign(new Error('弹幕资源读取失败，请检查网络后重试。', {cause: error}), {retryable: true});
-    throw error;
+  } catch (caught) {
+    signal?.throwIfAborted();
+    let error = caught;
+    if (controller.signal.aborted) error = controller.signal.reason;
+    else if (error instanceof TypeError)
+      error = Object.assign(new Error('弹幕资源读取失败，请检查网络后重试。', {cause: error}), {retryable: true});
+    throw annotate(error, {operation: options.operation ?? 'archiveRead', target: 'network'});
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', abort);

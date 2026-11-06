@@ -106,14 +106,17 @@ test('three emotes load concurrently, decoded animation order and cleanup stay i
   assert.ok(owned.bitmaps.every(item => item.closed));
 });
 
-test('one failed image releases sibling decoders and every bitmap before rejecting', async t => {
+test('one failed image falls back while sibling images remain available', async t => {
   const owned = codecs(t, true);
   const fetcher = async url =>
     new Response(
       url.endsWith('.json') ? JSON.stringify(metadata(url)) : new Uint8Array([Number(url.match(/(\d+)\.png$/)[1])]),
       {headers: {'Content-Type': 'image/png'}},
     );
-  await assert.rejects(loadEmotes(comments, 1, 45, {fetcher}), /bitmap failed/);
+  const resources = await loadEmotes(comments, 1, 45, {fetcher});
+  assert.equal(resources.assets.get('[表情1]').failed, true);
+  assert.equal(resources.assets.get('[表情0]').frames.length, 2);
+  resources.close();
   assert.ok(owned.decoders.length >= 2);
   assert.ok(owned.decoders.every(item => item.closed));
   assert.ok(owned.images.every(item => item.closed));
@@ -216,7 +219,7 @@ test('prefetch keeps bounded compressed bytes without a decoder and demand reuse
   assert.ok(owned.decoders.every(item => item.closed));
 });
 
-test('failed speculative fetch and compressed budget overflow retry on demand', async t => {
+test('failed speculative fetch stays silent and retries only on demand', async t => {
   codecs(t);
   let requests = 0;
   const budget = {used: 0, compressed: 16 * 1024 * 1024};
@@ -235,7 +238,7 @@ test('failed speculative fetch and compressed budget overflow retry on demand', 
   assert.equal(budget.compressed, 16 * 1024 * 1024);
   budget.compressed = 0;
   await asset.prepare(0);
-  assert.equal(requests, 3);
+  assert.equal(requests, 2);
   resources.close();
   assert.equal(budget.compressed, 0);
 });
@@ -301,5 +304,103 @@ test('evicting an in-flight speculative asset cannot reserve bytes after it clos
   await asset.prefetch();
   assert.equal(budget.compressed, 0);
   assert.equal(budget.used, 0);
+  resources.close();
+});
+
+for (const failure of ['http', 'timeout', 'decode'])
+  test(`${failure} emote failure retries once, falls back once and releases its budget`, async t => {
+    const owned = codecs(t, failure === 'decode');
+    if (failure === 'timeout') t.mock.timers.enable({apis: ['setTimeout']});
+    const budget = {used: 0, compressed: 0},
+      counters = {};
+    let requests = 0;
+    const resources = await loadEmotes([comments[1]], 1, 45, {
+      lazy: true,
+      budget,
+      selected: new Map([['[表情1]', catalog.emotes[1]]]),
+      metrics: {start() {}, add: name => (counters[name] = (counters[name] ?? 0) + 1)},
+      fetcher: (_, {signal}) => {
+        requests++;
+        if (failure === 'timeout')
+          return new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+          });
+        return Promise.resolve(
+          failure === 'http' ? new Response('', {status: 404}) : new Response(new Uint8Array([1])),
+        );
+      },
+    });
+    const asset = resources.assets.get('[表情1]');
+    const pending = asset.prepare(0.2);
+    if (failure === 'timeout') {
+      t.mock.timers.tick(30000);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(requests, 2);
+      t.mock.timers.tick(30000);
+    }
+    await pending;
+    assert.equal(requests, 2);
+    assert.equal(asset.failed, true);
+    assert.equal(asset.needsPreparation(1), false);
+    await asset.prepare(1);
+    await asset.prefetch();
+    assert.equal(requests, 2);
+    assert.equal(counters.emoteFailures, 1);
+    assert.deepEqual(budget, {used: 0, compressed: 0});
+    assert.ok(owned.decoders.every(item => item.closed));
+    assert.ok(owned.images.every(item => item.closed));
+    assert.ok(owned.bitmaps.every(item => item.closed));
+    resources.close();
+  });
+
+test('a failed prefetch stays uncounted until its one demand retry also fails', async t => {
+  codecs(t);
+  let requests = 0;
+  const counters = {};
+  const resources = await loadEmotes([comments[0]], 1, 45, {
+    lazy: true,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    metrics: {start() {}, add: name => (counters[name] = (counters[name] ?? 0) + 1)},
+    fetcher: async () => {
+      requests++;
+      return new Response('', {status: 503});
+    },
+  });
+  const asset = resources.assets.get('[表情0]');
+  await asset.prefetch();
+  await asset.prefetch();
+  assert.equal(requests, 1);
+  assert.equal(counters.emoteFailures, undefined);
+  await asset.prepare(0);
+  assert.equal(requests, 2);
+  assert.equal(counters.emoteFailures, 1);
+  resources.close();
+});
+
+test('cancel with a non-AbortError reason propagates without retry or fallback', async t => {
+  codecs(t);
+  const controller = new AbortController(),
+    reason = new Error('archive failed');
+  let requests = 0;
+  const resources = await loadEmotes([comments[0]], 1, 45, {
+    lazy: true,
+    signal: controller.signal,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    metrics: {
+      start() {},
+      add(name) {
+        assert.notEqual(name, 'emoteFailures');
+      },
+    },
+    fetcher: (_, {signal}) =>
+      new Promise((resolve, reject) => {
+        requests++;
+        signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+      }),
+  });
+  const pending = resources.assets.get('[表情0]').prepare(0);
+  controller.abort(reason);
+  await assert.rejects(pending, error => error === reason);
+  assert.equal(requests, 1);
   resources.close();
 });

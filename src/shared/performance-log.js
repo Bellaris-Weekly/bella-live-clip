@@ -42,6 +42,7 @@ const counters = new Set([
   'mediaRequestBytes',
   'emotePrefetches',
   'emotePrefetchHits',
+  'emoteFailures',
   'longTaskMs',
   'longTasks',
   'videoFrames',

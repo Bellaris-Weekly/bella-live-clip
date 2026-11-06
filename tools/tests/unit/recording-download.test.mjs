@@ -53,7 +53,7 @@ test('eight concurrent reads finish out of order but yield in order and never re
   }
 });
 
-for (const concurrency of [6, 8])
+for (const concurrency of [3, 8])
   test(`${concurrency} downloads stay active beside a held fragment, then stop at the bounded window`, async () => {
     const metrics = createExportMetrics(),
       finish = new Map(),
@@ -93,6 +93,8 @@ for (const concurrency of [6, 8])
       assert.equal(active, 0);
       assert.equal(finish.size, concurrency + 1, 'a stalled consumer bounds completed responses too');
       assert.equal(bytes, (concurrency + 1) * size);
+      assert.equal(metrics.snapshot().stages.mediaRequest.count, finish.size);
+      assert.equal(metrics.snapshot().counters.mediaRequestBytes, bytes);
       assert.ok(bytes <= 64 * 1024 * 1024);
       assert.deepEqual(metrics.snapshot().gauges.downloadConcurrency, {current: concurrency, peak: concurrency});
       assert.deepEqual(metrics.snapshot().gauges.activeRequests, {current: 0, peak: concurrency});
