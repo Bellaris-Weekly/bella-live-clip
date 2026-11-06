@@ -24,6 +24,14 @@ export async function createDanmakuCompositor(
     signal,
     fetcher,
   });
+  const resources = await loadEmotes(events, record.room, ((appearance.fontSize ?? 45) * height) / 1080, {
+    signal,
+    fetcher,
+  });
+  return createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal, appearance});
+}
+
+export function createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal, appearance = {}}) {
   const style = {
     fontSize: 45,
     lineWidth: 2,
@@ -34,7 +42,6 @@ export async function createDanmakuCompositor(
     ...appearance,
   };
   const fontSize = (style.fontSize * height) / 1080;
-  const resources = await loadEmotes(events, record.room, fontSize, {signal, fetcher});
   try {
     const canvas = new OffscreenCanvas(width, height),
       overlay = new OffscreenCanvas(width, height);
@@ -60,7 +67,7 @@ export async function createDanmakuCompositor(
         height = fontSize * 1.2;
       for (const text of textTokens(event.text)) {
         const asset = resources.assets.get(text.normalize('NFC'));
-        if (asset) {
+        if (asset && !asset.failed) {
           parts.push({asset, x: width});
           width += asset.width;
           height = Math.max(height, asset.height);
@@ -81,12 +88,17 @@ export async function createDanmakuCompositor(
     }
     const layout = new DanmakuLayout(events, {width, height, measure, start: sourceTime(start) - PREROLL});
     return {
+      layout,
       render(sample, timestamp) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
         sample.draw(context, 0, 0, width, height);
         ink.clearRect(0, 0, width, height);
         for (const item of layout.advance(time)) {
+          if (item.parts.some(part => part.asset?.failed)) {
+            cache.delete(item.text);
+            Object.assign(item, measure(item));
+          }
           const x = layout.x(item, time);
           ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
           for (const part of item.parts) {

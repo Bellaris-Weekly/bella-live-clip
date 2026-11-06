@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {chromium} from 'playwright-core';
 
-test('outlined and shadowed compositor matches full-frame pixels at fractional positions, animation boundaries and empty frames', async () => {
+test('sprite compositor preserves direct-text appearance at fractional positions, animation boundaries and empty frames', async () => {
   const {outputFiles} = await build({
     entryPoints: ['tools/tests/e2e/compositor-page.js'],
     bundle: true,
@@ -53,9 +53,36 @@ test('outlined and shadowed compositor matches full-frame pixels at fractional p
     ]) {
       const result = await page.evaluate(size => window.checkCompositor(size), {width, height});
       assert.equal(result.compared, 17);
+      console.log('compositor pixels', JSON.stringify({width, height, ...result}));
+      assert.ok(result.meanDiff < 0.5, JSON.stringify(result));
+      assert.ok(result.changedFraction < 0.04, JSON.stringify(result));
     }
+    const isolated = await page.evaluate(() => window.inspectSpriteSampling());
+    console.log('isolated sprite sampling', JSON.stringify(isolated));
+    for (const item of isolated) {
+      if (item.scene !== 'moving' && item.scene !== 'overlap') assert.equal(item.maxDiff, 0, JSON.stringify(item));
+      if (item.scene === 'overlap') assert.ok(item.maxDiff <= 2, JSON.stringify(item));
+      assert.ok(item.meanDiff < 0.5, JSON.stringify(item));
+      assert.ok(item.changedFraction < 0.04, JSON.stringify(item));
+    }
+    const failure = await page.evaluate(() => window.checkFailedEmoteSprites());
+    console.log('failed emote sprite lifecycle', JSON.stringify(failure));
+    assert.deepEqual(failure.textParts, ['before', '[花]', 'after', '😀']);
+    assert.equal(failure.initial.metrics.counters.spriteRasters, 3);
+    assert.equal(failure.fallback.closed, 3, 'remeasured item releases every old text sprite');
+    assert.equal(failure.fallback.metrics.counters.spriteRasters, 7);
+    assert.equal(failure.reuse.metrics.counters.spriteRasters, 7);
+    assert.deepEqual(failure.cleared, {closed: 7, bytes: 0});
+    assert.equal(failure.rebuilt.metrics.counters.spriteRasters, 11);
+    assert.equal(failure.expired.closed, 11);
+    assert.equal(failure.expired.metrics.gauges.spriteBytes.current, 0);
+    for (const phase of ['initial', 'fallback', 'reuse', 'rebuilt', 'expired'])
+      assert.equal(failure[phase].maxDiff, 0, phase);
     const windowed = await page.evaluate(() => window.checkCompositor({width: 1920, height: 1080, streaming: true}));
     assert.equal(windowed.compared, 13);
+    console.log('compositor streaming pixels', JSON.stringify(windowed));
+    assert.ok(windowed.meanDiff < 0.5);
+    assert.ok(windowed.changedFraction < 0.04);
     const fixed = await page.evaluate(() => window.checkCompositor({width: 640, height: 360, fixed: true}));
     assert.ok(fixed.currentCalls < fixed.referenceCalls / 2, JSON.stringify(fixed));
     const directory = await mkdtemp(path.join(tmpdir(), 'bella-compositor-yuv-'));
@@ -81,6 +108,9 @@ test('outlined and shadowed compositor matches full-frame pixels at fractional p
         encoded,
       );
       assert.equal(result.compared, 17);
+      console.log('compositor YUV pixels', JSON.stringify(result));
+      assert.ok(result.meanDiff < 0.5);
+      assert.ok(result.changedFraction < 0.04);
     } finally {
       await rm(directory, {recursive: true, force: true});
     }

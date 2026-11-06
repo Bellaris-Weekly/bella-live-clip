@@ -2,6 +2,7 @@ import {VideoSample} from 'mediabunny';
 import {loadComments} from './archive.js';
 import {loadEmotes, textTokens, emoteFrame} from './emotes.js';
 import {DanmakuLayout, visibleComment} from './layout.js';
+import {createSpriteCache} from './sprite-cache.js';
 import {PREROLL} from './clock.js';
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -54,6 +55,41 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
     // Include the soft shadow in both dirty-row clearing and compositing.
     const shadowPadding = Math.ceil(ink.shadowBlur * 2 + Math.abs(ink.shadowOffsetY));
     const cache = new Map();
+    const sprites = createSpriteCache({metrics});
+    function drawText(target, item, part, x, y) {
+      target.font = part.font;
+      target.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
+      if (!part.emoji) {
+        target.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        target.strokeText(part.text, x, y);
+        target.shadowColor = 'transparent';
+      }
+      target.fillText(part.text, x, y);
+    }
+    function raster(item, part, x, y, maxBytes) {
+      // Preserve the first draw's subpixel phase. Fixed comments then use an
+      // integer bitmap translation instead of filtering an integer-phase glyph.
+      const phase = x - Math.floor(x);
+      const left = Math.floor(part.left + phase) - phase,
+        top = Math.floor(y + part.top) - y;
+      const w = Math.ceil(part.right - left),
+        h = Math.ceil(part.bottom - top);
+      const bytes = w * h * 4;
+      // Pathological long comments fall back to clipped canvas text.
+      if (!(w > 0 && h > 0) || w > 16384 || bytes > maxBytes) return null;
+      const surface = new OffscreenCanvas(w, h),
+        target = surface.getContext('2d');
+      target.textBaseline = 'top';
+      target.lineJoin = 'round';
+      target.lineWidth = ink.lineWidth;
+      target.strokeStyle = '#000';
+      target.shadowBlur = ink.shadowBlur;
+      target.shadowOffsetX = target.shadowOffsetY = height / 1080;
+      drawText(target, item, part, -left, -top);
+      // Complete deferred glyph/shadow rasterization once for this item part.
+      const image = surface.transferToImageBitmap();
+      return {image, left, top, bytes};
+    }
     function measure(event) {
       if (cache.has(event.text)) return cache.get(event.text);
       const parts = [];
@@ -76,6 +112,8 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               font,
               emoji,
               x: width,
+              left: -metrics.actualBoundingBoxLeft - ink.lineWidth - 2 - (emoji ? 0 : shadowPadding),
+              right: metrics.actualBoundingBoxRight + ink.lineWidth + 2 + (emoji ? 0 : shadowPadding),
               top: -metrics.actualBoundingBoxAscent - ink.lineWidth - 2 - (emoji ? 0 : shadowPadding),
               bottom: metrics.actualBoundingBoxDescent + ink.lineWidth + 2 + (emoji ? 0 : shadowPadding),
             });
@@ -95,6 +133,8 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       layout,
       clearMeasurements() {
         cache.clear();
+        sprites.clear();
+        previous = [];
       },
       render(sample, timestamp) {
         signal?.throwIfAborted();
@@ -107,8 +147,10 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         } finally {
           finishLayout?.();
         }
+        sprites.retain(active);
         for (const item of active) {
           if (item.parts.some(part => part.asset?.failed)) {
+            sprites.delete(item);
             cache.delete(item.text);
             Object.assign(item, measure(item));
           }
@@ -149,16 +191,11 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               if (Number.isFinite(top) && Number.isFinite(bottom)) {
                 if (bottom > top) rows.push([top, bottom]);
               } else rows.push([0, height]);
-              ink.fillStyle = `#${(Number(item.color ?? 0xffffff) & 0xffffff).toString(16).padStart(6, '0')}`;
               if (frame) ink.drawImage(frame, x, y);
               else {
-                ink.font = part.font;
-                if (!part.emoji) {
-                  ink.shadowColor = 'rgba(0, 0, 0, 0.5)';
-                  ink.strokeText(part.text, x, y);
-                  ink.shadowColor = 'transparent';
-                }
-                ink.fillText(part.text, x, y);
+                const sprite = sprites.get(item, part, limit => raster(item, part, x, y, limit));
+                if (sprite) ink.drawImage(sprite.image, x + sprite.left, y + sprite.top);
+                else drawText(ink, item, part, x, y);
               }
             }
             regions = [];
@@ -184,12 +221,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           const finishComposite = metrics?.start('overlayComposite');
           try {
             context.save();
+            context.globalAlpha = 0.65;
+            // One clipped layer preserves opacity across overlapping comments
+            // and avoids uploading a separate canvas for each occupied strip.
             context.beginPath();
             for (const [top, bottom] of regions) context.rect(0, top, width, bottom - top);
             context.clip();
-            context.globalAlpha = 0.65;
-            // Keep the original image transform: slicing drawImage's source can
-            // change browser sampling/rounding even at apparently identical size.
             context.drawImage(overlay, 0, 0);
             context.restore();
           } finally {
@@ -205,6 +242,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       },
       close() {
         resources.close();
+        sprites.clear();
         cache.clear();
         previous = regions = [];
         canvas.width = overlay.width = 1;

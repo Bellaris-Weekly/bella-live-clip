@@ -56,6 +56,8 @@ const counters = new Set([
   'emoteFrames',
   'overlayRedraws',
   'overlayReuses',
+  'spriteRasters',
+  'spriteHits',
 ]);
 const gauges = new Set([
   'downloadConcurrency',
@@ -65,6 +67,7 @@ const gauges = new Set([
   'emoteCompressedBytes',
   'activeComments',
   'waitingComments',
+  'spriteBytes',
 ]);
 const finite = value =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value * 10) / 10 : undefined;
