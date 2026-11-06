@@ -14,6 +14,8 @@ jobs:
     # 避免同一个 commit 跑两遍。
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    # 默认上限是 6 小时；镜像或网络卡住时尽快失败，重跑即可。
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -41,6 +43,8 @@ jobs:
         run: git diff --exit-code -- bella-live-clip.user.js
 
       - name: Install browser test dependencies
+        # 平时约 30 秒；Ubuntu 镜像偶尔极慢。
+        timeout-minutes: 8
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -53,6 +57,7 @@ jobs:
     needs: test
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
