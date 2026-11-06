@@ -62,11 +62,11 @@ window.checkCompositor = async ({width, height, encoded, fixed = false, streamin
       ...options,
       appearance: {
         fontSize: 40,
-        lineWidth: 4,
-        shadowColor: 'rgba(0, 0, 0, 0.75)',
-        shadowBlur: 3,
-        shadowOffsetX: 2,
-        shadowOffsetY: 2,
+        lineWidth: 2,
+        shadowColor: 'rgba(0, 0, 0, 0.5)',
+        shadowBlur: 2,
+        shadowOffsetX: 1,
+        shadowOffsetY: 1,
       },
     },
   );

@@ -47,10 +47,10 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
     ink.font = `600 ${fontSize}px ${FONT}`;
     ink.textBaseline = 'top';
     ink.lineJoin = 'round';
-    ink.lineWidth = (4 * height) / 1080;
+    ink.lineWidth = (2 * height) / 1080;
     ink.strokeStyle = '#000';
-    ink.shadowBlur = (3 * height) / 1080;
-    ink.shadowOffsetX = ink.shadowOffsetY = (2 * height) / 1080;
+    ink.shadowBlur = (2 * height) / 1080;
+    ink.shadowOffsetX = ink.shadowOffsetY = height / 1080;
     // Include the soft shadow in both dirty-row clearing and compositing.
     const shadowPadding = Math.ceil(ink.shadowBlur * 2 + Math.abs(ink.shadowOffsetY));
     const cache = new Map();
@@ -150,7 +150,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               else {
                 ink.font = part.font;
                 if (!part.emoji) {
-                  ink.shadowColor = 'rgba(0, 0, 0, 0.75)';
+                  ink.shadowColor = 'rgba(0, 0, 0, 0.5)';
                   ink.strokeText(part.text, x, y);
                   ink.shadowColor = 'transparent';
                 }
