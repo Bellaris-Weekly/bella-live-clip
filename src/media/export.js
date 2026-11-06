@@ -9,6 +9,8 @@ import {requestWithRetry, LIVE_MISSING_RETRIES} from '../services/retry-request.
 import {createExportMetrics} from './export-metrics.js';
 import {annotate, cleanUp, storageStep} from '../shared/errors.js';
 
+const SELECTION_DOWNLOAD_CONCURRENCY = 8;
+
 // The caller owns the Input so HLS and Blob inputs use the same conversion path.
 export async function convertInput(
   input,
@@ -226,6 +228,7 @@ export async function exportSelection(
       if (cache.has(key)) return cache.get(key);
       resources.add(key);
       const finishRequest = metrics?.start('mediaRequest');
+      metrics?.gauge('activeRequests', ++activeRequests);
       let response;
       try {
         response = await requestWithRetry(
@@ -243,11 +246,13 @@ export async function exportSelection(
         );
       } finally {
         finishRequest?.();
+        metrics?.gauge('activeRequests', --activeRequests);
       }
       signal?.throwIfAborted();
       const data = new Uint8Array(response.data);
       bytes += data.byteLength;
       metrics?.add('downloadedBytes', data.byteLength);
+      metrics?.add('mediaRequestBytes', data.byteLength);
       downloaded.add(key);
       report();
       cache.set(key, data);
@@ -259,6 +264,7 @@ export async function exportSelection(
       }
       return data;
     }
+    let activeRequests = 0;
     try {
       if (danmaku) {
         const {prepareComments} = await import('../danmaku/archive.js');
@@ -273,22 +279,33 @@ export async function exportSelection(
       if (danmaku) {
         message = '正在读取弹幕媒体时钟';
         report();
-        const {partOrigin, firstVideoDecodeTime} = await import('../danmaku/clock.js');
-        const [first, init] = await Promise.all([
-          read(group.firstSegment),
-          group.firstMap ? read(group.firstMap) : null,
-        ]);
-        const probe = new Input({source: new BlobSource(new Blob(init ? [init, first] : [first])), formats: [MP4]});
+        const finishOrigin = metrics?.start('originProbe');
         try {
-          const track = await probe.getPrimaryVideoTrack();
-          if (!track) throw new Error('首分片没有视频轨，无法对齐弹幕。');
-          origin = partOrigin(group.part, firstVideoDecodeTime(first, track.id, await track.getTimeResolution()));
+          const {partOrigin, firstVideoDecodeTime} = await import('../danmaku/clock.js');
+          const [first, init] = await Promise.all([
+            read(group.firstSegment),
+            group.firstMap ? read(group.firstMap) : null,
+          ]);
+          const probe = new Input({source: new BlobSource(new Blob(init ? [init, first] : [first])), formats: [MP4]});
+          try {
+            const track = await probe.getPrimaryVideoTrack();
+            if (!track) throw new Error('首分片没有视频轨，无法对齐弹幕。');
+            origin = partOrigin(group.part, firstVideoDecodeTime(first, track.id, await track.getTimeResolution()));
+          } finally {
+            probe.dispose();
+          }
         } finally {
-          probe.dispose();
+          finishOrigin?.();
         }
       }
       message = '正在整理录像';
-      const expanded = await extendPlan(group, plan, read, signal, Boolean(danmaku));
+      const finishExtend = metrics?.start('planExtend');
+      let expanded;
+      try {
+        expanded = await extendPlan(group, plan, read, signal, Boolean(danmaku));
+      } finally {
+        finishExtend?.();
+      }
       if (!danmaku) for (const segment of expanded.segments) resources.add(segmentKey(segment));
       const savingApi = {
         async request(url, options) {
@@ -300,14 +317,17 @@ export async function exportSelection(
             return {data};
           }
           const finishRequest = metrics?.start('mediaRequest');
+          metrics?.gauge('activeRequests', ++activeRequests);
           let response;
           try {
             response = await api.request(url, options);
           } finally {
             finishRequest?.();
+            metrics?.gauge('activeRequests', --activeRequests);
           }
           bytes += response.data.byteLength;
           metrics?.add('downloadedBytes', response.data.byteLength);
+          metrics?.add('mediaRequestBytes', response.data.byteLength);
           downloaded.add(key);
           return response;
         },
@@ -361,10 +381,11 @@ export async function exportSelection(
         continue;
       }
       const finishMedia = metrics?.start('mediaPrepare');
+      metrics?.gauge('downloadConcurrency', SELECTION_DOWNLOAD_CONCURRENCY);
       try {
         await saveRecording(savingApi, [expanded], temporary.handle, {
           signal,
-          concurrency: 2,
+          concurrency: SELECTION_DOWNLOAD_CONCURRENCY,
           storageTarget: 'temporary',
           missingRetries,
           onSegment(entry) {

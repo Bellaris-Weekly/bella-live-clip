@@ -1,12 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createRecordingDownload} from '../../../src/media/recording-download.js';
+import {createExportMetrics} from '../../../src/media/export-metrics.js';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const groups = count => [
   {segments: Array.from({length: count}, (_, i) => ({url: String(i), duration: 2, range: {offset: i * 4, length: 4}}))},
 ];
 
-test('six concurrent reads finish out of order but yield in order and never refetch a consumed segment', async () => {
+test('eight concurrent reads finish out of order but yield in order and never refetch a consumed segment', async () => {
   const starts = [],
     finish = new Map();
   let active = 0,
@@ -28,11 +29,11 @@ test('six concurrent reads finish out of order but yield in order and never refe
   try {
     const first = iterator.next();
     await tick();
-    assert.equal(starts.length, 6);
-    assert.equal(peak, 6);
-    for (const url of ['5', '4', '3', '2', '1']) finish.get(url)();
+    assert.equal(starts.length, 8);
+    assert.equal(peak, 8);
+    for (const url of ['7', '6', '5', '4', '3', '2', '1']) finish.get(url)();
     await tick();
-    assert.equal(starts.length, 6, 'prefetch must not run through the whole recording');
+    assert.equal(starts.length, 9, 'prefetch must not run through the whole recording');
     finish.get('0')();
     assert.equal((await first).value.index, 0);
     for (let i = 1; i < 12; i++) {
@@ -51,6 +52,55 @@ test('six concurrent reads finish out of order but yield in order and never refe
     await download.close();
   }
 });
+
+for (const concurrency of [6, 8])
+  test(`${concurrency} downloads stay active beside a held fragment, then stop at the bounded window`, async () => {
+    const metrics = createExportMetrics(),
+      finish = new Map(),
+      items = groups(30),
+      size = 6 * 1024 * 1024;
+    for (const segment of items[0].segments) segment.range.length = size;
+    let active = 0,
+      bytes = 0;
+    const download = createRecordingDownload(
+      {
+        async request(url, {signal}) {
+          active++;
+          try {
+            await new Promise((resolve, reject) => {
+              finish.set(url, resolve);
+              signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+            });
+            return {data: new ArrayBuffer(size)};
+          } finally {
+            active--;
+          }
+        },
+      },
+      items,
+      {concurrency, metrics, onRead: size => (bytes += size)},
+    );
+    const iterator = download.segments();
+    try {
+      const first = iterator.next();
+      await tick();
+      assert.equal(active, concurrency);
+      finish.get('0')();
+      assert.equal((await first).value.index, 0);
+      assert.equal(active, concurrency, 'consuming one fragment must leave every download slot available');
+      for (const done of finish.values()) done();
+      await tick();
+      assert.equal(active, 0);
+      assert.equal(finish.size, concurrency + 1, 'a stalled consumer bounds completed responses too');
+      assert.equal(bytes, (concurrency + 1) * size);
+      assert.ok(bytes <= 64 * 1024 * 1024);
+      assert.deepEqual(metrics.snapshot().gauges.downloadConcurrency, {current: concurrency, peak: concurrency});
+      assert.deepEqual(metrics.snapshot().gauges.activeRequests, {current: 0, peak: concurrency});
+    } finally {
+      await iterator.return();
+      await download.close();
+    }
+  });
 
 test('byte reservations stop prefetch at the budget and consumption releases space', async () => {
   const seen = [];

@@ -473,17 +473,125 @@ test('oversized download fails before returning a partial file; cancellation sto
   assert.equal(queries, before);
 });
 
-test('normal operation logs have a per-operation budget and retry remains idempotent at the limit', async t => {
-  const {env} = database(t);
-  const context = {operation: {id: 'export-123'}};
-  for (let i = 0; i < 12; i++)
-    assert.equal((await worker.fetch(request(sample({id: `normal-${i}`, context})), env)).status, 201);
-  assert.equal((await worker.fetch(request(sample({id: 'normal-over', context})), env)).status, 429);
-  assert.equal((await worker.fetch(request(sample({id: 'normal-0', context})), env)).status, 200);
-  assert.equal(
-    (await worker.fetch(request(sample({id: 'other-export', context: {operation: {id: 'export-456'}}})), env)).status,
-    201,
+test('operation updates collapse legacy ids, enforce ordering/rate and preserve first receipt', async t => {
+  const {db, env} = database(t);
+  const log = (sequence, outcome = 'progress', source = 'test-plugin') =>
+    sample({
+      id: `export-123:${sequence}`,
+      source,
+      event: `export_${outcome}`,
+      context: {
+        operation: {id: 'export-123', sequence, outcome},
+        timeline: [{elapsedMs: sequence * 10000, stage: outcome}],
+      },
+    });
+  assert.equal((await worker.fetch(request(log(0, 'started')), env)).status, 201);
+  const first = db.prepare('SELECT * FROM logs').get();
+  assert.equal(first.id, 'export-123');
+  assert.equal(JSON.parse(first.context).operation.firstReceivedAt, first.received_at);
+  assert.equal((await worker.fetch(request(log(1)), env)).status, 429);
+  assert.equal((await worker.fetch(request(log(0)), env)).status, 200, 'retry remains idempotent');
+  db.prepare('UPDATE logs SET received_at = ?').run(new Date(Date.now() - 6000).toISOString());
+  assert.equal((await worker.fetch(request(log(2)), env)).status, 201);
+  assert.equal((await worker.fetch(request(log(1)), env)).status, 200, 'out-of-order ignored');
+  assert.equal((await worker.fetch(request(log(3, 'completed')), env)).status, 201, 'terminal bypasses interval');
+  assert.equal((await worker.fetch(request(log(2)), env)).status, 200);
+  assert.equal((await worker.fetch(request(log(4)), env)).status, 200, 'terminal cannot become a heartbeat');
+  const rows = db.prepare('SELECT * FROM logs').all();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].event, 'export_completed');
+  assert.equal(JSON.parse(rows[0].context).operation.sequence, 3);
+  assert.equal(JSON.parse(rows[0].context).operation.firstReceivedAt, first.received_at);
+  assert.deepEqual(JSON.parse(rows[0].context).timeline, [{elapsedMs: 30000, stage: 'completed'}]);
+  assert.equal((await worker.fetch(request(log(0, 'started', 'other-source')), env)).status, 201);
+});
+
+test('operation ordering uses the explicit sequence and never infers one from the event id', async t => {
+  const {db, env} = database(t);
+  for (const [id, sequence, expected] of [
+    ['op:99', undefined, 0],
+    ['op:100', 1, 1],
+  ]) {
+    const response = await worker.fetch(
+      request(sample({id, context: {operation: {id: 'op', sequence, outcome: 'completed'}}})),
+      env,
+    );
+    assert.equal(response.status, 201);
+    assert.equal(JSON.parse(db.prepare('SELECT context FROM logs').get().context).operation.sequence, expected);
+  }
+});
+
+test('SQL upsert checks sequence atomically when concurrent reads see the same row', async t => {
+  const {db, env} = database(t);
+  const base = {id: 'op', sequence: 0, outcome: 'started'};
+  await worker.fetch(request(sample({context: {operation: base}})), env);
+  const prepare = env.LOGS_DB.prepare;
+  let reads = 0,
+    release;
+  const gate = new Promise(resolve => {
+    release = resolve;
+  });
+  env.LOGS_DB.prepare = sql => {
+    const query = prepare(sql);
+    if (!sql.startsWith('SELECT received_at')) return query;
+    return {
+      bind(...params) {
+        const bound = query.bind(...params);
+        return {
+          ...bound,
+          async first() {
+            const value = await bound.first();
+            if (++reads === 2) release();
+            await gate;
+            return value;
+          },
+        };
+      },
+    };
+  };
+  await Promise.all(
+    [5, 3].map(sequence =>
+      worker.fetch(
+        request(
+          sample({
+            id: `op:${sequence}`,
+            context: {operation: {...base, sequence, outcome: 'completed'}},
+          }),
+        ),
+        env,
+      ),
+    ),
   );
+  assert.equal(JSON.parse(db.prepare('SELECT context FROM logs').get().context).operation.sequence, 5);
+});
+
+test('operation migration collapses existing rows and keeps first receive time and ordinary logs', t => {
+  const {db} = database(t);
+  const insert = db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  for (const sequence of [2, 0, 1])
+    insert.run(
+      's',
+      `op:${sequence}`,
+      `2026-01-01T00:00:0${sequence}.000Z`,
+      'info',
+      sequence === 2 ? 'export_completed' : 'export_progress',
+      '1',
+      'm',
+      JSON.stringify({operation: {id: 'op', sequence}}),
+    );
+  insert.run('s', 'plain', '2026-01-01', 'error', 'e', '1', 'm', '{}');
+  db.exec(readFileSync(new URL('../../../server/logs/migrations/0003_operation_rows.sql', import.meta.url), 'utf8'));
+  const rows = db.prepare('SELECT * FROM logs ORDER BY id').all();
+  assert.deepEqual(
+    rows.map(row => row.id),
+    ['op', 'plain'],
+  );
+  assert.equal(rows[0].event, 'export_completed');
+  assert.deepEqual(JSON.parse(rows[0].context).operation, {
+    id: 'op',
+    sequence: 2,
+    firstReceivedAt: '2026-01-01T00:00:00.000Z',
+  });
 });
 
 test('all log reads live beneath /admin; old public routes return 404 without touching storage', async () => {

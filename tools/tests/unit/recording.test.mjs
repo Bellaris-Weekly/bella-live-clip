@@ -202,7 +202,7 @@ for (const kind of ['plain', 'map'])
       api = mockApi(data, kind, 10);
     let earlyWrite = false;
     const file = disk(() => {
-      if (!api.seen.includes('https://example.com/part8')) earlyWrite = true;
+      if (!api.seen.includes('https://example.com/part9')) earlyWrite = true;
     });
     await saveRecording(
       api,
@@ -266,7 +266,7 @@ test('写盘后网络中断会保留文件和进度，只重新请求失败分�
     return create();
   };
   api.request = async (url, options) => {
-    if (url.endsWith('part8') && attempts++ === 0) {
+    if (url.endsWith('part9') && attempts++ === 0) {
       assert.ok(file.writes.length > 0);
       throw new RequestError('temporary offline', {retryable: true});
     }

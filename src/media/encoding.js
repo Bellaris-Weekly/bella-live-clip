@@ -162,6 +162,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         } finally {
           finishRender?.();
         }
+        metrics?.firstFrame();
         const frame = rendered ?? sample;
         frame.setTimestamp(clippedStart - origin);
         frame.setDuration(clippedEnd - clippedStart);

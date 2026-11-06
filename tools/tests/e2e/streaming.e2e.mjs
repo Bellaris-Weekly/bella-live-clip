@@ -152,6 +152,7 @@ test(
       }
       assert.equal(state.metrics.stages.render.count, state.result.videoTimes.length);
       assert.equal(state.metrics.encoder.width, fullHD ? 1920 : 640);
+      assert.deepEqual(state.metrics.gauges.downloadConcurrency, {current: 6, peak: 6});
     } finally {
       await page.close();
     }
@@ -231,7 +232,7 @@ test(
 );
 
 test(
-  'a future emote is not downloaded until it appears and cannot block earlier windows',
+  'future emote bytes prefetch without blocking earlier frames and demand waits for the same request',
   {timeout: 30000},
   async () => {
     const page = await open();
@@ -240,7 +241,7 @@ test(
       await page.waitForFunction(() => window.lazyState.blocked);
       const before = await page.evaluate(() => window.lazyState);
       assert.equal(before.rendered, 4);
-      assert.equal(before.beforeImages, 0);
+      assert.equal(before.beforeImages, 1);
       assert.equal(before.images, 1);
       assert.equal(before.done, undefined);
       await page.evaluate(() => window.releaseLazyResource());
@@ -334,7 +335,7 @@ test('catalog prefetch overlaps earlier frames, retries on demand, and cancels c
   const page = await open();
   try {
     assert.deepEqual(await page.evaluate(() => window.checkCatalogPrefetch(false)), {
-      before: {indexes: 1, images: 0},
+      before: {indexes: 2, images: 0},
       indexes: 2,
       images: 1,
       canceled: false,
@@ -344,6 +345,19 @@ test('catalog prefetch overlaps earlier frames, retries on demand, and cancels c
       indexes: 1,
       images: 0,
       canceled: true,
+    });
+  } finally {
+    await page.close();
+  }
+});
+
+test('emote catalog starts alongside the initial archive window', {timeout: 30000}, async () => {
+  const page = await open();
+  try {
+    assert.deepEqual(await page.evaluate(() => window.checkInitialCatalogOverlap()), {
+      catalogStarted: true,
+      readStarted: true,
+      count: 1,
     });
   } finally {
     await page.close();

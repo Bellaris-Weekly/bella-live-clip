@@ -1,5 +1,7 @@
 import {requestWithRetry} from '../services/retry-request.js';
 
+export const RECORDING_DOWNLOAD_CONCURRENCY = 8;
+
 // A bounded ordered window: downloads overlap, consumption keeps playlist order.
 // Unknown response sizes can exceed the byte budget only by the active window.
 export function createRecordingDownload(
@@ -7,7 +9,7 @@ export function createRecordingDownload(
   groups,
   {
     signal,
-    concurrency = 6,
+    concurrency = RECORDING_DOWNLOAD_CONCURRENCY,
     maxBytes = 64 * 1024 * 1024,
     onRead = () => {},
     onRetry = () => {},
@@ -16,6 +18,8 @@ export function createRecordingDownload(
     missingRetries = 0,
   } = {},
 ) {
+  metrics?.gauge('downloadConcurrency', concurrency);
+  let activeRequests = 0;
   const items = groups.flatMap((group, groupIndex) => group.segments.map(segment => ({segment, groupIndex})));
   const controller = new AbortController(),
     entries = new Map(),
@@ -39,6 +43,7 @@ export function createRecordingDownload(
   }
   async function read(segment) {
     const finish = metrics?.start('mediaRequest');
+    metrics?.gauge('activeRequests', ++activeRequests);
     try {
       const response = await requestWithRetry(
         api,
@@ -49,9 +54,11 @@ export function createRecordingDownload(
       controller.signal.throwIfAborted();
       const data = new Uint8Array(response.data);
       onRead(data.byteLength);
+      metrics?.add('mediaRequestBytes', data.byteLength);
       return data;
     } finally {
       finish?.();
+      metrics?.gauge('activeRequests', --activeRequests);
     }
   }
   function pump() {
@@ -60,7 +67,9 @@ export function createRecordingDownload(
       active < concurrency &&
       next < items.length &&
       next < limit() &&
-      next < cursor + concurrency
+      // The fragment being consumed must not take a network slot. Retain at
+      // most that fragment plus one window, even if the head request is slow.
+      next < cursor + concurrency + 1
     ) {
       const reservation = items[next].segment.range?.length ?? average;
       if (next !== cursor && held + reserved + reservation > maxBytes) break;

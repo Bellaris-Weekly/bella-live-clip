@@ -9,6 +9,43 @@ import {formatBytes, formatDuration} from '../shared/format.js';
 const NO_FILE_SAVING = '当前浏览器不支持保存文件，请使用 Chrome 或 Edge。';
 const MP4_FILE = {description: 'MP4 视频', accept: {'video/mp4': ['.mp4']}};
 
+// The picker must be invoked before any await. Its rejection also cancels
+// preparation that has already started, including temporary media downloads.
+export async function withExportPicker(pick, signal, metrics, work) {
+  const controller = new AbortController();
+  const cancel = () => controller.abort(signal.reason);
+  signal?.addEventListener('abort', cancel, {once: true});
+  if (signal?.aborted) cancel();
+  const finish = metrics.start('pickerWait');
+  let rejectAbort;
+  const stopped = new Promise((_, reject) => {
+    rejectAbort = reject;
+  });
+  void stopped.catch(() => {});
+  const onAbort = () => rejectAbort(controller.signal.reason);
+  controller.signal.addEventListener('abort', onAbort, {once: true});
+  if (controller.signal.aborted) onAbort();
+  try {
+    const picked = Promise.resolve(pick())
+      .catch(error => {
+        controller.abort(error);
+        throw error;
+      })
+      .finally(finish);
+    const destination = Promise.race([picked, stopped]);
+    void destination.catch(() => {});
+    return await work(destination, controller.signal);
+  } catch (error) {
+    controller.abort(error);
+    throw controller.signal.reason;
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+    controller.signal.removeEventListener('abort', onAbort);
+    finish();
+    metrics.close();
+  }
+}
+
 // `session` reads the open recording's live state. Each export copies what it
 // needs before its first await, so a later page change cannot alter a running one.
 export function createExportActions({
@@ -51,9 +88,15 @@ export function createExportActions({
       precise: session.exportMode() === 'precise',
       onProgress,
       metrics,
-      fileHandle: destination,
+      fileHandle: {
+        async createWritable(...args) {
+          const handle = await destination;
+          signal.throwIfAborted();
+          return handle.createWritable(...args);
+        },
+      },
     });
-    showSaved({...output, name: destination.name});
+    showSaved({...output, name: (await destination).name});
     return output;
   }
 
@@ -73,7 +116,11 @@ export function createExportActions({
       createTemporary: options => createTemporaryMedia({...options, storage}),
       // One picked file. A selection across a stream break would need several.
       maxFiles: 1,
-      createFile: () => ({handle: destination, name: destination.name, remove: async () => {}}),
+      createFile: async () => {
+        const handle = await destination;
+        signal.throwIfAborted();
+        return {handle, name: handle.name, remove: async () => {}};
+      },
       onSaved: showSaved,
     });
   }
@@ -89,43 +136,48 @@ export function createExportActions({
       async (signal, diagnostic) => {
         diagnostic.stage('select_destination');
         if (!saveFilePicker || (!submission && !storage?.getDirectory)) throw new Error(NO_FILE_SAVING);
-        // Pick the destination before the first network await, while click activation
-        // is still live. A clip stays inside one segment, so it is always one file; a
-        // file picker also works in Downloads/Desktop, which Chrome refuses as directories.
-        const destination = await saveFilePicker({
-          suggestedName: fileName(record, selection.start, selection.end),
-          types: [MP4_FILE],
-        });
-        signal.throwIfAborted();
-        if (submission) session.player().cancel();
-        else session.player().pause();
-        clearDownloads();
-        status('正在导出…');
-        diagnostic.stage('preparing');
-        const metrics = createExportMetrics();
+        const metrics = createExportMetrics({observeLongTasks: true});
         diagnostic.observe?.(metrics);
-        const updateProgress = limitProgress(progress => {
-          renderExportProgress($('progress'), status, progress, submission);
-          if (submission && progress.estimatedBytes !== null)
-            $('estimatedSize').textContent = `约 ${formatBytes(progress.estimatedBytes)}`;
-        });
-        const onProgress = progress => {
-          diagnostic.progress(progress);
-          updateProgress(progress);
-        };
-        const result = await (submission ? exportVideo : exportClip)(record, selection, destination, {
+        return withExportPicker(
+          () =>
+            saveFilePicker({
+              suggestedName: fileName(record, selection.start, selection.end),
+              types: [MP4_FILE],
+            }),
           signal,
-          onProgress,
-          danmaku,
           metrics,
-        });
-        const files = Array.isArray(result) ? result : [result];
-        diagnostic.finish?.({
-          files: files.length,
-          writtenBytes: files.reduce((sum, file) => sum + (file?.bytes ?? 0), 0),
-          mediaSeconds: selection.end - selection.start,
-        });
-        status('导出完成。');
+          async (destination, signal) => {
+            signal.throwIfAborted();
+            if (submission) session.player().cancel();
+            else session.player().pause();
+            clearDownloads();
+            status('正在导出…');
+            diagnostic.stage('preparing');
+            const updateProgress = limitProgress(progress => {
+              renderExportProgress($('progress'), status, progress, submission);
+              if (submission && progress.estimatedBytes !== null)
+                $('estimatedSize').textContent = `约 ${formatBytes(progress.estimatedBytes)}`;
+            });
+            const onProgress = progress => {
+              diagnostic.progress(progress);
+              updateProgress(progress);
+            };
+            const result = await (submission ? exportVideo : exportClip)(record, selection, destination, {
+              signal,
+              onProgress,
+              danmaku,
+              metrics,
+            });
+            const files = Array.isArray(result) ? result : [result];
+            metrics.close();
+            diagnostic.finish?.({
+              files: files.length,
+              writtenBytes: files.reduce((sum, file) => sum + (file?.bytes ?? 0), 0),
+              mediaSeconds: selection.end - selection.start,
+            });
+            status('导出完成。');
+          },
+        );
       },
       'export',
       {
@@ -153,67 +205,79 @@ export function createExportActions({
         diagnostic.stage('select_destination');
         if (!saveFilePicker) throw new Error(NO_FILE_SAVING);
         const suffix = segments.length > 1 ? `_整场_第${index + 1}段` : '_整场';
-        const handle = await saveFilePicker({
-          suggestedName: fileName(record, bounds.start, bounds.end, suffix),
-          types: [MP4_FILE],
-        });
-        signal.throwIfAborted();
-        session.player().pause();
-        clearDownloads();
-        status('正在导出整场…');
-        diagnostic.stage('preparing');
-        const metrics = createExportMetrics();
+        const metrics = createExportMetrics({observeLongTasks: true});
         diagnostic.observe?.(metrics);
-        const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === index);
-        signal.throwIfAborted();
-        wholeStop = new AbortController();
-        refreshControls();
-        const {saveRecording} = await import('../media/recording.js');
-        const result = await saveRecording(mediaApi, groups, handle, {
+        return withExportPicker(
+          () =>
+            saveFilePicker({
+              suggestedName: fileName(record, bounds.start, bounds.end, suffix),
+              types: [MP4_FILE],
+            }),
           signal,
           metrics,
-          stopSignal: wholeStop.signal,
-          // Hours of downloaded media must survive one unreadable fragment.
-          keepPartial: true,
-          missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
-          onProgress: progress => {
-            diagnostic.progress(progress);
-            if (progress.progress !== undefined) $('progress').value = progress.progress * 100;
-            if (progress.phase === 'stopping' || progress.phase === 'finalizing') {
-              finishing = true;
-              refreshControls();
-              status('正在保存…');
-            } else if (progress.phase !== 'saved') {
-              const state = progress.reconnecting ? `网络波动，正在重连（第 ${progress.attempt} 次）` : '导出整场';
-              status(`${state} · ${formatBytes(progress.speed)}/秒 · 已写入 ${formatBytes(progress.written)}`);
+          async (destination, signal) => {
+            signal.throwIfAborted();
+            session.player().pause();
+            clearDownloads();
+            status('正在导出整场…');
+            diagnostic.stage('preparing');
+            const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === index);
+            signal.throwIfAborted();
+            wholeStop = new AbortController();
+            refreshControls();
+            const {saveRecording} = await import('../media/recording.js');
+            // Whole recordings write immediately; overlap playlist loading only.
+            const handle = await destination;
+            signal.throwIfAborted();
+            const result = await saveRecording(mediaApi, groups, handle, {
+              signal,
+              metrics,
+              stopSignal: wholeStop.signal,
+              // Hours of downloaded media must survive one unreadable fragment.
+              keepPartial: true,
+              missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
+              onProgress: progress => {
+                diagnostic.progress(progress);
+                if (progress.progress !== undefined) $('progress').value = progress.progress * 100;
+                if (progress.phase === 'stopping' || progress.phase === 'finalizing') {
+                  finishing = true;
+                  refreshControls();
+                  status('正在保存…');
+                } else if (progress.phase !== 'saved') {
+                  const state = progress.reconnecting ? `网络波动，正在重连（第 ${progress.attempt} 次）` : '导出整场';
+                  status(`${state} · ${formatBytes(progress.speed)}/秒 · 已写入 ${formatBytes(progress.written)}`);
+                }
+              },
+            }).catch(error => {
+              throw signal.aborted ? error : mediaStorageError(error);
+            });
+            if (!result.saved) {
+              metrics.close();
+              diagnostic.finish?.({status: 'canceled', files: 0});
+              status('已停止。');
+              return;
             }
+            metrics.close();
+            diagnostic.finish?.({
+              status: result.interrupted ? 'partial' : result.stopped ? 'stopped' : 'completed',
+              error: result.interrupted,
+              files: 1,
+              writtenBytes: result.bytes,
+              mediaSeconds: result.duration,
+            });
+            status(
+              result.interrupted
+                ? `录像分片读取失败${result.interrupted.status ? `（HTTP ${result.interrupted.status}）` : ''}，已保存读取到的部分。`
+                : result.stopped
+                  ? '已停止。'
+                  : '导出完成。',
+              Boolean(result.interrupted),
+            );
+            const message = document.createElement('p');
+            message.textContent = `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
+            $('downloads').append(message);
           },
-        }).catch(error => {
-          throw signal.aborted ? error : mediaStorageError(error);
-        });
-        if (!result.saved) {
-          diagnostic.finish?.({status: 'canceled', files: 0});
-          status('已停止。');
-          return;
-        }
-        diagnostic.finish?.({
-          status: result.interrupted ? 'partial' : result.stopped ? 'stopped' : 'completed',
-          error: result.interrupted,
-          files: 1,
-          writtenBytes: result.bytes,
-          mediaSeconds: result.duration,
-        });
-        status(
-          result.interrupted
-            ? `录像分片读取失败${result.interrupted.status ? `（HTTP ${result.interrupted.status}）` : ''}，已保存读取到的部分。`
-            : result.stopped
-              ? '已停止。'
-              : '导出完成。',
-          Boolean(result.interrupted),
         );
-        const message = document.createElement('p');
-        message.textContent = `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
-        $('downloads').append(message);
       },
       'export',
       {action: 'recording_download', selection: {...bounds}, mode: 'whole'},

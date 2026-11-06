@@ -185,3 +185,121 @@ test('canceling an in-flight lazy bitmap releases a late result and its byte res
   assert.ok(owned.bitmaps.every(bitmap => bitmap.closed));
   assert.ok(owned.images.every(image => image.closed));
 });
+
+test('prefetch keeps bounded compressed bytes without a decoder and demand reuses them', async t => {
+  const owned = codecs(t),
+    budget = {used: 0, compressed: 0};
+  let requests = 0;
+  const counters = {};
+  const resources = await loadEmotes([comments[0]], 1, 45, {
+    lazy: true,
+    budget,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    metrics: {start() {}, add: name => (counters[name] = (counters[name] ?? 0) + 1)},
+    fetcher: async () => {
+      requests++;
+      return new Response(new Uint8Array([0]));
+    },
+  });
+  const asset = resources.assets.get('[表情0]');
+  await Promise.all([asset.prefetch(), asset.prefetch()]);
+  assert.equal(requests, 1);
+  assert.equal(owned.decoders.length, 0);
+  assert.equal(budget.compressed, 1);
+  await asset.prepare(0);
+  assert.equal(requests, 1);
+  assert.equal(counters.emotePrefetches, 1);
+  assert.equal(counters.emotePrefetchHits, 1);
+  resources.close();
+  assert.equal(budget.used, 0);
+  assert.equal(budget.compressed, 0);
+  assert.ok(owned.decoders.every(item => item.closed));
+});
+
+test('failed speculative fetch and compressed budget overflow retry on demand', async t => {
+  codecs(t);
+  let requests = 0;
+  const budget = {used: 0, compressed: 16 * 1024 * 1024};
+  const resources = await loadEmotes([comments[0]], 1, 45, {
+    lazy: true,
+    budget,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    fetcher: async () => {
+      if (++requests === 1) throw new Error('speculation failed');
+      return new Response(new Uint8Array([0]));
+    },
+  });
+  const asset = resources.assets.get('[表情0]');
+  await asset.prefetch();
+  await asset.prefetch();
+  assert.equal(budget.compressed, 16 * 1024 * 1024);
+  budget.compressed = 0;
+  await asset.prepare(0);
+  assert.equal(requests, 3);
+  resources.close();
+  assert.equal(budget.compressed, 0);
+});
+
+test('abort closes a speculative fetch and ignores late bytes without creating decoders', async t => {
+  const owned = codecs(t),
+    controller = new AbortController(),
+    budget = {used: 0, compressed: 0};
+  let release, fetchSignal;
+  const resources = await loadEmotes([comments[0]], 1, 45, {
+    lazy: true,
+    budget,
+    signal: controller.signal,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    fetcher: (_, {signal}) => {
+      fetchSignal = signal;
+      return new Promise(resolve => {
+        release = resolve;
+      });
+    },
+  });
+  const pending = resources.assets.get('[表情0]').prefetch();
+  controller.abort();
+  assert.ok(fetchSignal.aborted);
+  release(new Response(new Uint8Array([0])));
+  await pending;
+  resources.close();
+  assert.equal(budget.compressed, 0);
+  assert.equal(owned.decoders.length, 0);
+});
+
+test('lazy metadata still enforces the 128-entry cap before starting image requests', async t => {
+  codecs(t);
+  const entries = Array.from({length: 129}, (_, i) => [`[图${i}]`, catalog.emotes[0]]);
+  await assert.rejects(
+    loadEmotes(
+      entries.map(([text]) => ({text})),
+      1,
+      40,
+      {
+        lazy: true,
+        selected: new Map(entries),
+        fetcher() {
+          assert.fail('entry cap must precede fetching');
+        },
+      },
+    ),
+    /缓存上限/,
+  );
+});
+
+test('evicting an in-flight speculative asset cannot reserve bytes after it closes', async t => {
+  codecs(t);
+  const budget = {used: 0, compressed: 0};
+  const resources = await loadEmotes([comments[0]], 1, 40, {
+    lazy: true,
+    budget,
+    selected: new Map([['[表情0]', catalog.emotes[0]]]),
+    fetcher: async () => new Response(new Uint8Array([0])),
+  });
+  const asset = resources.assets.get('[表情0]');
+  budget.makeRoom = () => asset.close();
+  await asset.prefetch();
+  assert.equal(budget.compressed, 0);
+  assert.equal(budget.used, 0);
+  resources.close();
+});

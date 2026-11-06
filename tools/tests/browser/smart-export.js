@@ -224,7 +224,7 @@ export async function runStreamingExportChecks() {
     await fetch('/artifact/stream-export.mp4', {method: 'POST', body: output});
     if (!info.hasAudio || !info.hasVideo || Math.abs(info.duration - (duration - 2)) > 0.05)
       throw new Error('分片导出音画或时间轴错误');
-    if (!overlapped || peak > 2) throw new Error('下载与处理没有有界并行');
+    if (!overlapped || peak > 8) throw new Error('下载与处理没有有界并行');
     if (!events.every((event, i) => !i || event.progress >= events[i - 1].progress)) throw new Error('并行进度倒退');
     if (events.slice(0, -1).some(event => event.progress === 1)) throw new Error('尚未封装完成就报告 100%');
     await playback(output);

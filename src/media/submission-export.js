@@ -40,7 +40,20 @@ export async function exportSubmission(
       reconnecting: retries.size,
       attempt: Math.max(0, ...retries.values()),
     });
-  const media = openSubmissionMedia(request, submission, {
+  let activeRequests = 0;
+  const mediaRequest = async (...args) => {
+    const finish = metrics?.start('mediaRequest');
+    metrics?.gauge('activeRequests', ++activeRequests);
+    try {
+      const response = await (typeof request === 'function' ? request(...args) : request.request(...args));
+      metrics?.add('mediaRequestBytes', response.data.byteLength);
+      return response;
+    } finally {
+      finish?.();
+      metrics?.gauge('activeRequests', --activeRequests);
+    }
+  };
+  const media = openSubmissionMedia(mediaRequest, submission, {
     signal,
     onRead(size) {
       bytes += size;

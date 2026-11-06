@@ -50,3 +50,42 @@ test('live waits, histogram bounds and buffer peaks remain observable without pe
   assert.equal(result.counters.videoFrames, 6);
   assert.deepEqual(result.gauges.bufferedMediaBytes, {current: 128, peak: 1024});
 });
+
+test('first frame is recorded once and long task observation drains and disconnects at end', t => {
+  let callback,
+    observed,
+    disconnected = 0,
+    time = 0;
+  t.mock.property(
+    globalThis,
+    'PerformanceObserver',
+    class {
+      static supportedEntryTypes = ['longtask'];
+      constructor(fn) {
+        callback = fn;
+      }
+      observe(value) {
+        observed = value;
+      }
+      takeRecords() {
+        return [{duration: 80}];
+      }
+      disconnect() {
+        disconnected++;
+      }
+    },
+  );
+  const metrics = createExportMetrics({now: () => time, observeLongTasks: true});
+  time = 100;
+  metrics.firstFrame();
+  time = 200;
+  metrics.firstFrame();
+  callback({getEntries: () => [{duration: 60}, {duration: 100}]});
+  metrics.close();
+  metrics.close();
+  assert.deepEqual(observed, {type: 'longtask'});
+  assert.equal(disconnected, 1);
+  assert.equal(metrics.snapshot().firstFrameMs, 100);
+  assert.equal(metrics.snapshot().counters.longTaskMs, 240);
+  assert.equal(metrics.snapshot().counters.longTasks, 3);
+});

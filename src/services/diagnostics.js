@@ -167,7 +167,7 @@ export function createDiagnosticReporter({
   return {
     begin(action, details = {}) {
       if (!endpoint || typeof request !== 'function') return idle;
-      const context = {...snapshot(details), stage: 'starting'};
+      const context = {...snapshot(details), stage: 'starting', timeline: []};
       const operation = id(),
         started = now(),
         startedAt = clock(),
@@ -183,6 +183,22 @@ export function createDiagnosticReporter({
         lastProgress = started,
         signature;
       let nextHeartbeat = started + 10000;
+      function point(metrics = latestMetrics) {
+        const elapsedMs = Math.max(0, now() - started);
+        const videoFrames = number(metrics?.counters?.videoFrames ?? context.progress?.videoFrames);
+        context.timeline.push({
+          elapsedMs,
+          stage: context.stage,
+          fraction: number(context.progress?.fraction),
+          bytes: number(context.progress?.bytes ?? context.progress?.written),
+          videoFrames,
+          processedSeconds: number(context.progress?.processedSeconds),
+          fps:
+            metrics?.elapsedMs > 0 && videoFrames !== undefined ? videoFrames / (metrics.elapsedMs / 1000) : undefined,
+        });
+        // Keep the first point and recent detail; halve the older half at capacity.
+        if (context.timeline.length > 60) context.timeline = context.timeline.filter((_, i) => i >= 30 || i % 2 === 0);
+      }
       function stage(value) {
         const next = text(value, 64);
         if (finished || !next || next === context.stage) return;
@@ -191,6 +207,7 @@ export function createDiagnosticReporter({
         context.stage = next;
         stageStarted = time;
         lastAdvance = time;
+        point(latestMetrics);
       }
       function publish(outcome, message, error, periodic = false) {
         try {
@@ -206,6 +223,7 @@ export function createDiagnosticReporter({
           } catch {
             /* Keep the last snapshot. */
           }
+          point(metrics);
           const performance = performanceLog(metrics);
           const processed = ['completed', 'stopped', 'partial'].includes(outcome)
             ? (context.result?.mediaSeconds ?? context.progress?.processedSeconds)
@@ -297,7 +315,6 @@ export function createDiagnosticReporter({
         },
         progress(value) {
           if (finished) return;
-          stage(value.phase);
           const next = [value.progress, value.bytes, value.written, value.videoFrames, value.processedSeconds].join(
             ':',
           );
@@ -320,6 +337,7 @@ export function createDiagnosticReporter({
             processedSeconds: number(value.processedSeconds),
             message: text(value.message, 256),
           };
+          stage(value.phase);
         },
         finish(result = {}) {
           if (finished) return;

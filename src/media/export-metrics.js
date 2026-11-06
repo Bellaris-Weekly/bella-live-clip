@@ -1,12 +1,27 @@
 // Elapsed waits, not CPU timings: stages can overlap and must not be summed.
 const BUCKETS = [1, 4, 16, 50, 100, 250, 1000, 5000, 15000, 60000, Infinity];
-export function createExportMetrics({now = () => performance.now()} = {}) {
+export function createExportMetrics({now = () => performance.now(), observeLongTasks = false} = {}) {
   const started = now(),
     stages = new Map(),
     active = new Map(),
     counters = {},
     gauges = {};
-  let firstPacketMs, encoder;
+  let firstPacketMs, firstFrameMs, encoder, observer;
+  const observe = list => {
+    for (const entry of list) {
+      counters.longTaskMs = (counters.longTaskMs ?? 0) + entry.duration;
+      counters.longTasks = (counters.longTasks ?? 0) + 1;
+    }
+  };
+  try {
+    if (observeLongTasks && globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask')) {
+      observer = new PerformanceObserver(list => observe(list.getEntries()));
+      observer.observe({type: 'longtask'});
+    }
+  } catch {
+    observer?.disconnect();
+    observer = null;
+  }
   return {
     start(name) {
       const from = now();
@@ -37,6 +52,14 @@ export function createExportMetrics({now = () => performance.now()} = {}) {
       const prior = gauges[name];
       gauges[name] = {current: value, peak: Math.max(prior?.peak ?? value, value)};
     },
+    close() {
+      if (observer) observe(observer.takeRecords());
+      observer?.disconnect();
+      observer = null;
+    },
+    firstFrame() {
+      firstFrameMs ??= Math.max(0, now() - started);
+    },
     firstPacket() {
       firstPacketMs ??= Math.max(0, now() - started);
     },
@@ -55,6 +78,7 @@ export function createExportMetrics({now = () => performance.now()} = {}) {
       return {
         elapsedMs: Math.max(0, time - started),
         firstPacketMs,
+        firstFrameMs,
         encoder: encoder && {...encoder},
         stages: Object.fromEntries([...stages].map(([name, {histogram, ...stage}]) => [name, {...stage}])),
         // Histogram upper bounds are estimates, not exact percentiles.

@@ -65,6 +65,17 @@ test(
               hardwarePreference: 'prefer-hardware',
             },
           },
+          timeline: [
+            {
+              elapsedMs: 10000,
+              stage: 'processing',
+              fraction: 0.5,
+              bytes: 1234,
+              videoFrames: 300,
+              processedSeconds: 10,
+              fps: 30,
+            },
+          ],
           throughput: {fps: 27.27, realtime: 0.91},
           progress: {processedSeconds: 20},
           runtime: {noAdvanceMs: 0, visibility: 'visible'},
@@ -118,6 +129,8 @@ test(
       assert.equal(await page.evaluate(() => Boolean(window.injected)), false);
       db.prepare('UPDATE logs SET message = ?').run('导出完成');
       assert.match(await page.locator('#detail').innerText(), /视频帧绘制/);
+      assert.match(await page.locator('#detail').innerText(), /任务时间线/);
+      assert.match(await page.locator('#detail').innerText(), /50%/);
       const download = page.waitForEvent('download');
       await page.locator('#download').click();
       const downloaded = await download;

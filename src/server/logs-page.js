@@ -37,6 +37,22 @@ export function startLogViewer() {
   };
   const labels = {
     archiveSetup: '归档准备',
+    pickerWait: '文件选择器等待',
+    originProbe: '媒体时钟探测',
+    planExtend: '关键帧边界扩展',
+    commentWindowInitial: '首个弹幕窗口',
+    compositorInit: '合成器初始化',
+    emoteFetch: '表情压缩数据下载',
+    emoteDecode: '表情解码',
+    emoteStall: '等待表情准备',
+    mediaRequestBytes: '媒体请求字节',
+    downloadConcurrency: '配置下载并发',
+    activeRequests: '并发媒体请求',
+    emotePrefetches: '表情预取次数',
+    emotePrefetchHits: '表情预取命中',
+    longTaskMs: '主线程长任务毫秒',
+    longTasks: '主线程长任务次数',
+    firstFrameMs: '首帧延迟',
     archiveOpen: '归档元数据',
     archiveRead: '弹幕窗口读取',
     emoteCatalog: '表情目录',
@@ -121,6 +137,8 @@ export function startLogViewer() {
       ['开始时间', date(operation.startedAt)],
       ['操作耗时', duration(operation.elapsedMs)],
       ['处理耗时', duration(metrics.elapsedMs)],
+      ['首次收到', date(operation.firstReceivedAt)],
+      [labels.firstFrameMs, duration(metrics.firstFrameMs)],
       ['首个编码包', duration(metrics.firstPacketMs)],
       ['已处理帧', number(metrics.counters?.videoFrames ?? context.progress?.videoFrames)],
       [
@@ -187,6 +205,38 @@ export function startLogViewer() {
           'stage-note',
         ),
       );
+    }
+    const aggregates = node('dl', undefined, 'kv');
+    for (const [key, value] of Object.entries(metrics.counters ?? {}))
+      aggregates.append(node('dt', labels[key] ?? key), node('dd', number(value)));
+    for (const [key, value] of Object.entries(metrics.gauges ?? {}))
+      aggregates.append(
+        node('dt', labels[key] ?? key),
+        node('dd', `${number(value.current)} / 峰值 ${number(value.peak)}`),
+      );
+    detail.append(aggregates);
+    if (Array.isArray(context.timeline) && context.timeline.length) {
+      detail.append(node('h3', '任务时间线'));
+      const table = node('table', undefined, 'stages'),
+        head = node('tr');
+      for (const title of ['已用时间', '阶段', '进度', '字节', '视频帧', '视频秒', 'fps'])
+        head.append(node('th', title));
+      table.append(head);
+      for (const point of context.timeline) {
+        const row = node('tr');
+        for (const value of [
+          duration(point.elapsedMs),
+          labels[point.stage] ?? point.stage,
+          point.fraction === undefined ? '—' : `${number(point.fraction * 100)}%`,
+          number(point.bytes),
+          number(point.videoFrames),
+          number(point.processedSeconds),
+          number(point.fps),
+        ])
+          row.append(node('td', value));
+        table.append(row);
+      }
+      detail.append(table);
     }
     const raw = node('details'),
       summary = node('summary', '原始日志 JSON');

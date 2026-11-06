@@ -390,3 +390,43 @@ window.checkCatalogPrefetch = async cancel => {
     await compositor.close();
   }
 };
+
+window.checkInitialCatalogOverlap = async () => {
+  const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
+  const {createExportMetrics} = await import('../../../src/media/export-metrics.js');
+  let release,
+    catalogStarted = false,
+    readStarted = false;
+  const catalog = new Promise(resolve => {
+    release = resolve;
+  });
+  const metrics = createExportMetrics();
+  const compositor = await createStreamingCompositor(
+    {room: 1},
+    {
+      origin: 0,
+      start: 0,
+      sourceTime: t => t,
+      width: 640,
+      height: 360,
+      metrics,
+      endTime: () => 10,
+      reader: {
+        async read() {
+          readStarted = true;
+          // This initial window cannot complete before the catalog has started.
+          await catalog;
+          return [];
+        },
+        async close() {},
+      },
+      fetcher: async url => {
+        catalogStarted = true;
+        release();
+        return new Response(JSON.stringify(url.endsWith('index.json') ? {catalog: 'catalog.json'} : {emotes: []}));
+      },
+    },
+  );
+  await compositor.close();
+  return {catalogStarted, readStarted, count: metrics.snapshot().stages.commentWindowInitial.count};
+};

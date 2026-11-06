@@ -10,6 +10,8 @@ import {sourceClock} from '../danmaku/clock.js';
 import {createCommentReader} from '../danmaku/archive.js';
 import {createStreamingCompositor} from '../danmaku/streaming-compositor.js';
 
+const DANMAKU_DOWNLOAD_CONCURRENCY = 6;
+
 export async function exportStreamingDanmaku(
   api,
   record,
@@ -64,13 +66,14 @@ export async function exportStreamingDanmaku(
   const firstIndex = expanded.segments.indexOf(plan.segments[0]);
   const lastIndex = expanded.segments.indexOf(plan.segments.at(-1));
   let downloadLimit = lastIndex + 1;
+  metrics?.gauge('downloadConcurrency', DANMAKU_DOWNLOAD_CONCURRENCY);
   try {
     producer = saveRecording(api, [expanded], media.handle, {
       signal: producerController.signal,
       fragmented: true,
       storageTarget: 'stream',
       missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
-      concurrency: 2,
+      concurrency: DANMAKU_DOWNLOAD_CONCURRENCY,
       downloadLimit: () => downloadLimit,
       onSegment(entry, tracks) {
         onSegment(entry);
@@ -122,18 +125,23 @@ export async function exportStreamingDanmaku(
       height = await track.getCodedHeight();
     if (!(await canEncodeVideo('avc', {width, height})))
       throw new Error('当前浏览器无法编码此分辨率的 H.264，不能压制弹幕。');
-    compositor = await createStreamingCompositor(record, {
-      reader,
-      metrics,
-      origin,
-      start,
-      sourceTime: time => clock(time),
-      width,
-      height,
-      adjustment,
-      signal: resourcesController.signal,
-      endTime: () => (Number.isFinite(end) ? clock(end) : Infinity),
-    });
+    const finishCompositor = metrics?.start('compositorInit');
+    try {
+      compositor = await createStreamingCompositor(record, {
+        reader,
+        metrics,
+        origin,
+        start,
+        sourceTime: time => clock(time),
+        width,
+        height,
+        adjustment,
+        signal: resourcesController.signal,
+        endTime: () => (Number.isFinite(end) ? clock(end) : Infinity),
+      });
+    } finally {
+      finishCompositor?.();
+    }
     const result = await trimPrecise(media.input, {
       start,
       end: () => {

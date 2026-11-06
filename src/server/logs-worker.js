@@ -162,38 +162,70 @@ export default {
     }
     if (!validLog(log)) return error(400, 'invalid_log');
     try {
-      const exists = await env.LOGS_DB.prepare('SELECT 1 AS present FROM logs WHERE source = ? AND id = ?')
-        .bind(log.source, log.id)
-        .first();
-      if (exists?.present === 1) return json(200, {ok: true, duplicate: true});
       const operation = log.context.operation?.id;
       const tracked = typeof operation === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(operation);
-      const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+      const terminal = ['completed', 'failed', 'canceled', 'stopped', 'partial'].includes(
+        log.context.operation?.outcome,
+      );
+      const receivedAt = new Date().toISOString();
       if (tracked) {
-        const recentOperation = await env.LOGS_DB.prepare(
-          "SELECT COUNT(*) AS count FROM logs WHERE source = ? AND json_extract(context, '$.operation.id') = ? AND received_at > ?",
-        )
-          .bind(log.source, operation, since)
-          .first();
-        if (recentOperation?.count >= 12) return error(429, 'rate_limited', {'Retry-After': '60'});
+        const sequence = log.context.operation.sequence;
+        log.context.operation.sequence = Number.isSafeInteger(sequence) && sequence >= 0 ? sequence : 0;
+        log.id = operation;
+        // A client cannot choose the server's first-received timestamp.
+        log.context.operation.firstReceivedAt = receivedAt;
       }
-      const recent = await env.LOGS_DB.prepare(
-        'SELECT COUNT(*) AS count FROM logs WHERE source = ? AND received_at > ?',
-      )
-        .bind(log.source, since)
+      const exists = await env.LOGS_DB.prepare('SELECT received_at, context FROM logs WHERE source = ? AND id = ?')
+        .bind(log.source, log.id)
         .first();
-      if (recent?.count >= (tracked ? 600 : RATE_LIMIT)) return error(429, 'rate_limited', {'Retry-After': '60'});
+      if (exists) {
+        if (!tracked) return json(200, {ok: true, duplicate: true});
+        const previous = JSON.parse(exists.context).operation ?? {};
+        if (
+          log.context.operation.sequence <= (previous.sequence ?? -1) ||
+          (!terminal && ['completed', 'failed', 'canceled', 'stopped', 'partial'].includes(previous.outcome))
+        )
+          return json(200, {ok: true, duplicate: true});
+        if (!terminal && Date.parse(receivedAt) - Date.parse(exists.received_at) < 5000)
+          return error(429, 'rate_limited', {'Retry-After': '5'});
+      }
+      const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
+      if (!exists) {
+        const recent = await env.LOGS_DB.prepare(
+          'SELECT COUNT(*) AS count FROM logs WHERE source = ? AND received_at > ?',
+        )
+          .bind(log.source, since)
+          .first();
+        if (recent?.count >= (tracked ? 600 : RATE_LIMIT)) return error(429, 'rate_limited', {'Retry-After': '60'});
+      }
       const result = await env.LOGS_DB.prepare(
         `
         INSERT INTO logs (source, id, received_at, level, event, version, message, context)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(source, id) DO NOTHING
+        ON CONFLICT(source, id) ${
+          tracked
+            ? `DO UPDATE SET
+          received_at = excluded.received_at, level = excluded.level, event = excluded.event,
+          version = excluded.version, message = excluded.message,
+          context = json_set(excluded.context, '$.operation.firstReceivedAt',
+            COALESCE(json_extract(logs.context, '$.operation.firstReceivedAt'), logs.received_at))
+        WHERE json_extract(excluded.context, '$.operation.sequence') >
+          COALESCE(json_extract(logs.context, '$.operation.sequence'), -1)
+        AND (${
+          terminal
+            ? '1'
+            : `COALESCE(json_extract(logs.context, '$.operation.outcome'), '')
+          NOT IN ('completed', 'failed', 'canceled', 'stopped', 'partial')
+          AND (julianday(excluded.received_at) - julianday(logs.received_at)) * 86400000 >= 5000`
+        })`
+            : 'DO NOTHING'
+        }
       `,
       )
         .bind(
           log.source,
           log.id,
-          new Date().toISOString(),
+          receivedAt,
           log.level,
           log.event,
           log.version,

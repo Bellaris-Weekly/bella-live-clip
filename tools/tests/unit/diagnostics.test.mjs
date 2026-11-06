@@ -70,12 +70,12 @@ test('快照保留失败操作身份，白名单不带媒体/会话，敏感文�
     new Request(endpoint, {method: 'POST', headers: options.headers, body: options.data}),
     {
       LOGS_DB: {
-        prepare() {
+        prepare(sql) {
           return {
             bind() {
               return {
                 async first() {
-                  return {count: 0};
+                  return sql.includes('COUNT(*)') ? {count: 0} : undefined;
                 },
                 async run() {
                   return {success: true, meta: {changes: 1}};
@@ -306,4 +306,48 @@ test('中断但保存了部分内容的整场下载记为 partial 警告并带�
   assert.equal(partial.message, error.message);
   assert.equal(partial.context.error.status, 404);
   assert.equal(partial.context.result.files, 1);
+});
+
+test('timeline retains stage changes and heartbeat metrics, downsamples to 60 and fits the wire cap', async () => {
+  let time = 0,
+    heartbeat;
+  const {reporter, requests} = setup({
+    now: () => time,
+    every: fn => {
+      heartbeat = fn;
+    },
+    cancelTimer() {},
+  });
+  const operation = reporter.begin('export');
+  operation.observe({snapshot: () => ({elapsedMs: time, counters: {videoFrames: time / 10}})});
+  for (let i = 1; i <= 150; i++) {
+    time = i * 10000;
+    operation.progress({
+      phase: i % 2 ? 'preparing' : 'processing',
+      progress: i / 150,
+      bytes: i * 1024,
+      videoFrames: i * 1000,
+      processedSeconds: i * 10,
+    });
+    heartbeat();
+    await settle();
+  }
+  operation.finish({files: 1, mediaSeconds: 1500});
+  await settle();
+  const logs = requests.map(request => JSON.parse(request.data));
+  assert.equal(logs.at(-1).event, 'export_completed');
+  assert.ok(logs.every(log => log.context.timeline.length <= 60));
+  assert.ok(requests.every(request => Buffer.byteLength(request.data) <= 65536));
+  const timeline = logs.at(-1).context.timeline;
+  assert.equal(timeline[0].elapsedMs, 0);
+  assert.equal(timeline.at(-1).elapsedMs, time);
+  assert.equal(timeline.at(-1).fps, 100);
+  assert.equal(timeline.at(-1).bytes, 150 * 1024);
+  assert.equal(timeline.at(-1).fraction, 1);
+  assert.ok(timeline.some(point => point.stage === 'preparing'));
+  assert.ok(timeline.every((point, i) => i === 0 || point.elapsedMs >= timeline[i - 1].elapsedMs));
+  assert.ok(
+    logs.filter(log => log.event === 'export_progress').every(log => log.context.metrics.counters.videoFrames > 0),
+  );
+  assert.equal(logs[0].context.timeline.length, 1, 'published snapshots do not mutate');
 });

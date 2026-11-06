@@ -10,7 +10,7 @@ import {
   EncodedVideoPacketSource,
   EncodedAudioPacketSource,
 } from 'mediabunny';
-import {createRecordingDownload} from './recording-download.js';
+import {createRecordingDownload, RECORDING_DOWNLOAD_CONCURRENCY} from './recording-download.js';
 import {RecordingTimeline, recordingTime} from './recording-timeline.js';
 import {RequestError} from '../services/retry-request.js';
 import {cleanUp, storageStep} from '../shared/errors.js';
@@ -27,7 +27,7 @@ export async function saveRecording(
     stopSignal,
     onProgress = () => {},
     onSegment = () => {},
-    concurrency = 6,
+    concurrency = RECORDING_DOWNLOAD_CONCURRENCY,
     fragmented = false,
     downloadLimit,
     metrics,

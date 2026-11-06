@@ -17,11 +17,22 @@ export async function createStreamingCompositor(
     next,
     until = sourceTime(start) + WINDOW_SECONDS,
     order = 0,
-    pinned = new Set();
+    pinned = new Set(),
+    supplying = Promise.resolve(),
+    prefetching = Promise.resolve();
+  const parentSignal = signal,
+    controller = new AbortController();
+  signal = controller.signal;
   const closeAssets = () => {
     for (const asset of assets.values()) asset.close();
     assets.clear();
   };
+  const abort = () => {
+    controller.abort(parentSignal?.reason);
+    closeAssets();
+  };
+  parentSignal?.addEventListener('abort', abort, {once: true});
+  if (parentSignal?.aborted) abort();
   const read = async (from, to) => {
     const events = await reader.read({origin, start: from, end: to, adjustment});
     metrics?.add('archiveWindows');
@@ -53,10 +64,10 @@ export async function createStreamingCompositor(
     void next.promise
       .then(events => {
         signal?.throwIfAborted();
-        // Only metadata is speculative. Images still wait for actual layout
-        // admission, so filtered/queued/dropped comments never fetch pictures.
-        if (referencedEmotes(events.filter(event => event.time < endTime() && visibleComment(event))).size)
-          return getCatalog();
+        return supply(
+          events.filter(event => event.time < endTime()),
+          true,
+        );
       })
       .catch(() => {});
   };
@@ -77,13 +88,20 @@ export async function createStreamingCompositor(
     const limit = (kind === 'used' ? 32 : 16) * 1024 * 1024;
     evictUntil(() => budget[kind] + bytes <= limit);
   };
-  async function supply(events) {
+  function supply(events, speculative = false) {
+    const task = supplying.then(() => supplyWindow(events, speculative));
+    supplying = task.catch(() => {});
+    return task;
+  }
+  async function supplyWindow(events, speculative) {
     signal?.throwIfAborted();
     const retained = painter
       ? [...painter.layout.active, ...painter.layout.waiting, ...painter.layout.events.slice(painter.layout.cursor)]
       : [];
     const names = referencedEmotes(retained.concat(events).filter(visibleComment));
-    pinned = names;
+    // Speculation may evict idle entries, but cannot pin future bytes ahead of
+    // current playback and make a required decoder fail its budget.
+    pinned = speculative ? referencedEmotes(retained.filter(visibleComment)) : names;
     for (const name of names)
       if (assets.has(name)) {
         const asset = assets.get(name);
@@ -105,10 +123,20 @@ export async function createStreamingCompositor(
       for (const [name, asset] of loaded.assets) assets.set(name, asset);
       loaded.assets.clear(); // Ownership moves into this windowed store.
     }
+    // Fetch compressed input now; decoder creation and frame retention stay on demand.
+    const pending = [...names].map(name => assets.get(name)).filter(Boolean);
+    prefetching = prefetching.then(() => mapConcurrent(pending, 3, asset => asset.prefetch(), signal)).catch(() => {});
   }
   try {
     until = Math.min(until, endTime());
-    const loaded = await read(sourceTime(start) - PREROLL, until);
+    void getCatalog().catch(() => {});
+    const finishInitial = metrics?.start('commentWindowInitial');
+    let loaded;
+    try {
+      loaded = await read(sourceTime(start) - PREROLL, until);
+    } finally {
+      finishInitial?.();
+    }
     until = Math.min(until, endTime());
     const initial = loaded.filter(event => event.time < until);
     await supply(initial);
@@ -132,7 +160,7 @@ export async function createStreamingCompositor(
           let loaded;
           try {
             loaded = await pending.promise;
-          } catch (error) {
+          } catch {
             signal?.throwIfAborted();
             // A transient prefetch failure or an over-wide speculative query
             // gets one demand read with the now-confirmed end boundary.
@@ -158,15 +186,20 @@ export async function createStreamingCompositor(
         const needed = new Map();
         for (const item of active)
           for (const part of item.parts)
-            if (part.asset && (part.asset.needsPreparation?.(time - item.started) ?? true))
+            if (part.asset && part.asset.needsPreparation(time - item.started))
               needed.set(part.asset, Math.max(needed.get(part.asset) ?? 0, time - item.started));
-        if (needed.size)
-          await mapConcurrent(
-            [...needed],
-            3,
-            ([asset, elapsed], _, taskSignal) => asset.prepare(elapsed, taskSignal),
-            signal,
-          );
+        const finishStall = needed.size ? metrics?.start('emoteStall') : null;
+        try {
+          if (needed.size)
+            await mapConcurrent(
+              [...needed],
+              3,
+              ([asset, elapsed], _, taskSignal) => asset.prepare(elapsed, taskSignal),
+              signal,
+            );
+        } finally {
+          finishStall?.();
+        }
       },
       render(sample, timestamp) {
         metrics?.gauge('emoteDecodedBytes', budget.used);
@@ -174,13 +207,22 @@ export async function createStreamingCompositor(
         return painter.render(sample, timestamp);
       },
       async close() {
+        parentSignal?.removeEventListener('abort', abort);
+        controller.abort();
+        closeAssets();
         await next?.promise.catch(() => {});
         await catalog?.catch(() => {});
+        await supplying;
+        await prefetching;
         painter.close();
         await reader.close();
       },
     };
   } catch (error) {
+    parentSignal?.removeEventListener('abort', abort);
+    controller.abort();
+    await supplying;
+    await prefetching;
     if (painter) painter.close();
     else closeAssets();
     throw error;

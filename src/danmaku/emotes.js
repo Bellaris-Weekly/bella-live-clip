@@ -73,7 +73,12 @@ export async function loadEmotes(
           closed = false,
           compressed = 0,
           frameCount = 0,
-          initializing;
+          initializing,
+          fetching,
+          fetched,
+          prefetched = false;
+        const controller = new AbortController();
+        const cancelFetch = () => asset.close();
         const asset = {
           frames: [],
           ends: [],
@@ -83,6 +88,9 @@ export async function loadEmotes(
           close() {
             if (closed) return;
             closed = true;
+            controller.abort();
+            signal?.removeEventListener('abort', cancelFetch);
+            fetched = fetching = null;
             decoder?.close();
             decoder = null;
             for (const frame of asset.frames) frame.close();
@@ -93,24 +101,54 @@ export async function loadEmotes(
           },
         };
         assets.set(name, asset);
+        signal?.addEventListener('abort', cancelFetch, {once: true});
+        async function fetchBytes() {
+          const finish = metrics?.start('emoteFetch');
+          try {
+            const result = await boundedFetch(
+              publicUrl(entry.file.split('/').map(encodeURIComponent).join('/'), 'emotes/'),
+              {signal: controller.signal, fetcher, limit: 2 * 1024 * 1024},
+            );
+            controller.signal.throwIfAborted();
+            if (lazy) {
+              budget.makeRoom?.('compressed', result.bytes.byteLength);
+              controller.signal.throwIfAborted();
+              if (budget.compressed + result.bytes.byteLength > 16 * 1024 * 1024)
+                throw new Error('弹幕表情压缩数据超过 16 MiB，请缩短选区。');
+              compressed = result.bytes.byteLength;
+              budget.compressed += compressed;
+            }
+            fetched = result;
+            return result;
+          } finally {
+            finish?.();
+          }
+        }
+        const getBytes = () => {
+          if (closed) return Promise.reject(new Error('弹幕表情已释放。'));
+          fetching ??= fetchBytes().catch(error => {
+            fetching = null;
+            throw error;
+          });
+          return fetching;
+        };
+        asset.prefetch = () => {
+          if (closed || initializing || fetching) return fetching?.catch(() => {});
+          prefetched = true;
+          metrics?.add('emotePrefetches');
+          return getBytes().catch(() => {});
+        };
         async function initialize(readSignal) {
           const finish = metrics?.start('emoteLoad');
+          let finishDecode;
           try {
-            const {bytes, response} = await boundedFetch(
-              publicUrl(entry.file.split('/').map(encodeURIComponent).join('/'), 'emotes/'),
-              {signal: readSignal, fetcher, limit: 2 * 1024 * 1024},
-            );
+            if (prefetched && fetched) metrics?.add('emotePrefetchHits');
+            const {bytes, response} = await getBytes();
             readSignal?.throwIfAborted();
             if (closed) throw new Error('弹幕表情已释放。');
             if (typeof ImageDecoder === 'undefined')
               throw new Error('当前浏览器无法解码弹幕表情，请更新 Chrome / Edge。');
-            if (lazy) {
-              budget.makeRoom?.('compressed', bytes.byteLength);
-              if (budget.compressed + bytes.byteLength > 16 * 1024 * 1024)
-                throw new Error('弹幕表情压缩数据超过 16 MiB，请缩短选区。');
-              compressed = bytes.byteLength;
-              budget.compressed += compressed;
-            }
+            finishDecode = metrics?.start('emoteDecode');
             decoder = new ImageDecoder({
               data: bytes,
               type: response.headers.get('content-type')?.split(';')[0] || 'image/webp',
@@ -123,18 +161,22 @@ export async function loadEmotes(
             asset.loops = track.repetitionCount === Infinity ? Infinity : track.repetitionCount + 1;
             frameCount = track.frameCount;
             metrics?.add('emoteLoads');
+            fetched = fetching = null;
           } finally {
+            finishDecode?.();
             finish?.();
           }
         }
         try {
           async function decodeNext(readSignal) {
             const finish = metrics?.start('emoteFrame');
+            const finishDecode = metrics?.start('emoteDecode');
             try {
               readSignal?.throwIfAborted();
               if (closed) throw new Error('弹幕表情已释放。');
               const size = asset.width * asset.height * 4;
               budget.makeRoom?.('used', size);
+              if (closed) throw new Error('弹幕表情已释放。');
               if (budget.used + size > 32 * 1024 * 1024) throw new Error('弹幕表情缓存超过 32 MiB，请缩短选区。');
               budget.used += size;
               retained += size;
@@ -154,6 +196,7 @@ export async function loadEmotes(
                 image.close();
               }
             } finally {
+              finishDecode?.();
               finish?.();
             }
           }
@@ -174,6 +217,9 @@ export async function loadEmotes(
                 budget.compressed -= compressed;
                 compressed = 0;
               }
+            } catch (error) {
+              asset.close();
+              throw error;
             } finally {
               readSignal?.removeEventListener('abort', cancel);
             }

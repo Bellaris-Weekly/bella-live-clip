@@ -1,6 +1,14 @@
 // The wire schema deliberately accepts numeric aggregates only, never resource
 // URLs, comment text, filenames, headers, encoded data or arbitrary objects.
 const stages = new Set([
+  'pickerWait',
+  'originProbe',
+  'planExtend',
+  'commentWindowInitial',
+  'compositorInit',
+  'emoteFetch',
+  'emoteDecode',
+  'emoteStall',
   'archiveSetup',
   'archiveOpen',
   'archiveRead',
@@ -31,6 +39,11 @@ const stages = new Set([
   'outputFinalize',
 ]);
 const counters = new Set([
+  'mediaRequestBytes',
+  'emotePrefetches',
+  'emotePrefetchHits',
+  'longTaskMs',
+  'longTasks',
   'videoFrames',
   'encodedPackets',
   'encodedBytes',
@@ -44,6 +57,8 @@ const counters = new Set([
   'overlayReuses',
 ]);
 const gauges = new Set([
+  'downloadConcurrency',
+  'activeRequests',
   'bufferedMediaBytes',
   'emoteDecodedBytes',
   'emoteCompressedBytes',
@@ -72,7 +87,7 @@ export function performanceLog(value) {
   if (['prefer-hardware', 'prefer-software', 'no-preference'].includes(value.encoder?.hardwarePreference))
     encoder.hardwarePreference = value.encoder.hardwarePreference;
   return {
-    ...numbers(value, ['elapsedMs', 'firstPacketMs']),
+    ...numbers(value, ['elapsedMs', 'firstPacketMs', 'firstFrameMs']),
     encoder,
     stages: table(value.stages, stages, ['count', 'totalMs', 'maxMs']),
     latency: table(value.latency, stages, ['p50UpperMs', 'p95UpperMs']),
