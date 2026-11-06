@@ -29,7 +29,9 @@ test(
     const migrations = new URL('../../../server/logs/migrations/', import.meta.url);
     for (const file of (await readdir(migrations)).filter(file => file.endsWith('.sql')).sort())
       db.exec(await readFile(new URL(file, migrations), 'utf8'));
-    const insert = db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const insert = db.prepare(
+      'INSERT INTO logs (source, id, received_at, level, event, version, message, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
     const message = '<img src=x onerror="window.injected=true"> 导出完成';
     for (let i = 0; i < 60; i++)
       insert.run(

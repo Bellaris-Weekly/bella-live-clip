@@ -1,0 +1,1 @@
+ALTER TABLE logs ADD COLUMN client_ip TEXT;

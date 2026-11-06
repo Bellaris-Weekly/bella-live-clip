@@ -66,7 +66,7 @@ export function logQuery(params) {
 async function rows(database, query, limit) {
   const result = await database
     .prepare(
-      `SELECT source, id, received_at, level, event, version, message, context
+      `SELECT source, id, received_at, level, event, version, message, context, client_ip
     FROM logs WHERE ${query.where} ORDER BY received_at DESC, source DESC, id DESC LIMIT ?`,
     )
     .bind(...query.values, limit)

@@ -91,6 +91,68 @@ test('同来源重复请求不覆盖原记录，不同来源同编号独立保�
   assert.equal(rows[0].message, "'); DROP TABLE logs; --");
 });
 
+test('来源 IP 按 Cloudflare 请求头原样保存并随查询和下载返回，不采用客户端自报值', async t => {
+  const {db, env} = database(t);
+  for (const [index, ip] of ['203.0.113.42', '2001:0db8:0:0::42', null].entries()) {
+    const id = `ip-${index}`;
+    const headers = {'X-Forwarded-For': '198.51.100.1', 'X-Real-IP': '198.51.100.2'};
+    if (ip !== null) headers['CF-Connecting-IP'] = ip;
+    const response = await worker.fetch(request(sample({id, context: {client_ip: '198.51.100.3'}}), headers), env);
+    assert.equal(response.status, 201);
+    assert.equal(db.prepare('SELECT client_ip FROM logs WHERE id = ?').get(id).client_ip, ip);
+    const listed = await (await worker.fetch(get('/admin/api/logs'), env)).json();
+    assert.equal(listed.logs.find(log => log.id === id).client_ip, ip);
+    const downloaded = await (await worker.fetch(get('/admin/api/logs/download'), env)).text();
+    assert.equal(
+      downloaded
+        .trim()
+        .split('\n')
+        .map(JSON.parse)
+        .find(log => log.id === id).client_ip,
+      ip,
+    );
+    await worker.fetch(request(sample({id}), {'CF-Connecting-IP': '203.0.113.99'}), env);
+    assert.equal(db.prepare('SELECT client_ip FROM logs WHERE id = ?').get(id).client_ip, ip);
+  }
+});
+
+test('任务 IP 随接受的日志更新，忽略重复和过期日志的 IP', async t => {
+  const {db, env} = database(t);
+  for (const [sequence, ip, expected] of [
+    [0, '203.0.113.1', '203.0.113.1'],
+    [1, '2001:db8::2', '2001:db8::2'],
+    [0, '203.0.113.3', '2001:db8::2'],
+    [1, '203.0.113.4', '2001:db8::2'],
+  ]) {
+    const log = sample({context: {operation: {id: 'ip-task', sequence, outcome: 'completed'}}});
+    const response = await worker.fetch(request(log, {'CF-Connecting-IP': ip}), env);
+    assert.ok([200, 201].includes(response.status));
+    assert.equal(db.prepare('SELECT client_ip FROM logs WHERE id = ?').get('ip-task').client_ip, expected);
+  }
+});
+
+test('IP 迁移保留已有日志，历史来源 IP 留空', t => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const migrations = new URL('../../../server/logs/migrations/', import.meta.url);
+  db.exec(readFileSync(new URL('0001_logs.sql', migrations), 'utf8'));
+  db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    's',
+    'old',
+    '2026-01-01',
+    'info',
+    'e',
+    '1',
+    'm',
+    '{}',
+  );
+  db.exec(readFileSync(new URL('0004_client_ip.sql', migrations), 'utf8'));
+  const row = db.prepare('SELECT * FROM logs').get();
+  assert.equal(row.id, 'old');
+  assert.equal(row.context, '{}');
+  assert.equal(row.client_ip, null);
+});
+
 test('结构化凭据和嵌套错误文本脱敏，保留其他 URL 参数与关键帧字段', async t => {
   const {db, env} = database(t);
   const context = {
@@ -350,7 +412,9 @@ test('写入时偶尔清理 90 天前的日志，只删过期数据', async t =>
 
 const get = path => new Request('https://logs.example.com' + path);
 function seed(db, count, context = {}) {
-  const insert = db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insert = db.prepare(
+    'INSERT INTO logs (source, id, received_at, level, event, version, message, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  );
   for (let i = 0; i < count; i++)
     insert.run(
       'bella-live-clip',
@@ -567,7 +631,9 @@ test('SQL upsert checks sequence atomically when concurrent reads see the same r
 
 test('operation migration collapses existing rows and keeps first receive time and ordinary logs', t => {
   const {db} = database(t);
-  const insert = db.prepare('INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const insert = db.prepare(
+    'INSERT INTO logs (source, id, received_at, level, event, version, message, context) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  );
   for (const sequence of [2, 0, 1])
     insert.run(
       's',

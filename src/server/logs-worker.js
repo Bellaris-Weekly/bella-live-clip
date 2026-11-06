@@ -200,13 +200,13 @@ export default {
       }
       const result = await env.LOGS_DB.prepare(
         `
-        INSERT INTO logs (source, id, received_at, level, event, version, message, context)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO logs (source, id, received_at, level, event, version, message, context, client_ip)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source, id) ${
           tracked
             ? `DO UPDATE SET
           received_at = excluded.received_at, level = excluded.level, event = excluded.event,
-          version = excluded.version, message = excluded.message,
+          version = excluded.version, message = excluded.message, client_ip = excluded.client_ip,
           context = json_set(excluded.context, '$.operation.firstReceivedAt',
             COALESCE(json_extract(logs.context, '$.operation.firstReceivedAt'), logs.received_at))
         WHERE json_extract(excluded.context, '$.operation.sequence') >
@@ -231,6 +231,7 @@ export default {
           log.version,
           redactText(log.message),
           JSON.stringify(redactContext(log.context)),
+          request.headers.get('CF-Connecting-IP'),
         )
         .run();
       if (!result.success) return error(503, 'storage_unavailable');
