@@ -108,20 +108,26 @@ function removeExpired(database) {
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
-    if (url.pathname === '/' || url.pathname === '/viewer.js') {
+    if (url.pathname === '/admin') {
       if (!['GET', 'HEAD'].includes(request.method)) return error(405, 'method_not_allowed', {Allow: 'GET, HEAD'});
-      const page = url.pathname === '/';
+      return new Response(null, {status: 308, headers: {Location: '/admin/', 'Cache-Control': 'no-store'}});
+    }
+    if (url.pathname === '/admin/' || url.pathname === '/admin/viewer.js') {
+      if (!['GET', 'HEAD'].includes(request.method)) return error(405, 'method_not_allowed', {Allow: 'GET, HEAD'});
+      const page = url.pathname === '/admin/';
       return new Response(request.method === 'HEAD' ? null : page ? logsPage : `(${startLogViewer.toString()})();`, {
         headers: {
           'Content-Type': page ? 'text/html; charset=utf-8' : 'application/javascript; charset=utf-8',
           'Cache-Control': 'no-store',
           'X-Content-Type-Options': 'nosniff',
+          'Referrer-Policy': 'no-referrer',
+          'X-Robots-Tag': 'noindex, nofollow',
           'Content-Security-Policy':
             "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
         },
       });
     }
-    if (url.pathname === '/api/logs' || url.pathname === '/api/logs/download') {
+    if (url.pathname === '/admin/api/logs' || url.pathname === '/admin/api/logs/download') {
       const download = url.pathname.endsWith('/download');
       if (request.method !== 'GET' && !(download && request.method === 'HEAD'))
         return error(405, 'method_not_allowed', {Allow: download ? 'GET, HEAD' : 'GET'});

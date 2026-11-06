@@ -18,7 +18,7 @@ export const logsPage = `<!doctype html>
 <div class="workspace"><section class="panel"><div class="panel-head"><h2>日志记录</h2><span class="hint" id="updated">尚未加载</span></div><div class="table-wrap"><table><thead><tr><th>收到时间</th><th>事件 / 阶段</th><th>方式</th><th>状态</th><th>耗时</th></tr></thead><tbody id="rows"></tbody></table></div><div id="empty" class="empty" hidden>这个时间范围内还没有日志。</div><div class="pager"><button class="button" id="previous" disabled>上一页</button><button class="button" id="next" disabled>下一页</button><span id="page" class="hint"></span></div></section>
 <section class="panel"><div class="panel-head"><h2>运行详情</h2></div><div id="detail" class="detail"><div class="empty">选择一条日志，查看阶段耗时和等待情况。</div></div></section></div>
 <p class="footer">时间按当前浏览器时区显示。阶段计时可能重叠；累计等待时间不能相加当作总耗时。硬件偏好不代表实际硬件利用率。</p>
-</main><script src="/viewer.js" defer></script></body></html>`;
+</main><script src="viewer.js" defer></script></body></html>`;
 
 // Self-contained so the Worker can serve it without a separate assets deployment.
 export function startLogViewer() {
@@ -245,7 +245,7 @@ export function startLogViewer() {
     try {
       const params = parameters();
       if (cursors.at(-1)) params.set('cursor', cursors.at(-1));
-      const response = await fetch('/api/logs?' + params, {signal: own.signal});
+      const response = await fetch('api/logs?' + params, {signal: own.signal});
       const result = await response.json();
       if (!response.ok)
         throw new Error(
@@ -303,12 +303,12 @@ export function startLogViewer() {
     button.disabled = true;
     try {
       const params = parameters();
-      const check = await fetch('/api/logs/download?' + params, {method: 'HEAD'});
+      const check = await fetch('api/logs/download?' + params, {method: 'HEAD'});
       if (!check.ok)
         throw new Error(check.status === 413 ? '超过 5,000 条，请缩小时间范围后下载。' : `HTTP ${check.status}`);
       params.set('to', check.headers.get('X-Log-Snapshot'));
       const link = node('a');
-      link.href = '/api/logs/download?' + params;
+      link.href = 'api/logs/download?' + params;
       link.download = '';
       document.body.append(link);
       link.click();

@@ -106,7 +106,11 @@ test(
       page.setDefaultTimeout(5000);
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      await page.goto(`http://127.0.0.1:${server.address().port}/`);
+      const origin = `http://127.0.0.1:${server.address().port}`;
+      const paths = [];
+      page.on('request', request => paths.push(new URL(request.url()).pathname));
+      await page.goto(origin + '/admin');
+      assert.equal(page.url(), origin + '/admin/');
       await page.waitForFunction(() => document.querySelectorAll('#rows tr').length === 50);
       await page.locator('#rows button').first().click();
       assert.equal(await page.locator('#detail p').first().innerText(), message);
@@ -138,6 +142,15 @@ test(
       await page.locator('#filters button[type=submit]').click();
       await page.waitForFunction(() => document.getElementById('notice').classList.contains('error'));
       assert.deepEqual(errors, []);
+      assert.ok(paths.includes('/admin/viewer.js'));
+      assert.ok(paths.includes('/admin/api/logs'));
+      assert.ok(paths.includes('/admin/api/logs/download'));
+      assert.ok(
+        paths.every(path => path === '/admin' || path.startsWith('/admin/')),
+        JSON.stringify(paths),
+      );
+      for (const path of ['/', '/viewer.js', '/api/logs', '/api/logs/download'])
+        assert.equal((await page.request.get(origin + path)).status(), 404);
     } finally {
       await browser?.close();
       server.close();

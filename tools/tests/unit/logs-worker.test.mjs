@@ -369,13 +369,13 @@ function seed(db, count, context = {}) {
 }
 
 test('anonymous viewer and its script are served by the existing Worker', async () => {
-  const page = await worker.fetch(get('/'), {});
+  const page = await worker.fetch(get('/admin/'), {});
   assert.equal(page.status, 200);
   assert.match(page.headers.get('Content-Type'), /text\/html/);
   assert.match(await page.text(), /下载筛选日志/);
-  const script = await worker.fetch(get('/viewer.js'), {});
+  const script = await worker.fetch(get('/admin/viewer.js'), {});
   assert.equal(script.status, 200);
-  assert.match(await script.text(), /\/api\/logs/);
+  assert.match(await script.text(), /api\/logs/);
 });
 
 test('keyset pagination has no gaps or duplicates at equal timestamps and applies all filters', async t => {
@@ -395,7 +395,7 @@ test('keyset pagination has no gaps or duplicates at equal timestamps and applie
       limit: '3',
     });
     if (cursor) params.set('cursor', cursor);
-    const response = await worker.fetch(get('/api/logs?' + params), env);
+    const response = await worker.fetch(get('/admin/api/logs?' + params), env);
     assert.equal(response.status, 200);
     const page = await response.json();
     found.push(...page.logs.map(log => log.id));
@@ -405,7 +405,7 @@ test('keyset pagination has no gaps or duplicates at equal timestamps and applie
     found,
     [15, 13, 11, 9, 7, 5, 3, 1].map(i => `log-${String(i).padStart(5, '0')}`),
   );
-  const task = await (await worker.fetch(get('/api/logs?operation=task-1'), env)).json();
+  const task = await (await worker.fetch(get('/admin/api/logs?operation=task-1'), env)).json();
   assert.ok(task.logs.every(log => log.context.operation.id === 'task-1'));
   assert.equal(task.logs.length, 6);
 });
@@ -420,10 +420,10 @@ test('read filters and malformed cursors cannot alter SQL or expose internal err
     'from=2027-01-01&to=2026-01-01',
     'limit=9999',
   ]) {
-    assert.equal((await worker.fetch(get('/api/logs?' + params), env)).status, 400);
+    assert.equal((await worker.fetch(get('/admin/api/logs?' + params), env)).status, 400);
   }
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM logs').get().count, 1);
-  const failure = await worker.fetch(get('/api/logs'), {
+  const failure = await worker.fetch(get('/admin/api/logs'), {
     LOGS_DB: {
       prepare() {
         throw new Error('secret connection detail');
@@ -437,7 +437,7 @@ test('read filters and malformed cursors cannot alter SQL or expose internal err
 test('download contains every matching page and the complete structured context', async t => {
   const {db, env} = database(t);
   seed(db, 405, {detail: '<script>alert(1)</script>\n中文'});
-  const url = '/api/logs/download?source=bella-live-clip';
+  const url = '/admin/api/logs/download?source=bella-live-clip';
   const head = await worker.fetch(new Request('https://logs.example.com' + url, {method: 'HEAD'}), env);
   assert.equal(head.status, 200);
   assert.equal(head.headers.get('X-Log-Count'), '405');
@@ -456,7 +456,7 @@ test('download contains every matching page and the complete structured context'
 test('oversized download fails before returning a partial file; cancellation stops paging', async t => {
   const {db, env} = database(t);
   seed(db, 5001);
-  assert.equal((await worker.fetch(get('/api/logs/download'), env)).status, 413);
+  assert.equal((await worker.fetch(get('/admin/api/logs/download'), env)).status, 413);
   db.prepare('DELETE FROM logs WHERE id > ?').run('log-00450');
   const prepare = env.LOGS_DB.prepare;
   let queries = 0;
@@ -464,7 +464,7 @@ test('oversized download fails before returning a partial file; cancellation sto
     queries++;
     return prepare(sql);
   };
-  const response = await worker.fetch(get('/api/logs/download'), env);
+  const response = await worker.fetch(get('/admin/api/logs/download'), env);
   const reader = response.body.getReader();
   await reader.read();
   const before = queries;
@@ -484,4 +484,36 @@ test('normal operation logs have a per-operation budget and retry remains idempo
     (await worker.fetch(request(sample({id: 'other-export', context: {operation: {id: 'export-456'}}})), env)).status,
     201,
   );
+});
+
+test('all log reads live beneath /admin; old public routes return 404 without touching storage', async () => {
+  const env = {
+    LOGS_DB: {
+      prepare() {
+        assert.fail('public request reached log storage');
+      },
+    },
+  };
+  for (const path of [
+    '/',
+    '/viewer.js',
+    '/api/logs',
+    '/api/logs/download',
+    '/api/logs?source=bella-live-clip',
+    '/admin-extra/api/logs',
+  ]) {
+    for (const method of ['GET', 'HEAD']) {
+      const response = await worker.fetch(new Request('https://logs.example.com' + path, {method}), env);
+      assert.equal(response.status, 404, `${method} ${path}`);
+      assert.equal(response.headers.get('Location'), null);
+    }
+  }
+  const redirect = await worker.fetch(get('/admin'), env);
+  assert.equal(redirect.status, 308);
+  assert.equal(redirect.headers.get('Location'), '/admin/');
+  const page = await worker.fetch(get('/admin/'), env);
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('Referrer-Policy'), 'no-referrer');
+  assert.equal(page.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+  assert.match(await page.text(), /src="viewer\.js"/);
 });
