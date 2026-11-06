@@ -21,6 +21,7 @@ export async function exportStreamingDanmaku(
     origin,
     adjustment,
     preparedComments,
+    preparedEmoteCatalog,
     createTemporary,
     fileHandle,
     signal,
@@ -128,6 +129,7 @@ export async function exportStreamingDanmaku(
     const finishCompositor = metrics?.start('compositorInit');
     try {
       compositor = await createStreamingCompositor(record, {
+        preparedEmoteCatalog,
         reader,
         metrics,
         origin,

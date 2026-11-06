@@ -56,10 +56,13 @@ test(
           metrics: {
             elapsedMs: 22000,
             firstPacketMs: 800,
-            stages: {videoDraw: {count: 600, totalMs: 8000, maxMs: 32}},
+            stages: {
+              videoDraw: {count: 600, totalMs: 8000, maxMs: 32},
+              archiveRefreshWait: {count: 1, totalMs: 20000, maxMs: 20000},
+            },
             active: {},
-            counters: {videoFrames: 600, spriteRasters: 30, spriteHits: 570},
-            gauges: {spriteBytes: {current: 1024, peak: 4096}},
+            counters: {videoFrames: 600, spriteRasters: 30, spriteHits: 570, archiveRefreshes: 2},
+            gauges: {spriteBytes: {current: 1024, peak: 4096}, archiveLagMs: {current: 0, peak: 10000}},
             encoder: {
               codec: 'avc1.42e01e',
               width: 1920,
@@ -132,7 +135,14 @@ test(
       assert.equal(await page.evaluate(() => Boolean(window.injected)), false);
       db.prepare('UPDATE logs SET message = ?').run('导出完成');
       assert.match(await page.locator('#detail').innerText(), /视频帧绘制/);
-      for (const label of ['文字栅格化次数', '文字缓存命中', '文字缓存字节'])
+      for (const label of [
+        '文字栅格化次数',
+        '文字缓存命中',
+        '文字缓存字节',
+        '直播弹幕刷新次数',
+        '弹幕覆盖缺口毫秒',
+        '等待直播弹幕更新',
+      ])
         assert.ok((await page.locator('#detail').innerText()).includes(label));
       assert.match(await page.locator('#detail').innerText(), /任务时间线/);
       assert.match(await page.locator('#detail').innerText(), /50%/);

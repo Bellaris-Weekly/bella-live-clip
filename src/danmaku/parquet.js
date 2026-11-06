@@ -8,7 +8,7 @@ export async function readMetadata(file) {
   return parquetMetadataAsync(file);
 }
 
-// Metadata is immutable for one export. Build the section/time index once;
+// Metadata is immutable for one snapshot. Build the section/time index once;
 // missing reception timestamps stay unbounded because sent+1s is the fallback.
 const indexes = new WeakMap();
 function indexFor(metadata) {
@@ -52,6 +52,21 @@ function indexFor(metadata) {
 export function danmakuBounds(metadata) {
   const {from, to} = indexFor(metadata);
   return {from, to};
+}
+
+export function snapshotCoverage(metadata) {
+  // The collector's live index/Parquet contract has no coverage timestamp.
+  // Use observed reception times (including non-chat events), not sent times or
+  // HTTP Last-Modified: uploading a stale collector buffer does not advance it.
+  // Quiet/missing-statistics intervals remain uncertain and use the bounded wait.
+  let through = 0;
+  for (const group of metadata.row_groups) {
+    const stats = group.columns.find(column => column.meta_data?.path_in_schema?.[0] === 't')?.meta_data?.statistics;
+    if (stats?.is_max_value_exact === false) continue;
+    const time = Number(stats?.max_value ?? stats?.max);
+    if (Number.isFinite(time)) through = Math.max(through, time / 1000);
+  }
+  return through;
 }
 
 export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal, metadata, readGroup} = {}) {

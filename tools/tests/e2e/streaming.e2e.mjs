@@ -110,11 +110,70 @@ async function open() {
   return page;
 }
 test(
+  'public emote catalog starts alongside archive setup before the first media probe finishes',
+  {timeout: 20000},
+  async () => {
+    const page = await open();
+    const requests = [];
+    page.on('request', request => requests.push(request.url()));
+    try {
+      const catalog = page.waitForRequest('https://data.bellaris.fans/emotes/catalog.json');
+      await page.evaluate(() => window.startStreaming({blockMedia: true, blockIndex: 0}));
+      await page.waitForFunction(() => window.streamingState.blockedMedia);
+      await catalog;
+      assert.equal(requests.filter(url => url.includes('/emotes/') && url.endsWith('index.json')).length, 1);
+      assert.equal(requests.filter(url => url.includes('/live-archive/') && url.endsWith('index.json')).length, 1);
+      assert.equal((await page.evaluate(() => window.streamingState)).frames, 0);
+      await page.evaluate(() => window.cancelStreaming());
+      await page.waitForFunction(() => window.streamingState.done);
+      assert.equal((await page.evaluate(() => window.streamingState)).error.name, 'AbortError');
+    } finally {
+      await page.close();
+    }
+  },
+);
+test('a completed text-only clip cancels its unused early catalog request', {timeout: 20000}, async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => {
+      const originalFetch = window.fetch;
+      window.catalogCanceled = false;
+      window.fetch = (url, options) => {
+        if (String(url).includes('/emotes/'))
+          return new Promise((_, reject) => {
+            options.signal.addEventListener(
+              'abort',
+              () => {
+                window.catalogCanceled = true;
+                reject(options.signal.reason);
+              },
+              {once: true},
+            );
+          });
+        return originalFetch(url, options);
+      };
+    });
+    await page.evaluate(() => window.startStreaming({selection: {start: 30, end: 31}}));
+    await page.waitForFunction(() => window.streamingState.done, null, {timeout: 15000});
+    const state = await page.evaluate(() => ({...window.streamingState, catalogCanceled: window.catalogCanceled}));
+    assert.equal(state.error, undefined, JSON.stringify(state));
+    assert.equal(state.catalogCanceled, true);
+    assert.deepEqual(state.temporary, []);
+    assert.ok(state.result.videoTimes.length > 0);
+  } finally {
+    await page.close();
+  }
+});
+test(
   'encoding begins while a later media segment is blocked, then completes a continuous clip',
   {timeout: fullHD ? 120000 : 60000},
   async () => {
     const page = await open();
     try {
+      const catalogs = [];
+      page.on('request', request => {
+        if (request.url().includes('/emotes/')) catalogs.push(request.url());
+      });
       await page.evaluate(() => window.startStreaming({blockMedia: true}));
       await page.waitForFunction(
         () => window.streamingState.error || (window.streamingState.blockedMedia && window.streamingState.frames > 0),
@@ -128,6 +187,8 @@ test(
       await page.waitForFunction(() => window.streamingState.done, null, {timeout: fullHD ? 90000 : 30000});
       state = await page.evaluate(() => window.streamingState);
       assert.equal(state.error, undefined, JSON.stringify(state));
+      assert.equal(catalogs.filter(url => url.endsWith('index.json')).length, 1);
+      assert.equal(catalogs.filter(url => url.endsWith('catalog.json')).length, 1);
       assert.ok(Math.abs(state.result.duration - 42.1) < 0.1);
       assert.ok(state.result.videoTimes.length > 1200);
       assert.equal(state.result.decoded, true);

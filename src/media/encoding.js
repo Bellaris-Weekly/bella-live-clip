@@ -99,7 +99,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
   settings ??= await readVideoEncodingSettings(track, {signal, metrics});
   signal?.throwIfAborted();
   const packets = [];
-  let decoderConfig, canceling;
+  let decoderConfig, canceling, pending;
   // A streaming discard target avoids retaining a second movie or a whole-file sample table.
   const output = new Output({format: new MpegTsOutputFormat(), target: new NullTarget()});
   const source = new VideoSampleSource({
@@ -120,12 +120,13 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
     rejectAbort = reject;
   });
   void aborted.catch(() => {});
-  const cancel = () => {
-    rejectAbort(signal.reason);
+  const stop = reason => {
+    rejectAbort(reason);
     // The sink's return closes queued decoded frames and wakes a blocked next().
     canceling ??= Promise.all([samples.return(), output.cancel()]);
     void canceling.catch(() => {});
   };
+  const cancel = () => stop(signal.reason);
   signal?.addEventListener('abort', cancel, {once: true});
   try {
     await output.start();
@@ -140,6 +141,12 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
       }
       if (next.done) break;
       const sample = next.value;
+      let rendered,
+        submitted = false;
+      const close = () => {
+        if (rendered && rendered !== sample) rendered.close();
+        sample.close();
+      };
       try {
         signal?.throwIfAborted();
         const clippedStart = Math.max(start, sample.timestamp);
@@ -151,12 +158,11 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         const finishPreparation = metrics?.start('danmakuPrepare');
         try {
           const preparation = compositor?.prepare?.(clippedStart);
-          if (preparation) await preparation;
+          if (preparation) await Promise.race([preparation, aborted]);
         } finally {
           finishPreparation?.();
         }
         const finishRender = metrics?.start('render');
-        let rendered;
         try {
           rendered = compositor?.render(sample, clippedStart);
         } finally {
@@ -166,22 +172,35 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         const frame = rendered ?? sample;
         frame.setTimestamp(clippedStart - origin);
         frame.setDuration(clippedEnd - clippedStart);
-        // add() enforces the codec's four-input backpressure; drain every emitted batch before reading more.
-        const finishEncode = metrics?.start('encodeSubmit');
-        try {
-          await Promise.race([source.add(frame, first ? {keyFrame: true} : undefined), aborted]);
-        } finally {
-          finishEncode?.();
-          rendered?.close();
+        // VideoSample(canvas) constructs a VideoFrame snapshot in Mediabunny 1.56.1.
+        // Render one frame ahead on the same canvas, but never overlap add() calls.
+        await pending;
+        while (packets.length) {
+          signal?.throwIfAborted();
+          yield packets.shift();
         }
+        signal?.throwIfAborted();
+        const finishEncode = metrics?.start('encodeSubmit');
+        pending = (async () => {
+          try {
+            await Promise.race([source.add(frame, first ? {keyFrame: true} : undefined), aborted]);
+          } finally {
+            finishEncode?.();
+            close();
+          }
+        })();
+        submitted = true;
+        // Wake a blocked decoder read if encoding fails during the overlap.
+        void pending.catch(stop);
         first = false;
       } finally {
-        sample.close();
+        if (!submitted) close();
       }
-      while (packets.length) {
-        signal?.throwIfAborted();
-        yield packets.shift();
-      }
+    }
+    await pending;
+    while (packets.length) {
+      signal?.throwIfAborted();
+      yield packets.shift();
     }
     signal?.throwIfAborted();
     const finishFlush = metrics?.start('encoderFlush');
@@ -195,13 +214,16 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
       yield packets.shift();
     }
   } catch (error) {
+    stop(error);
     if (signal?.aborted) throw signal.reason;
     throw error;
   } finally {
     signal?.removeEventListener('abort', cancel);
+    if (output.state !== 'finalized' && output.state !== 'canceled')
+      stop(new DOMException('编码已停止。', 'AbortError'));
     await samples.return();
     if (canceling) await canceling;
-    if (output.state !== 'finalized' && output.state !== 'canceled') await output.cancel();
+    await pending?.catch(() => {});
     packets.length = 0;
   }
 }

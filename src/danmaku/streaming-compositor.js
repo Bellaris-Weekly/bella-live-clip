@@ -8,11 +8,24 @@ const WINDOW_SECONDS = 10;
 
 export async function createStreamingCompositor(
   record,
-  {reader, origin, start, sourceTime, width, height, adjustment, signal, fetcher, endTime = () => Infinity, metrics},
+  {
+    reader,
+    origin,
+    start,
+    sourceTime,
+    width,
+    height,
+    adjustment,
+    signal,
+    fetcher,
+    endTime = () => Infinity,
+    metrics,
+    preparedEmoteCatalog,
+  },
 ) {
   const assets = new Map(),
     budget = {used: 0, compressed: 0};
-  let catalog,
+  let catalog = preparedEmoteCatalog?.promise,
     painter,
     next,
     until = sourceTime(start) + WINDOW_SECONDS,
@@ -33,8 +46,9 @@ export async function createStreamingCompositor(
   };
   parentSignal?.addEventListener('abort', abort, {once: true});
   if (parentSignal?.aborted) abort();
-  const read = async (from, to) => {
-    const events = await reader.read({origin, start: from, end: to, adjustment});
+  const read = async (from, to, prefetch = false) => {
+    const events = await reader.read({origin, start: from, end: to, adjustment, prefetch});
+    if (events === null) return null;
     metrics?.add('archiveWindows');
     metrics?.add('commentsRead', events.length);
     return events;
@@ -69,11 +83,12 @@ export async function createStreamingCompositor(
       return;
     }
     const to = Math.min(until + WINDOW_SECONDS, end);
-    next = {from: until, to, promise: read(until, to)};
+    next = {from: until, to, promise: read(until, to, true)};
     // Speculation is not a required stage yet. Observe its rejection now, but
     // only retry/report it if playback actually reaches this window.
     void next.promise
       .then(events => {
+        if (events === null) return;
         signal?.throwIfAborted();
         return supply(
           events.filter(event => event.time < endTime()),
@@ -175,8 +190,9 @@ export async function createStreamingCompositor(
             signal?.throwIfAborted();
             // A transient prefetch failure or an over-wide speculative query
             // gets one demand read with the now-confirmed end boundary.
-            loaded = await read(pending.from, to);
+            loaded = null;
           }
+          if (loaded === null) loaded = await read(pending.from, to);
           const events = loaded.filter(event => event.time < to);
           await supply(events);
           for (const event of events) event.order = order++;
@@ -220,6 +236,7 @@ export async function createStreamingCompositor(
       async close() {
         parentSignal?.removeEventListener('abort', abort);
         controller.abort();
+        preparedEmoteCatalog?.controller.abort();
         closeAssets();
         await next?.promise.catch(() => {});
         await catalog?.catch(() => {});
@@ -232,6 +249,7 @@ export async function createStreamingCompositor(
   } catch (error) {
     parentSignal?.removeEventListener('abort', abort);
     controller.abort();
+    preparedEmoteCatalog?.controller.abort();
     await supplying;
     await prefetching;
     if (painter) painter.close();

@@ -85,6 +85,33 @@ test('sprite compositor preserves direct-text appearance at fractional positions
     assert.ok(windowed.changedFraction < 0.04);
     const fixed = await page.evaluate(() => window.checkCompositor({width: 640, height: 360, fixed: true}));
     assert.ok(fixed.currentCalls < fixed.referenceCalls / 2, JSON.stringify(fixed));
+    const liveWindows = await page.evaluate(() => window.checkLiveWindowPrefetch());
+    assert.deepEqual(liveWindows.before, [
+      {start: -15, end: 10, prefetch: false},
+      {start: 10, end: 20, prefetch: true},
+    ]);
+    assert.deepEqual(liveWindows.after, [...liveWindows.before, {start: 10, end: 20, prefetch: false}]);
+    const overlap = await page.evaluate(() => window.checkEncodingOverlap());
+    console.log('encoding overlap snapshots', JSON.stringify(overlap));
+    assert.ok(overlap.events.indexOf('render1') < overlap.events.indexOf('resolved0'));
+    assert.ok(overlap.events.indexOf('resolved0') < overlap.events.indexOf('add1'));
+    assert.equal(overlap.peak, 1);
+    assert.equal(overlap.returned, true);
+    assert.deepEqual(overlap.closes, [1, 1, 1, 1, 1, 1]);
+    assert.deepEqual(overlap.pixels, [
+      [255, 0, 0, 255],
+      [0, 255, 0, 255],
+      [0, 0, 255, 255],
+    ]);
+    assert.equal(overlap.decoded.length, 3);
+    overlap.decoded.forEach((pixel, i) =>
+      pixel.forEach((value, channel) =>
+        assert.ok(Math.abs(value - overlap.pixels[i][channel]) <= 3, JSON.stringify(overlap.decoded)),
+      ),
+    );
+    assert.deepEqual(overlap.timestamps, [0, 1 / 30, 2 / 30]);
+    overlap.durations.forEach(duration => assert.ok(Math.abs(duration - 1 / 30) < 1e-12));
+    assert.equal(overlap.firstKey, 'key');
     const directory = await mkdtemp(path.join(tmpdir(), 'bella-compositor-yuv-'));
     try {
       const file = path.join(directory, 'input.mp4');

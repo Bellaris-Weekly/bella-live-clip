@@ -12,6 +12,7 @@ const stages = new Set([
   'archiveSetup',
   'archiveOpen',
   'archiveRead',
+  'archiveRefreshWait',
   'emoteCatalog',
   'emoteLoad',
   'emoteFrame',
@@ -51,6 +52,7 @@ const counters = new Set([
   'writtenBytes',
   'downloadedBytes',
   'archiveWindows',
+  'archiveRefreshes',
   'commentsRead',
   'emoteLoads',
   'emoteFrames',
@@ -60,6 +62,7 @@ const counters = new Set([
   'spriteHits',
 ]);
 const gauges = new Set([
+  'archiveLagMs',
   'downloadConcurrency',
   'activeRequests',
   'bufferedMediaBytes',

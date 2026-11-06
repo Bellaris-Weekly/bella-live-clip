@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import {memoryFile} from '../support/memory-file.mjs';
 import assert from 'node:assert/strict';
-import {InputVideoTrack, Output, VideoSample, VideoSampleSink} from 'mediabunny';
+import {InputVideoTrack, Output, VideoSample, VideoSampleSink, VideoSampleSource} from 'mediabunny';
 import {readVideoEncodingSettings, encodeVideoRange} from '../../../src/media/encoding.js';
 import {config as fixtureConfig, frame as fixtureFrame} from '../support/synthetic-frame.mjs';
 
@@ -396,3 +396,64 @@ test('精确模式整段回退仍没有解码画面时不能交付空视频', as
   sampleStream(t, []);
   await assert.rejects(trimPrecise({getTracks: async () => [video]}, {start: 0, end: 1}), /选区内没有画面/);
 });
+
+for (const failureAt of ['prepare', 'render', 'abort', 'encode'])
+  test(`one pending add releases both frames exactly once on ${failureAt}`, async t => {
+    webCodecs(t);
+    const source = sampleStream(t, [
+      [0, 0.02],
+      [0.02, 0.02],
+      [0.04, 0.02],
+    ]);
+    const controller = new AbortController();
+    const failure = new Error(failureAt);
+    const closed = t.mock.method(VideoSample.prototype, 'close');
+    const rendered = [];
+    let rejectAdd;
+    const add = t.mock.method(
+      VideoSampleSource.prototype,
+      'add',
+      () =>
+        new Promise((_, reject) => {
+          rejectAdd = reject;
+        }),
+    );
+    await assert.rejects(
+      async () => {
+        for await (const packet of encodeVideoRange(track().video, {
+          start: 0,
+          end: 0.06,
+          signal: controller.signal,
+          compositor: {
+            prepare(time) {
+              if (time && failureAt === 'encode') {
+                rejectAdd(failure);
+                return new Promise(() => {});
+              }
+              if (time && failureAt === 'prepare') throw failure;
+              if (time && failureAt === 'abort') controller.abort(failure);
+            },
+            render(sample, time) {
+              if (time && failureAt === 'render') throw failure;
+              const frame = new VideoSample(new Uint8Array(16 * 16 * 4), {
+                format: 'RGBA',
+                codedWidth: 16,
+                codedHeight: 16,
+                timestamp: time,
+                duration: sample.duration,
+              });
+              rendered.push(frame);
+              return frame;
+            },
+          },
+        }))
+          assert.fail(packet);
+      },
+      error => error === failure,
+    );
+    assert.equal(add.mock.callCount(), 1);
+    assert.equal(source.reads, 2);
+    assert.ok(source.returned);
+    for (const sample of [...source.samples, ...rendered])
+      assert.equal(closed.mock.calls.filter(call => call.this === sample).length, 1);
+  });

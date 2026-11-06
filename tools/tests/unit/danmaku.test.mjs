@@ -353,7 +353,7 @@ test('a failed prefetched archive aborts concurrent media reads before allocatin
   assert.equal(removed, false);
 });
 
-test('windowed archive reads freeze a live snapshot once and release its temporary file', async () => {
+test('windows within live snapshot coverage reuse one download and release its temporary file', async () => {
   const {createCommentReader} = await import('../../../src/danmaku/archive.js');
   const {memoryFile} = await import('../support/memory-file.mjs');
   let fetches = 0,

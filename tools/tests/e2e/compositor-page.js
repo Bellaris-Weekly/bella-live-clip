@@ -1,5 +1,19 @@
 import {createStreamingCompositor} from '../../../src/danmaku/streaming-compositor.js';
-import {VideoSample, Input, BlobSource, MP4, VideoSampleSink} from 'mediabunny';
+import {
+  VideoSample,
+  Input,
+  InputVideoTrack,
+  BlobSource,
+  MP4,
+  VideoSampleSink,
+  VideoSampleSource,
+  Output,
+  BufferTarget,
+  Mp4OutputFormat,
+  EncodedVideoPacketSource,
+} from 'mediabunny';
+import {encodeVideoRange} from '../../../src/media/encoding.js';
+import {deferred} from '../../../src/shared/deferred.js';
 import {createExportMetrics} from '../../../src/media/export-metrics.js';
 import {createDanmakuCompositor, createDanmakuPainter} from '../../../src/danmaku/compositor.js';
 import {
@@ -270,5 +284,163 @@ window.checkFailedEmoteSprites = () => {
     after.close();
     sample.close();
     ImageBitmap.prototype.close = close;
+  }
+};
+
+window.checkEncodingOverlap = async () => {
+  const colors = ['#ff0000', '#00ff00', '#0000ff'];
+  const canvas = new OffscreenCanvas(64, 64);
+  const context = canvas.getContext('2d');
+  const painter = createDanmakuPainter(
+    [],
+    {assets: new Map(), close() {}},
+    {
+      start: 0,
+      sourceTime: time => time,
+      width: 64,
+      height: 64,
+    },
+  );
+  const readContext = new OffscreenCanvas(64, 64).getContext('2d', {willReadFrequently: true});
+  const pixel = sample => {
+    sample.draw(readContext, 0, 0);
+    return [...readContext.getImageData(32, 32, 1, 1).data];
+  };
+  const originalSamples = VideoSampleSink.prototype.samples;
+  const originalAdd = VideoSampleSource.prototype.add;
+  const gate = deferred();
+  const events = [],
+    pixels = [],
+    samples = [],
+    rendered = [],
+    closes = new Map();
+  let active = 0,
+    peak = 0,
+    returned = false;
+  const own = sample => {
+    const close = sample.close.bind(sample);
+    sample.close = () => {
+      closes.set(sample, (closes.get(sample) ?? 0) + 1);
+      close();
+    };
+    return sample;
+  };
+  VideoSampleSink.prototype.samples = function () {
+    let index = 0;
+    return {
+      async next() {
+        if (index === colors.length) return {done: true};
+        context.fillStyle = colors[index];
+        context.fillRect(0, 0, 64, 64);
+        const value = own(new VideoSample(canvas, {timestamp: index / 30, duration: 1 / 30}));
+        samples.push(value);
+        index++;
+        return {value, done: false};
+      },
+      async return() {
+        returned = true;
+        return {done: true};
+      },
+    };
+  };
+  VideoSampleSource.prototype.add = async function (sample, options) {
+    const index = Math.round(sample.timestamp * 30);
+    events.push(`add${index}`);
+    peak = Math.max(peak, ++active);
+    try {
+      if (index === 0) await gate.promise;
+      // Inspect the original snapshot only after frame 1 repainted the painter's canvas.
+      pixels.push(pixel(sample));
+      await originalAdd.call(this, sample, options);
+      events.push(`resolved${index}`);
+    } finally {
+      active--;
+    }
+  };
+  const packets = [];
+  const timeout = setTimeout(() => gate.reject(new Error('next frame did not render during add')), 5000);
+  try {
+    for await (const packet of encodeVideoRange(new InputVideoTrack({}, {}), {
+      start: 0,
+      end: 0.1,
+      settings: {encodingOptions: {codec: 'avc', bitrate: 1000000, latencyMode: 'quality'}},
+      compositor: {
+        render(sample, time) {
+          const index = Math.round(time * 30);
+          events.push(`render${index}`);
+          const frame = own(painter.render(sample, time));
+          rendered.push(frame);
+          if (index === 1) gate.resolve();
+          return frame;
+        },
+      },
+    }))
+      packets.push(packet);
+  } finally {
+    clearTimeout(timeout);
+    VideoSampleSink.prototype.samples = originalSamples;
+    VideoSampleSource.prototype.add = originalAdd;
+    painter.close();
+  }
+  const output = new Output({format: new Mp4OutputFormat(), target: new BufferTarget()});
+  const source = new EncodedVideoPacketSource('avc');
+  output.addVideoTrack(source);
+  await output.start();
+  for (const {packet, decoderConfig} of packets) await source.add(packet, {decoderConfig});
+  await output.finalize();
+  const input = new Input({source: new BlobSource(new Blob([output.target.buffer])), formats: [MP4]});
+  const decoded = [];
+  try {
+    for await (const sample of new VideoSampleSink(await input.getPrimaryVideoTrack()).samples()) {
+      try {
+        decoded.push(pixel(sample));
+      } finally {
+        sample.close();
+      }
+    }
+  } finally {
+    input.dispose();
+  }
+  return {
+    events,
+    pixels,
+    decoded,
+    peak,
+    returned,
+    closes: [...samples, ...rendered].map(sample => closes.get(sample)),
+    timestamps: packets.map(({packet}) => packet.timestamp),
+    durations: packets.map(({packet}) => packet.duration),
+    firstKey: packets[0].packet.type,
+  };
+};
+
+window.checkLiveWindowPrefetch = async () => {
+  const calls = [];
+  const compositor = await createStreamingCompositor(
+    {room: 1},
+    {
+      reader: {
+        async read({start, end, prefetch}) {
+          calls.push({start, end, prefetch});
+          return prefetch ? null : [];
+        },
+        async close() {},
+      },
+      origin: 0,
+      start: 0,
+      sourceTime: time => time,
+      width: 64,
+      height: 64,
+      endTime: () => 20,
+    },
+  );
+  try {
+    await compositor.prepare(9);
+    const before = calls.slice();
+    await compositor.prepare(10);
+    await compositor.prepare(11);
+    return {before, after: calls};
+  } finally {
+    await compositor.close();
   }
 };

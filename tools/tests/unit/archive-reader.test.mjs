@@ -1,9 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {createCommentReader} from '../../../src/danmaku/archive.js';
-import {readMetadata} from '../../../src/danmaku/parquet.js';
+import {createCommentReader, prepareComments} from '../../../src/danmaku/archive.js';
+import {readMetadata, snapshotCoverage} from '../../../src/danmaku/parquet.js';
 import {deferred} from '../../../src/shared/deferred.js';
+import {memoryFile} from '../support/memory-file.mjs';
+import {createExportMetrics} from '../../../src/media/export-metrics.js';
+import {performanceLog} from '../../../src/shared/performance-log.js';
+import {waitForRetry} from '../../../src/services/retry-request.js';
 
 const fixture = new Uint8Array(await readFile(new URL('../fixtures/danmaku.parquet', import.meta.url))).buffer;
 const metadata = await readMetadata(fixture);
@@ -261,4 +265,395 @@ test('initial index and first snapshot preparation also retry transient reads on
   assert.equal(indexes, 2);
   assert.equal(snapshots, 2);
   assert.equal(result.file.byteLength, fixture.byteLength);
+});
+
+function sealedFetch(data, bytes, {ignoreRange = false} = {}) {
+  const requests = [];
+  return {
+    requests,
+    async fetcher(url, options) {
+      if (url.endsWith('index.json'))
+        return Response.json({
+          schemaVersion: 1,
+          sessions: [{live_key: 'x', part: 0, path: 'live-archive/x.parquet', bytes}],
+        });
+      requests.push(options.headers?.Range);
+      if (!options.headers?.Range || ignoreRange) return new Response(data);
+      const [, a, b] = /^bytes=(\d+)-(\d+)$/.exec(options.headers.Range);
+      return new Response(data.slice(Number(a), Number(b) + 1), {
+        status: 206,
+        headers: {'Content-Range': `bytes ${a}-${b}/${data.byteLength}`, ETag: 'sealed'},
+      });
+    },
+  };
+}
+
+// Preserve column offsets while moving the footer past padding to exercise the cutoff.
+function paddedFixture(size) {
+  const footerLength = new DataView(fixture).getUint32(fixture.byteLength - 8, true) + 8;
+  const data = new Uint8Array(size);
+  data.set(new Uint8Array(fixture));
+  data.set(new Uint8Array(fixture.slice(-footerLength)), size - footerLength);
+  return data.buffer;
+}
+
+for (const size of [fixture.byteLength, 8 * 1024 * 1024])
+  test(`sealed archive of ${size} bytes uses one download for metadata and disk-backed row windows`, async () => {
+    const network = sealedFetch(paddedFixture(size), size);
+    const initial = await prepareComments({room: 1, key: 'x'}, network);
+    assert.ok(initial.file instanceof ArrayBuffer);
+    const handle = memoryFile('comments.parquet');
+    let removed = 0;
+    const reader = createCommentReader(
+      {},
+      {
+        prepared: initial,
+        fetcher: network.fetcher,
+        createTemporary: async () => ({
+          handle,
+          remove: async () => {
+            removed++;
+          },
+        }),
+      },
+    );
+    try {
+      assert.equal((await reader.read(range)).length, 2);
+      assert.equal((await reader.read({...range, start: 91})).length, 2);
+      assert.equal(handle.stats.writes, 1);
+      assert.equal((await handle.getFile()).size, size);
+      assert.ok(!(initial.file instanceof ArrayBuffer), 'the buffer is handed off to temporary disk');
+      assert.deepEqual(network.requests, [undefined]);
+    } finally {
+      await reader.close();
+    }
+    assert.equal(removed, 1);
+  });
+
+for (const bytes of [fixture.byteLength - 1, fixture.byteLength + 1, '123', null, 8.5, 0])
+  test(`sealed archive rejects inconsistent index bytes ${JSON.stringify(bytes)}`, async () => {
+    const network = sealedFetch(fixture, bytes);
+    await assert.rejects(prepareComments({room: 1, key: 'x'}, network), /归档读取期间发生变化/);
+    assert.equal(network.requests.length, 1, 'integrity errors must not retry');
+  });
+
+for (const ignoreRange of [false, true])
+  test(`large sealed archives retain Range probing (server ignores Range: ${ignoreRange})`, async () => {
+    const size = 8 * 1024 * 1024 + 1;
+    const network = sealedFetch(paddedFixture(size), size, {ignoreRange});
+    const initial = await prepareComments({room: 1, key: 'x'}, network);
+    const reader = createCommentReader({}, {prepared: initial, fetcher: network.fetcher});
+    try {
+      assert.equal((await reader.read(range)).length, 2);
+      assert.equal(network.requests[0], 'bytes=0-0');
+      assert.equal(initial.file instanceof ArrayBuffer, ignoreRange);
+      assert.ok(ignoreRange ? network.requests.length === 1 : network.requests.length > 2);
+    } finally {
+      await reader.close();
+    }
+  });
+
+test('Range fallback and ignored Range responses still validate indexed size', async () => {
+  for (const ignoreRange of [false, true]) {
+    const network = sealedFetch(fixture, 8 * 1024 * 1024 + 1, {ignoreRange});
+    await assert.rejects(prepareComments({room: 1, key: 'x'}, network), /归档读取期间发生变化/);
+    assert.deepEqual(network.requests, ['bytes=0-0']);
+  }
+});
+
+const before = new Uint8Array(await readFile(new URL('../fixtures/live-before.parquet', import.meta.url))).buffer;
+const after = new Uint8Array(await readFile(new URL('../fixtures/live-after.parquet', import.meta.url))).buffer;
+const livePart = {live_key: 'growing', part: 1, started_ms: 95000, path: 'live-archive/live/growing.parquet', bytes: 1};
+
+function liveReader({files = [before, after], index, wait, onFile, time = 110000} = {}) {
+  const state = {indexes: 0, files: [], waits: [], temporary: []};
+  const controller = new AbortController();
+  const metrics = createExportMetrics();
+  const reader = createCommentReader(
+    {room: 1, key: 'growing'},
+    {
+      signal: controller.signal,
+      metrics,
+      now: () => time,
+      wait: async (ms, signal) => {
+        state.waits.push(ms);
+        if (wait) await wait(ms, signal);
+        time += ms;
+      },
+      fetcher: async (url, options) => {
+        if (url.endsWith('index.json')) {
+          const count = ++state.indexes;
+          return Response.json(index ? index(count) : {schemaVersion: 1, live: [livePart]});
+        }
+        assert.equal(options.headers?.Range, undefined, 'live snapshots and small sealed replacements download whole');
+        const bytes = files[Math.min(state.files.length, files.length - 1)];
+        state.files.push(url);
+        await onFile?.(options.signal, state.files.length);
+        return bytes === null ? new Response('', {status: 404}) : new Response(bytes);
+      },
+      createTemporary: async () => {
+        const storage = {
+          handle: memoryFile(),
+          removes: 0,
+          async remove() {
+            this.removes++;
+          },
+        };
+        state.temporary.push(storage);
+        return storage;
+      },
+    },
+  );
+  return {reader, state, metrics, controller};
+}
+
+const firstWindow = {origin: 0, start: 98, end: 108};
+const nextWindow = {origin: 0, start: 108, end: 118};
+
+test('growing snapshots supply later windows without duplicate boundary comments and retire old disk/cache generations', async () => {
+  const {reader, state, metrics} = liveReader();
+  try {
+    const first = await reader.read(firstWindow);
+    assert.deepEqual(
+      first.map(row => row.text),
+      ['100000'],
+    );
+    assert.equal(state.files.length, 1, 'the initial snapshot already covers this window');
+    assert.equal(await reader.read({...nextWindow, prefetch: true}), null);
+    assert.equal(state.indexes, 1, 'prefetch cannot poll the index');
+    assert.equal(state.files.length, 1, 'prefetch cannot refresh a snapshot');
+    const next = await reader.read(nextWindow);
+    const last = await reader.read({origin: 0, start: 118, end: 128});
+    assert.deepEqual(
+      [...first, ...next, ...last].map(row => row.text),
+      ['100000', '110000', '120000'],
+    );
+    assert.equal(state.files.length, 2, 'covered windows reuse the replacement');
+    assert.equal(state.indexes, 2);
+    assert.equal(state.temporary[0].removes, 1);
+    assert.equal(state.temporary[1].removes, 0);
+    const logged = performanceLog(metrics.snapshot());
+    assert.equal(logged.counters.archiveRefreshes, 1);
+    assert.equal(logged.stages.archiveRefreshWait.count, 1);
+    assert.equal(logged.gauges.archiveLagMs.current, 0);
+  } finally {
+    await reader.close();
+  }
+  assert.ok(state.temporary.every(storage => storage.removes === 1));
+});
+
+test('sealing mid-export switches paths and uses the sealed file even past its last event', async () => {
+  const {reader, state} = liveReader({
+    index: count =>
+      count === 1
+        ? {schemaVersion: 1, live: [livePart]}
+        : {schemaVersion: 1, sessions: [{...livePart, bytes: after.byteLength, path: 'live-archive/sealed.parquet'}]},
+  });
+  try {
+    await reader.read(firstWindow);
+    assert.deepEqual(
+      (await reader.read({origin: 0, start: 108, end: 200})).map(row => row.text),
+      ['110000', '120000', '130000'],
+    );
+    assert.ok(state.files.at(-1).endsWith('/sealed.parquet'));
+    assert.deepEqual(await reader.read({origin: 0, start: 200, end: 210}), []);
+    assert.equal(state.files.length, 2);
+    assert.equal(state.temporary[0].removes, 1);
+    assert.deepEqual(state.waits, []);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('a changed live path is reread from the index and growing bytes never use sealed size validation', async () => {
+  const {reader, state} = liveReader({
+    index: count => ({
+      schemaVersion: 1,
+      live: [
+        {
+          ...livePart,
+          bytes: count === 1 ? before.byteLength - 1 : before.byteLength,
+          path: count === 1 ? livePart.path : 'live-archive/live/new-path.parquet',
+        },
+      ],
+    }),
+  });
+  try {
+    await reader.read(firstWindow);
+    assert.equal((await reader.read(nextWindow)).length, 1);
+    assert.ok(state.files.at(-1).endsWith('/new-path.parquet'));
+  } finally {
+    await reader.close();
+  }
+});
+
+test('a stale snapshot stops polling at the bound, returns available rows and logs the remaining coverage gap', async () => {
+  const {reader, state, metrics} = liveReader({files: [before]});
+  try {
+    const rows = await reader.read(nextWindow);
+    assert.deepEqual(
+      rows.map(row => row.text),
+      ['110000'],
+    );
+    assert.deepEqual(state.waits, [10000, 10000, 10000]);
+    assert.equal(state.files.length, 5);
+    const logged = performanceLog(metrics.snapshot());
+    assert.equal(logged.counters.archiveRefreshes, 4);
+    assert.deepEqual(logged.gauges.archiveLagMs, {current: 10000, peak: 10000});
+    assert.ok(state.temporary.slice(0, -1).every(storage => storage.removes === 1));
+  } finally {
+    await reader.close();
+  }
+  assert.ok(state.temporary.every(storage => storage.removes === 1));
+});
+
+test('an already expired wall-clock bound still tries one fresh snapshot but does not sleep', async () => {
+  const {reader, state, metrics} = liveReader({files: [before], time: 200000});
+  try {
+    assert.equal((await reader.read(nextWindow)).length, 1);
+    assert.equal(state.files.length, 2);
+    assert.deepEqual(state.waits, []);
+    assert.equal(metrics.snapshot().gauges.archiveLagMs.current, 10000);
+  } finally {
+    await reader.close();
+  }
+});
+
+for (const close of [false, true])
+  test(`cancel interrupts a real polling wait and removes every temporary snapshot (reader close: ${close})`, async () => {
+    const waiting = deferred();
+    const {reader, state, controller} = liveReader({
+      files: [before],
+      wait: (ms, signal) => {
+        waiting.resolve();
+        return waitForRetry(ms, signal);
+      },
+    });
+    const rejected = assert.rejects(reader.read(nextWindow), {name: 'AbortError'});
+    await waiting.promise;
+    if (close) await reader.close();
+    else controller.abort();
+    await rejected;
+    if (!close) await reader.close();
+    assert.equal(state.files.length, 2);
+    assert.ok(state.temporary.every(storage => storage.removes === 1));
+  });
+
+test('live object deletion during sealing polls the index again instead of losing the usable snapshot', async () => {
+  const {reader, state} = liveReader({
+    files: [before, null, after],
+    index: count =>
+      count < 3
+        ? {schemaVersion: 1, live: [livePart]}
+        : {schemaVersion: 1, sessions: [{...livePart, bytes: after.byteLength, path: 'live-archive/sealed.parquet'}]},
+  });
+  try {
+    assert.equal((await reader.read(nextWindow)).length, 1);
+    assert.deepEqual(state.waits, [10000]);
+    assert.ok(state.files.at(-1).endsWith('/sealed.parquet'));
+  } finally {
+    await reader.close();
+  }
+});
+
+test('a regressed live snapshot cannot replace a newer generation', async () => {
+  const {reader, state, metrics} = liveReader({files: [after, before], time: 200000});
+  try {
+    assert.deepEqual(
+      (await reader.read({origin: 0, start: 118, end: 140})).map(row => row.text),
+      ['120000', '130000'],
+    );
+    assert.equal(state.temporary[0].removes, 0);
+    assert.equal(state.temporary[1].removes, 1);
+    assert.equal(metrics.snapshot().gauges.archiveLagMs.current, 12000);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('coverage comes from reception statistics even with null rows, never sent times or upload metadata', async () => {
+  const metadata = await readMetadata(before);
+  assert.equal(snapshotCoverage(metadata), 110);
+  const copy = structuredClone(metadata);
+  const stats = copy.row_groups[0].columns.find(column => column.meta_data.path_in_schema[0] === 't').meta_data;
+  stats.statistics.null_count = 1n;
+  assert.equal(snapshotCoverage(copy), 110);
+  stats.statistics.is_max_value_exact = false;
+  assert.equal(snapshotCoverage(copy), 0, 'an inexact maximum cannot claim coverage');
+  delete stats.statistics;
+  assert.equal(snapshotCoverage(copy), 0, 'missing reception statistics must not claim coverage');
+});
+
+test('a stalled refresh request is canceled by the total budget and proceeds with available rows', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const requested = deferred();
+  let canceled = false;
+  const {reader, metrics, state} = liveReader({
+    files: [before],
+    onFile: (signal, count) => {
+      if (count === 1) return;
+      requested.resolve();
+      return new Promise((_, reject) =>
+        signal.addEventListener(
+          'abort',
+          () => {
+            canceled = true;
+            reject(signal.reason);
+          },
+          {once: true},
+        ),
+      );
+    },
+  });
+  try {
+    const pending = reader.read(nextWindow);
+    await requested.promise;
+    t.mock.timers.tick(30000);
+    assert.deepEqual(
+      (await pending).map(row => row.text),
+      ['110000'],
+    );
+    assert.equal(canceled, true);
+    assert.equal(state.files.length, 2);
+    assert.equal(metrics.snapshot().gauges.archiveLagMs.current, 10000);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('new partitions discovered while sealing also supply the demanded window', async () => {
+  const {reader, state} = liveReader({
+    files: [before, before, after],
+    index: count =>
+      count === 1
+        ? {schemaVersion: 1, live: [livePart]}
+        : {
+            schemaVersion: 1,
+            sessions: [
+              {...livePart, bytes: before.byteLength, path: 'live-archive/sealed-1.parquet'},
+              {...livePart, part: 2, bytes: after.byteLength, path: 'live-archive/sealed-2.parquet'},
+            ],
+          },
+  });
+  try {
+    assert.deepEqual(
+      (await reader.read({origin: 0, start: 118, end: 128})).map(row => row.text),
+      ['120000'],
+    );
+    assert.equal(state.files.length, 3);
+    assert.ok(state.files.at(-1).endsWith('/sealed-2.parquet'));
+  } finally {
+    await reader.close();
+  }
+});
+
+test('a malformed replacement remains fatal instead of being mistaken for archive lag', async () => {
+  const {reader, state} = liveReader({files: [before, new Uint8Array(20).buffer]});
+  try {
+    await assert.rejects(reader.read(nextWindow), /parquet|PAR1/i);
+    assert.equal(state.temporary[0].removes, 0);
+  } finally {
+    await reader.close();
+  }
+  assert.ok(state.temporary.every(storage => storage.removes === 1));
 });

@@ -219,6 +219,7 @@ export async function exportSelection(
       input,
       destination,
       preparedComments,
+      preparedEmoteCatalog,
       failure,
       saved = false;
     const entries = new Map(),
@@ -259,9 +260,22 @@ export async function exportSelection(
     }
     try {
       if (danmaku) {
-        const {prepareComments} = await import('../danmaku/archive.js');
+        const [{prepareComments}, {loadEmoteCatalog}] = await Promise.all([
+          import('../danmaku/archive.js'),
+          import('../danmaku/emotes.js'),
+        ]);
         const finishArchive = metrics.start('archiveSetup');
         preparedComments = prepareComments(record, {signal}).finally(finishArchive);
+        const finishCatalog = metrics.start('emoteCatalog');
+        const controller = new AbortController();
+        preparedEmoteCatalog = {
+          controller,
+          promise: loadEmoteCatalog(record.room, {signal: AbortSignal.any([signal, controller.signal])}).finally(
+            finishCatalog,
+          ),
+        };
+        // A speculative catalog failure is retried on demand by the compositor.
+        void preparedEmoteCatalog.promise.catch(() => {});
         // A failed archive must also stop the concurrent media download.
         void preparedComments.catch(error => planController.abort(error));
       }
@@ -327,6 +341,7 @@ export async function exportSelection(
           origin,
           adjustment: danmaku.adjustment,
           preparedComments,
+          preparedEmoteCatalog,
           createTemporary,
           fileHandle: destination.handle,
           metrics,
@@ -433,6 +448,7 @@ export async function exportSelection(
       await cleanUp(
         failure,
         () => preparedComments?.catch(() => {}),
+        () => preparedEmoteCatalog?.promise.catch(() => {}),
         () => input?.dispose(),
         () => (destination && !saved ? destination.remove() : undefined),
         () => temporary?.remove(),
