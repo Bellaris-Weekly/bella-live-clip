@@ -269,3 +269,41 @@ test('backlogged heartbeat snapshots coalesce and the queue remains bounded', as
   assert.equal(events.at(-1), 'export_completed');
   assert.ok(events.length <= 4);
 });
+
+test('失败日志保留被包装的浏览器错误、失败的存储操作和清理时的二次错误', async () => {
+  const {reporter, requests} = setup();
+  const browser = new DOMException('A requested file or directory could not be found', 'NotFoundError');
+  browser.diagnostic = {operation: 'write', target: 'temporary', url: 'https://cdn.example/a.m4s?token=never'};
+  const error = new Error('浏览器临时文件读写失败（NotFoundError）', {cause: browser});
+  error.suppressed = [new TypeError('Cannot close a ERRORED writable stream')];
+  reporter.begin('export').fail(error);
+  await settle();
+  const failed = requests.map(item => JSON.parse(item.data)).find(item => item.event === 'export_failed');
+  assert.equal(failed.context.error.message, '浏览器临时文件读写失败（NotFoundError）');
+  assert.deepEqual(failed.context.error.causes, [
+    {
+      name: 'NotFoundError',
+      message: 'A requested file or directory could not be found',
+      code: 8,
+      operation: 'write',
+      target: 'temporary',
+      url: 'https://cdn.example/a.m4s',
+    },
+  ]);
+  assert.deepEqual(failed.context.error.suppressed, [
+    {name: 'TypeError', message: 'Cannot close a ERRORED writable stream'},
+  ]);
+});
+
+test('中断但保存了部分内容的整场下载记为 partial 警告并带中断原因', async () => {
+  const {reporter, requests} = setup();
+  const error = new Error('请求失败（HTTP 404），请重新加载后重试。');
+  error.status = 404;
+  reporter.begin('recording_download').finish({status: 'partial', error, files: 1, writtenBytes: 10, mediaSeconds: 5});
+  await settle();
+  const partial = requests.map(item => JSON.parse(item.data)).find(item => item.event === 'recording_download_partial');
+  assert.equal(partial.level, 'warn');
+  assert.equal(partial.message, error.message);
+  assert.equal(partial.context.error.status, 404);
+  assert.equal(partial.context.result.files, 1);
+});

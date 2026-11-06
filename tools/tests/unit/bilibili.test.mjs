@@ -141,11 +141,56 @@ test('failed, malformed or incomplete API responses use validated room HTML', as
     const result = await api.current(MEMBERS[4], signal);
     assert.equal(result.key, activityRoom.live_id_str);
     assert.equal(result.start, 1793447447);
-    assert.equal(calls.length, 2);
-    assert.equal(calls[1].url, 'https://live.bilibili.com/30858592');
+    assert.equal(calls.length, 3);
+    assert.deepEqual(
+      calls.map(call => call.options.auth),
+      [true, false, undefined],
+    );
+    assert.equal(calls[2].url, 'https://live.bilibili.com/30858592');
     assert.ok(calls.every(call => call.options.signal === signal));
-    assert.equal(calls[1].options.auth, undefined);
   }
+});
+
+test('a signed-in room lookup rejected by the API is retried anonymously before the page', async () => {
+  for (const live_status of [1, 2]) {
+    const calls = [];
+    const api = new BiliApi(async (url, options) => {
+      calls.push({url, options});
+      if (options.auth) return {data: JSON.stringify({code: -400, message: '请求错误'})};
+      return live_status === 1
+        ? baseResponse(activityRoom)
+        : baseResponse({...activityRoom, live_status, live_time: '0000-00-00 00:00:00'});
+    });
+    const result = await api.current(MEMBERS[4], undefined, {allowOffline: true});
+    assert.equal(calls.length, 2);
+    assert.ok(calls.every(call => call.url.startsWith('https://api.live.bilibili.com/')));
+    if (live_status === 1) assert.equal(result.key, activityRoom.live_id_str);
+    else assert.equal(result, null);
+  }
+  // Offline is an answer, not a failure: it must not fall through to the page.
+  let page = 0;
+  const offline = new BiliApi(async (url, options) => {
+    if (url.startsWith('https://live.')) page++;
+    if (options?.auth) return {data: JSON.stringify({code: -400})};
+    return baseResponse({...activityRoom, live_status: 0, live_time: '0000-00-00 00:00:00'});
+  });
+  await assert.rejects(offline.current(MEMBERS[4]), /当前没有直播/);
+  assert.equal(page, 0);
+});
+
+test('a failed room lookup keeps the first API error and records every fallback', async () => {
+  const api = new BiliApi(async url =>
+    url.startsWith('https://live.')
+      ? {data: '<html></html>'}
+      : {data: JSON.stringify({code: -400, message: '请求错误'})},
+  );
+  const error = await api.current(MEMBERS[4]).catch(error => error);
+  assert.match(error.message, /B 站返回 -400：请求错误/);
+  assert.equal(error.code, -400);
+  assert.deepEqual(error.diagnostic, {endpoint: '/xlive/web-room/v1/index/getRoomBaseInfo', auth: true});
+  assert.equal(error.suppressed.length, 2);
+  assert.equal(error.suppressed[0].diagnostic.auth, false);
+  assert.match(error.suppressed[1].message, /未找到直播场次信息/);
 });
 
 test('valid offline HTML remains usable when the API fails', async () => {

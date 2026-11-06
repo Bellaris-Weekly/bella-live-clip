@@ -1,3 +1,6 @@
+// About 15 s of backoff: long enough for a fragment the platform is still writing.
+export const LIVE_MISSING_RETRIES = 4;
+
 export class RequestError extends Error {
   constructor(message, {retryable = false, status} = {}) {
     super(message);
@@ -30,7 +33,7 @@ export async function requestWithRetry(
   api,
   url,
   options = {},
-  {onRetry = () => {}, wait = waitForRetry, limit = Infinity} = {},
+  {onRetry = () => {}, wait = waitForRetry, limit = Infinity, missingRetries = 0} = {},
 ) {
   const {signal} = options;
   let attempt = 0;
@@ -41,7 +44,9 @@ export async function requestWithRetry(
         return await api.request(url, options);
       } catch (error) {
         signal?.throwIfAborted();
-        if (!(error instanceof RequestError) || !error.retryable || attempt >= limit) throw error;
+        // A recording still in progress can list a fragment before it exists.
+        const missing = error instanceof RequestError && error.status === 404 && attempt < missingRetries;
+        if (!(error instanceof RequestError) || !(error.retryable || missing) || attempt >= limit) throw error;
         const delay = Math.min(1000 * 2 ** Math.min(attempt++, 4), 10000);
         onRetry({attempt, delay});
         await wait(delay, signal);

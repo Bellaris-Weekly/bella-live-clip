@@ -128,3 +128,41 @@ test('a retry limit surfaces the last error instead of waiting forever', async (
   );
   assert.equal(calls, 3);
 });
+
+test('a missing fragment is retried only as many times as the caller allows', async () => {
+  for (const missingRetries of [0, 2]) {
+    let calls = 0;
+    const api = {
+      async request() {
+        calls++;
+        throw new RequestError('HTTP 404', {status: 404});
+      },
+    };
+    await assert.rejects(requestWithRetry(api, 'u', {}, {missingRetries, wait: async () => {}}), /404/);
+    assert.equal(calls, missingRetries + 1);
+  }
+  let calls = 0;
+  const api = {
+    async request() {
+      if (!calls++) throw new RequestError('HTTP 404', {status: 404});
+      return {data: 'ok'};
+    },
+  };
+  assert.deepEqual(await requestWithRetry(api, 'u', {}, {missingRetries: 1, wait: async () => {}}), {data: 'ok'});
+  // Other permanent errors are never retried.
+  let denied = 0;
+  await assert.rejects(
+    requestWithRetry(
+      {
+        async request() {
+          denied++;
+          throw new RequestError('HTTP 403', {status: 403});
+        },
+      },
+      'u',
+      {},
+      {missingRetries: 3, wait: async () => {}},
+    ),
+  );
+  assert.equal(denied, 1);
+});

@@ -29,7 +29,7 @@ const stubs = {
     'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;',
   recording: 'export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
   'temporary-media':
-    'export const createTemporaryMedia=()=>{};export const ensureTemporarySpace=async(...args)=>scenario.space?.(...args);',
+    'export const createTemporaryMedia=()=>{};export const ensureTemporarySpace=async(...args)=>scenario.space?.(...args);export const mediaStorageError=error=>error;',
 };
 const {outputFiles} = await build({
   entryPoints: ['src/app/application.js'],

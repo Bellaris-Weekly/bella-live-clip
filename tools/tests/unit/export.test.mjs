@@ -707,3 +707,138 @@ for (const start of [0.27, 0.67])
       input.dispose();
     }
   });
+
+const missing = () => new RequestError('请求失败（HTTP 404），请重新加载后重试。', {status: 404});
+
+test('整场保存遇到读不到的分片时保留已完成部分，并报告中断原因', async () => {
+  const {memoryFile} = await import('../support/memory-file.mjs');
+  const api = await sampleApi('plain', true);
+  api.beforeRead = url => {
+    if (url === 'part4') throw missing();
+  };
+  const file = memoryFile();
+  const result = await saveRecording(api, api.groups, file, {keepPartial: true, concurrency: 1});
+  assert.equal(result.saved, true);
+  assert.equal(result.stopped, true);
+  assert.equal(result.interrupted.status, 404);
+  assert.equal(file.stats.closed, 1);
+  const saved = await inspect(await file.getFile());
+  assert.ok(Math.abs(saved.duration - 8) < 0.1, `kept the four readable parts, got ${saved.duration}`);
+
+  const strict = memoryFile();
+  await assert.rejects(saveRecording(api, api.groups, strict, {concurrency: 1}), error => error.status === 404);
+  assert.equal(strict.stats.closed, 0);
+  assert.equal(strict.stats.aborted, 1);
+});
+
+test('直播中的录像对尚未生成的分片短暂重试，之后照常保存', async () => {
+  const {memoryFile} = await import('../support/memory-file.mjs');
+  const api = await sampleApi('plain', true);
+  let failures = 0;
+  api.beforeRead = url => {
+    if (url === 'part5' && !failures++) throw missing();
+  };
+  const file = memoryFile();
+  const result = await saveRecording(api, api.groups, file, {missingRetries: 2, concurrency: 1});
+  assert.equal(result.interrupted, undefined);
+  assert.equal(result.stopped, false);
+  assert.equal(failures, 2);
+  assert.ok(Math.abs((await inspect(await file.getFile())).duration - 12) < 0.1);
+});
+
+test('只有一个保存位置时，跨断流的选区在下载前就被拒绝；越过断流一点点不算', async () => {
+  const api = await sampleApi('plain', true),
+    group = api.groups[0];
+  const groups = [group, {...group, start: 115, streamEnd: 127}];
+  let created = 0;
+  await assert.rejects(
+    exportSelection(
+      api,
+      {start: 100},
+      groups,
+      {start: 0, end: 27},
+      {
+        maxFiles: 1,
+        createTemporary: async () => {
+          created++;
+        },
+      },
+    ),
+    /断流位置/,
+  );
+  assert.equal(created, 0);
+  assert.equal(api.starts.length, 0);
+  const outputs = await exportSelection(api, {start: 100}, groups, {start: 9, end: 15.05}, {maxFiles: 1});
+  assert.equal(outputs.length, 1);
+});
+
+test('临时文件写入失败时报告浏览器原始错误和失败的操作，而不是清理时的二次错误', async () => {
+  const api = await sampleApi('plain', true);
+  const lost = new DOMException('A requested file or directory could not be found', 'NotFoundError');
+  let aborted = 0;
+  const handle = {
+    async createWritable() {
+      return {
+        async write() {
+          throw lost;
+        },
+        async close() {},
+        async abort() {
+          aborted++;
+        },
+      };
+    },
+  };
+  const error = await exportSelection(
+    api,
+    {start: 100},
+    api.groups,
+    {start: 1, end: 9},
+    {
+      createTemporary: async () => ({handle, async remove() {}}),
+    },
+  ).catch(error => error);
+  assert.match(error.message, /浏览器临时文件读写失败（NotFoundError）/);
+  assert.equal(error.cause, lost);
+  assert.equal(lost.diagnostic.target, 'temporary');
+  assert.equal(aborted, 1);
+});
+
+test('写入流已出错时，取消输出不会用二次错误替换原因', async () => {
+  const {createMediaOutput} = await import('../../../src/media/file-output.js');
+  const lost = new DOMException('A requested file or directory could not be found', 'NotFoundError');
+  let aborted = 0;
+  const fileHandle = {
+    async createWritable() {
+      return {
+        async write() {
+          throw lost;
+        },
+        async close() {},
+        async abort() {
+          aborted++;
+        },
+      };
+    },
+  };
+  const session = await createMediaOutput({fileHandle, storageTarget: 'temporary'});
+  const source = new EncodedAudioPacketSource('aac');
+  session.output.addAudioTrack(source);
+  await session.output.start();
+  // Large packets fill the 1 MiB write chunks while the output is still muxing.
+  let failure;
+  try {
+    for (let i = 0; i < 20; i++) {
+      await source.add(new EncodedPacket(new Uint8Array(400_000), 'key', i, 1), {decoderConfig: audioConfig});
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    await session.finish();
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(failure, lost);
+  assert.deepEqual(lost.diagnostic, {operation: 'write', target: 'temporary'});
+  await session.cancel(failure);
+  assert.equal(aborted, 1);
+  assert.ok(failure.suppressed?.every(error => error instanceof TypeError));
+});

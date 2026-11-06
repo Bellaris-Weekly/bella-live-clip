@@ -13,6 +13,7 @@ export function createRecordingDownload(
     onRetry = () => {},
     metrics,
     limit = () => Infinity,
+    missingRetries = 0,
   } = {},
 ) {
   const items = groups.flatMap((group, groupIndex) => group.segments.map(segment => ({segment, groupIndex})));
@@ -43,7 +44,7 @@ export function createRecordingDownload(
         api,
         segment.url,
         {type: 'arraybuffer', range: segment.range, signal: controller.signal},
-        {onRetry: state => retry(segment, state)},
+        {onRetry: state => retry(segment, state), missingRetries},
       );
       controller.signal.throwIfAborted();
       const data = new Uint8Array(response.data);

@@ -1,6 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createTemporaryMedia, ensureTemporarySpace, removeAbandonedMedia} from '../../../src/media/temporary-media.js';
+import {
+  createTemporaryMedia,
+  ensureTemporarySpace,
+  mediaStorageError,
+  removeAbandonedMedia,
+} from '../../../src/media/temporary-media.js';
+import {annotate} from '../../../src/shared/errors.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 function directory(files) {
@@ -80,4 +86,36 @@ test('unknown sizes and unavailable estimates are not treated as a lack of space
     },
     1e12,
   );
+});
+
+test('file-state errors become actionable messages that keep the browser error as their cause', () => {
+  const lost = annotate(new DOMException('gone', 'NotFoundError'), {operation: 'write', target: 'temporary'});
+  const temporary = mediaStorageError(lost);
+  assert.match(temporary.message, /浏览器临时文件读写失败（NotFoundError）/);
+  assert.equal(temporary.cause, lost);
+  const changed = annotate(new DOMException('changed', 'InvalidStateError'), {target: 'destination'});
+  assert.match(mediaStorageError(changed).message, /保存的文件写入失败（InvalidStateError）/);
+  // Same names from elsewhere, e.g. a decoder or the stream pipe, are left alone.
+  for (const error of [
+    new DOMException('x', 'InvalidStateError'),
+    annotate(new DOMException('x', 'NotFoundError'), {target: 'stream'}),
+  ])
+    assert.equal(mediaStorageError(error), error);
+  assert.match(mediaStorageError(new DOMException('full', 'QuotaExceededError')).message, /存储空间不足/);
+});
+
+test('creating and removing temporary media name the failing storage call', async () => {
+  const denied = new DOMException('changed', 'InvalidStateError');
+  const storage = {
+    async getDirectory() {
+      return {
+        async *entries() {},
+        async getFileHandle() {
+          throw denied;
+        },
+      };
+    },
+  };
+  await assert.rejects(createTemporaryMedia({storage}), error => error === denied);
+  assert.deepEqual(denied.diagnostic, {operation: 'getFileHandle', target: 'temporary'});
 });

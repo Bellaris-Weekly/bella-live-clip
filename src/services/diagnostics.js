@@ -19,6 +19,39 @@ function text(value, limit) {
 }
 const number = value => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 
+const fact = value =>
+  typeof value === 'string' ? text(value, 256) : typeof value === 'boolean' ? value : number(value);
+
+// One error as reported: its own annotations plus the browser's name/message.
+function describe(error) {
+  if (!error || typeof error !== 'object') return {message: text(String(error), 512)};
+  const result = {name: text(error.name, 128), message: text(error.message, 512)};
+  if (typeof error.status === 'number') result.status = error.status;
+  if (error.code !== undefined) result.code = fact(error.code);
+  for (const [key, value] of Object.entries(error.diagnostic ?? {}).slice(0, 16)) {
+    const safe = fact(value);
+    if (safe !== undefined && !(key in result)) result[key] = safe;
+  }
+  return result;
+}
+
+// A user-facing wrapper hides the browser's error; cleanup failures are kept
+// beside the error that ended the operation instead of replacing it.
+export function errorDetail(error) {
+  if (!error || typeof error !== 'object') return undefined;
+  const detail = describe(error),
+    causes = [],
+    seen = new Set([error]);
+  for (let cause = error.cause; cause && causes.length < 3 && !seen.has(cause); cause = cause?.cause) {
+    seen.add(cause);
+    causes.push(describe(cause));
+  }
+  if (causes.length) detail.causes = causes;
+  if (Array.isArray(error.suppressed) && error.suppressed.length)
+    detail.suppressed = error.suppressed.slice(0, 3).map(describe);
+  return detail;
+}
+
 function pageIdentity(value) {
   try {
     const url = new URL(value);
@@ -174,7 +207,7 @@ export function createDiagnosticReporter({
             /* Keep the last snapshot. */
           }
           const performance = performanceLog(metrics);
-          const processed = ['completed', 'stopped'].includes(outcome)
+          const processed = ['completed', 'stopped', 'partial'].includes(outcome)
             ? (context.result?.mediaSeconds ?? context.progress?.processedSeconds)
             : context.progress?.processedSeconds;
           const processingMs = performance?.elapsedMs;
@@ -194,7 +227,7 @@ export function createDiagnosticReporter({
             id: `${operation}:${sequence++}`,
             source: 'bella-live-clip',
             event: `${action}_${suffix}`,
-            level: outcome === 'failed' ? 'error' : outcome === 'stalled' ? 'warn' : 'info',
+            level: outcome === 'failed' ? 'error' : ['stalled', 'partial'].includes(outcome) ? 'warn' : 'info',
             version,
             message: text(message, 4096) || '运行记录',
             context: {
@@ -222,7 +255,9 @@ export function createDiagnosticReporter({
                           : performance.counters.videoFrames / (processingMs / 1000),
                     }
                   : undefined,
-              ...(error ? {errorName: text(error.name, 128), stack: text(error.stack, 8192)} : {}),
+              ...(error
+                ? {errorName: text(error.name, 128), error: errorDetail(error), stack: text(error.stack, 8192)}
+                : {}),
             },
           };
           let body = JSON.stringify(payload);
@@ -293,11 +328,14 @@ export function createDiagnosticReporter({
             writtenBytes: number(result.writtenBytes),
             mediaSeconds: number(result.mediaSeconds),
           };
-          const outcome = ['canceled', 'stopped'].includes(result.status) ? result.status : 'completed';
-          complete(
-            outcome,
-            outcome === 'completed' ? '操作完成' : outcome === 'stopped' ? '已停止并保存' : '操作已取消',
-          );
+          const outcome = ['canceled', 'stopped', 'partial'].includes(result.status) ? result.status : 'completed';
+          const messages = {
+            completed: '操作完成',
+            stopped: '已停止并保存',
+            partial: result.error?.message || '已保存部分内容',
+            canceled: '操作已取消',
+          };
+          complete(outcome, messages[outcome], outcome === 'partial' ? result.error : undefined);
         },
         fail(error, signal) {
           if (signal?.aborted || error?.name === 'AbortError') complete('canceled', '操作已取消');

@@ -9,7 +9,7 @@ export const logsPage = `<!doctype html>
 <main><form id="filters"><div class="filters">
 <label>开始时间<input type="datetime-local" name="from" id="from"></label><label>结束时间<input type="datetime-local" name="to" id="to"></label>
 <label>导出方式<select name="mode"><option value="">全部方式</option><option value="danmaku">弹幕</option><option value="precise">精确</option><option value="copy">原画</option><option value="whole">整场</option></select></label>
-<label>运行状态<select name="outcome"><option value="">全部状态</option><option value="started">开始</option><option value="progress">运行中</option><option value="stalled">进度停滞</option><option value="completed">完成</option><option value="stopped">停止并保存</option><option value="canceled">取消</option><option value="failed">失败</option></select></label>
+<label>运行状态<select name="outcome"><option value="">全部状态</option><option value="started">开始</option><option value="progress">运行中</option><option value="stalled">进度停滞</option><option value="completed">完成</option><option value="stopped">停止并保存</option><option value="partial">中断并保存部分</option><option value="canceled">取消</option><option value="failed">失败</option></select></label>
 <label>来源<input name="source" value="bella-live-clip" placeholder="全部来源"></label><label>任务编号<input name="operation" placeholder="关联一次导出的所有日志" autocomplete="off"></label>
 <label>版本<input name="version" placeholder="全部版本"></label><label>级别<select name="level"><option value="">全部级别</option><option value="info">正常</option><option value="warn">警告</option><option value="error">错误</option></select></label>
 </div><div class="toolbar"><button class="button primary" type="submit">查询日志</button><button class="button" type="button" id="resetFilters">重置</button><span class="spacer"></span><span class="hint">下载 JSONL，包含完整上下文；单次最多 5,000 条。</span></div></form>
@@ -31,6 +31,7 @@ export function startLogViewer() {
     stalled: '停滞',
     completed: '完成',
     stopped: '已保存',
+    partial: '部分保存',
     canceled: '取消',
     failed: '失败',
   };
@@ -226,7 +227,7 @@ export function startLogViewer() {
     const finished = logs.filter(
       log =>
         ['export', 'recording_download'].includes(log.context?.operation?.action) &&
-        ['completed', 'stopped'].includes(log.context?.operation?.outcome),
+        ['completed', 'stopped', 'partial'].includes(log.context?.operation?.outcome),
     );
     const speeds = finished.map(log => log.context?.throughput?.realtime).filter(Number.isFinite);
     $('total').textContent = logs.length;

@@ -1,5 +1,6 @@
 import {recordFromReplay, recordFromRoom, roomFromHtml, roomFromBaseInfo} from '../domain/records.js';
 import {RequestError} from './retry-request.js';
+import {annotate} from '../shared/errors.js';
 
 const API = 'https://api.live.bilibili.com';
 
@@ -82,9 +83,13 @@ export class BiliApi {
     this.request = request;
   }
 
-  async get(path, params, signal) {
-    const {data: text} = await this.request(`${API}${path}?${new URLSearchParams(params)}`, {auth: true, signal});
-    return this.parse(text);
+  async get(path, params, signal, {auth = true} = {}) {
+    try {
+      const {data: text} = await this.request(`${API}${path}?${new URLSearchParams(params)}`, {auth, signal});
+      return this.parse(text);
+    } catch (error) {
+      throw annotate(error, {endpoint: path, auth});
+    }
   }
 
   parse(text) {
@@ -92,7 +97,7 @@ export class BiliApi {
     try {
       response = JSON.parse(text);
     } catch {
-      throw new Error('B 站没有返回接口数据，请刷新页面后重试。');
+      throw annotate(new Error('B 站没有返回接口数据，请刷新页面后重试。'), {operation: 'parseJson'});
     }
     if (response.code !== 0) {
       const messages = {
@@ -102,7 +107,11 @@ export class BiliApi {
         '-352': 'B 站暂时限制了请求，请稍后再试。',
         '-412': 'B 站暂时限制了请求，请稍后再试。',
       };
-      throw new Error(messages[response.code] || `B 站返回 ${response.code}：${response.message || '请求未成功'}`);
+      const error = new Error(
+        messages[response.code] || `B 站返回 ${response.code}：${response.message || '请求未成功'}`,
+      );
+      error.code = response.code;
+      throw error;
     }
     return response.data;
   }
@@ -127,6 +136,10 @@ export class BiliApi {
   }
 
   async current(member, signal, {allowOffline = false} = {}) {
+    const finish = record => {
+      if (!record && !allowOffline) throw new Error('当前没有直播。可以切换到历史回放，选择已结束的场次。');
+      return record;
+    };
     const resolve = info => {
       if (![0, 1, 2].includes(info?.live_status)) throw new Error('直播间暂未返回场次信息。');
       if (Number(info.room_id) !== Number(member.room) && Number(info.short_id) !== Number(member.room)) {
@@ -135,32 +148,49 @@ export class BiliApi {
       if (info.live_status !== 1) return null;
       return recordFromRoom(info, member);
     };
-    let record;
-    try {
-      // Resolve by room ID so activity layouts and page redirects cannot select the stream.
+    // Resolve by room ID so activity layouts and page redirects cannot select the stream.
+    const lookup = async auth => {
       const data = await this.get(
         '/xlive/web-room/v1/index/getRoomBaseInfo',
         {room_ids: member.room, req_biz: 'web_room_componet'},
         signal,
+        {auth},
       );
       signal?.throwIfAborted();
-      record = resolve(roomFromBaseInfo(data, member.room));
+      return resolve(roomFromBaseInfo(data, member.room));
+    };
+    let record;
+    try {
+      record = await lookup(true);
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
       if (error.name === 'AbortError') throw error;
-      try {
-        const {data} = await this.request(`https://live.bilibili.com/${member.room}`, {signal});
-        signal?.throwIfAborted();
-        record = resolve(roomFromHtml(data));
-      } catch (fallbackError) {
-        if (signal?.aborted) throw signal.reason;
-        if (fallbackError.name === 'AbortError') throw fallbackError;
-        // Preserve the actionable API error instead of replacing it with missing activity-page HTML.
-        throw error;
+      const fallbacks = [
+        // Room info is public. Some accounts' cookies get a -400 that an
+        // anonymous request does not, and the HTML may lack the room data.
+        () => lookup(false),
+        async () => {
+          const {data} = await this.request(`https://live.bilibili.com/${member.room}`, {signal});
+          signal?.throwIfAborted();
+          return resolve(roomFromHtml(data));
+        },
+      ];
+      let resolved = false;
+      for (const fallback of fallbacks) {
+        try {
+          record = await fallback();
+          resolved = true;
+          break;
+        } catch (fallbackError) {
+          if (signal?.aborted) throw signal.reason;
+          if (fallbackError.name === 'AbortError') throw fallbackError;
+          (error.suppressed ??= []).push(fallbackError);
+        }
       }
+      // Preserve the actionable API error instead of replacing it with missing activity-page HTML.
+      if (!resolved) throw error;
     }
-    if (!record && !allowOffline) throw new Error('当前没有直播。可以切换到历史回放，选择已结束的场次。');
-    return record;
+    return finish(record);
   }
 
   async clips(record, start, end, signal) {

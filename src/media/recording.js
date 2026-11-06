@@ -12,6 +12,12 @@ import {
 } from 'mediabunny';
 import {createRecordingDownload} from './recording-download.js';
 import {RecordingTimeline, recordingTime} from './recording-timeline.js';
+import {RequestError} from '../services/retry-request.js';
+import {cleanUp, storageStep} from '../shared/errors.js';
+
+// `keepPartial` saves the playable prefix when a fragment cannot be read, the
+// same way a stop does. `missingRetries` waits for fragments that a recording
+// still in progress lists before the platform has finished writing them.
 export async function saveRecording(
   api,
   groups,
@@ -25,9 +31,14 @@ export async function saveRecording(
     fragmented = false,
     downloadLimit,
     metrics,
+    storageTarget = 'destination',
+    keepPartial = false,
+    missingRetries = 0,
   } = {},
 ) {
-  let file,
+  let failure,
+    interruption,
+    file,
     input,
     output,
     bytes = 0,
@@ -67,6 +78,7 @@ export async function saveRecording(
     concurrency,
     limit: downloadLimit,
     metrics,
+    missingRetries,
     onRead: size => {
       bytes += size;
       metrics?.add('downloadedBytes', size);
@@ -89,7 +101,7 @@ export async function saveRecording(
     if (stopSignal?.aborted) return {stopped: true, saved: false, bytes: 0, duration: 0};
     const finishOpen = metrics?.start('fileOpen');
     try {
-      file = await fileHandle.createWritable();
+      file = await storageStep('createWritable', storageTarget, () => fileHandle.createWritable());
     } finally {
       finishOpen?.();
     }
@@ -100,7 +112,7 @@ export async function saveRecording(
         signal?.throwIfAborted();
         const finish = metrics?.start('fileWrite');
         try {
-          await file.write(chunk);
+          await storageStep('write', storageTarget, () => file.write(chunk));
           metrics?.add('writtenBytes', chunk.data.byteLength);
         } finally {
           finish?.();
@@ -214,13 +226,19 @@ export async function saveRecording(
       }
     } catch (error) {
       signal?.throwIfAborted();
-      if (!stopSignal?.aborted || error !== stopSignal.reason || download.signal.reason !== stopSignal.reason)
-        throw error;
+      const stopping =
+        stopSignal?.aborted && error === stopSignal.reason && download.signal.reason === stopSignal.reason;
+      // Only a failed fragment read is salvageable. Muxer and disk errors leave
+      // the output in an unknown state and still fail the whole export.
+      const unreadable = keepPartial && error instanceof RequestError && download.signal.reason === error;
+      if (!stopping && !unreadable) throw error;
+      if (!stopping) interruption = error;
     }
     signal?.throwIfAborted();
-    const stopped = Boolean(stopSignal?.aborted && processed < 1);
-    if (stopped && (!tracks.size || [...tracks.values()].some(track => !track.written)))
-      return {stopped: true, saved: false, bytes: 0, duration: 0};
+    const playable = tracks.size && [...tracks.values()].every(track => track.written);
+    if (interruption && !playable) throw interruption;
+    const stopped = Boolean((stopSignal?.aborted || interruption) && processed < 1);
+    if (stopped && !playable) return {stopped: true, saved: false, bytes: 0, duration: 0};
     if (!tracks.size || [...tracks.values()].some(track => !track.written))
       throw new Error('这段录像缺少关键帧，无法导出。');
     phase = 'finalizing';
@@ -235,26 +253,34 @@ export async function saveRecording(
     signal?.throwIfAborted();
     const finishClose = metrics?.start('fileClose');
     try {
-      await file.close();
+      await storageStep('close', storageTarget, () => file.close());
     } finally {
       finishClose?.();
     }
     file = null;
     phase = 'saved';
     report(true);
-    return {bytes: written, stopped, saved: true, duration: timeline.end};
+    return {
+      bytes: written,
+      stopped,
+      saved: true,
+      duration: timeline.end,
+      ...(interruption ? {interrupted: interruption} : {}),
+    };
   } catch (error) {
-    if (signal?.aborted) throw signal.reason;
-    throw error;
+    failure = signal?.aborted ? signal.reason : error;
+    throw failure;
   } finally {
     signal?.removeEventListener('abort', abort);
     stopSignal?.removeEventListener('abort', stop);
-    await download.close();
-    try {
-      if (output && output.state !== 'finalized' && output.state !== 'canceled') await output.cancel();
-    } finally {
-      input?.dispose();
-      if (file) await file.abort();
-    }
+    await cleanUp(
+      failure,
+      () => download.close(),
+      () => {
+        if (output && output.state !== 'finalized' && output.state !== 'canceled') return output.cancel();
+      },
+      () => input?.dispose(),
+      () => file?.abort(),
+    );
   }
 }

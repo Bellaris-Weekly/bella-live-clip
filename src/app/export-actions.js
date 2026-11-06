@@ -1,5 +1,6 @@
 import {createExportMetrics} from '../media/export-metrics.js';
-import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
+import {createTemporaryMedia, ensureTemporarySpace, mediaStorageError} from '../media/temporary-media.js';
+import {LIVE_MISSING_RETRIES} from '../services/retry-request.js';
 import {estimateSelectionBytes} from '../media/recording-estimate.js';
 import {fileName} from '../media/file-name.js';
 import {renderExportProgress, limitProgress} from '../ui/export-progress.js';
@@ -70,6 +71,8 @@ export function createExportActions({
       danmaku,
       metrics,
       createTemporary: options => createTemporaryMedia({...options, storage}),
+      // One picked file. A selection across a stream break would need several.
+      maxFiles: 1,
       createFile: () => ({handle: destination, name: destination.name, remove: async () => {}}),
       onSaved: showSaved,
     });
@@ -170,6 +173,9 @@ export function createExportActions({
           signal,
           metrics,
           stopSignal: wholeStop.signal,
+          // Hours of downloaded media must survive one unreadable fragment.
+          keepPartial: true,
+          missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
           onProgress: progress => {
             diagnostic.progress(progress);
             if (progress.progress !== undefined) $('progress').value = progress.progress * 100;
@@ -182,6 +188,8 @@ export function createExportActions({
               status(`${state} · ${formatBytes(progress.speed)}/秒 · 已写入 ${formatBytes(progress.written)}`);
             }
           },
+        }).catch(error => {
+          throw signal.aborted ? error : mediaStorageError(error);
         });
         if (!result.saved) {
           diagnostic.finish?.({status: 'canceled', files: 0});
@@ -189,12 +197,20 @@ export function createExportActions({
           return;
         }
         diagnostic.finish?.({
-          status: result.stopped ? 'stopped' : 'completed',
+          status: result.interrupted ? 'partial' : result.stopped ? 'stopped' : 'completed',
+          error: result.interrupted,
           files: 1,
           writtenBytes: result.bytes,
           mediaSeconds: result.duration,
         });
-        status(result.stopped ? '已停止。' : '导出完成。');
+        status(
+          result.interrupted
+            ? `录像分片读取失败${result.interrupted.status ? `（HTTP ${result.interrupted.status}）` : ''}，已保存读取到的部分。`
+            : result.stopped
+              ? '已停止。'
+              : '导出完成。',
+          Boolean(result.interrupted),
+        );
         const message = document.createElement('p');
         message.textContent = `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
         $('downloads').append(message);

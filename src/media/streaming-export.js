@@ -1,6 +1,8 @@
 import {recordingTime} from './recording-timeline.js';
+import {LIVE_MISSING_RETRIES} from '../services/retry-request.js';
 import {canEncodeVideo} from 'mediabunny';
 import {deferred} from '../shared/deferred.js';
+import {cleanUp} from '../shared/errors.js';
 import {saveRecording} from './recording.js';
 import {createStreamingMedia} from './streaming-media.js';
 import {trimPrecise} from './smart-trim.js';
@@ -51,6 +53,7 @@ export async function exportStreamingDanmaku(
     start,
     end = Infinity,
     failure,
+    thrown,
     stopping = false;
   const reader = createCommentReader(record, {
     signal: resourcesController.signal,
@@ -65,6 +68,8 @@ export async function exportStreamingDanmaku(
     producer = saveRecording(api, [expanded], media.handle, {
       signal: producerController.signal,
       fragmented: true,
+      storageTarget: 'stream',
+      missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
       concurrency: 2,
       downloadLimit: () => downloadLimit,
       onSegment(entry, tracks) {
@@ -145,6 +150,7 @@ export async function exportStreamingDanmaku(
     if (!Number.isFinite(end) || end <= start) throw new Error('选区结束时间尚未确认，已停止导出。');
     return result;
   } catch (error) {
+    thrown = error;
     abort(error);
     throw error;
   } finally {
@@ -152,9 +158,11 @@ export async function exportStreamingDanmaku(
     stopping = true;
     producerController.abort();
     resourcesController.abort();
-    media.close();
-    await producer?.catch(() => {});
-    if (compositor) await compositor.close();
-    else await reader.close();
+    await cleanUp(
+      thrown,
+      () => media.close(),
+      () => producer?.catch(() => {}),
+      () => (compositor ? compositor.close() : reader.close()),
+    );
   }
 }

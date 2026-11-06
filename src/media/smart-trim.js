@@ -256,7 +256,8 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
   } finally {
     signal?.removeEventListener('abort', cancel);
     await Promise.allSettled(streams.map(stream => stream.iterator.return()));
-    if (canceling) await canceling;
+    // Cancellation is already the outcome; its own rejection is not.
+    await canceling?.catch(() => {});
   }
 }
 

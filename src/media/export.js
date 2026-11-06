@@ -5,8 +5,9 @@ import {recordingTime} from './recording-timeline.js';
 import {saveRecording} from './recording.js';
 import {createMediaOutput} from './file-output.js';
 import {createTemporaryMedia, mediaStorageError} from './temporary-media.js';
-import {requestWithRetry} from '../services/retry-request.js';
+import {requestWithRetry, LIVE_MISSING_RETRIES} from '../services/retry-request.js';
 import {createExportMetrics} from './export-metrics.js';
+import {annotate, cleanUp, storageStep} from '../shared/errors.js';
 
 // The caller owns the Input so HLS and Blob inputs use the same conversion path.
 export async function convertInput(
@@ -28,7 +29,7 @@ export async function convertInput(
     return trimPrecise(input, {start, end, signal, onProgress, onProcessingStart, fileHandle, compositor, metrics});
   const session = await createMediaOutput({fileHandle, signal, metrics}),
     {output} = session;
-  let conversion, canceling;
+  let conversion, canceling, failure;
   const cancel = () => {
     if (conversion) canceling = conversion.cancel();
   };
@@ -47,12 +48,15 @@ export async function convertInput(
     signal?.throwIfAborted();
     return await session.finish();
   } catch (error) {
-    if (signal?.aborted) throw signal.reason;
-    throw error;
+    failure = signal?.aborted ? signal.reason : error;
+    throw failure;
   } finally {
     signal?.removeEventListener('abort', cancel);
-    if (canceling) await canceling;
-    await session.cancel();
+    await cleanUp(
+      failure,
+      () => canceling,
+      () => session.cancel(failure),
+    );
   }
 }
 
@@ -138,6 +142,7 @@ export async function exportSelection(
     createFile,
     createTemporary = createTemporaryMedia,
     metrics = createExportMetrics(),
+    maxFiles = Infinity,
   } = {},
 ) {
   signal?.throwIfAborted();
@@ -146,10 +151,21 @@ export async function exportSelection(
       .filter(group => selection.start < group.streamEnd - record.start)
       .map(group => ({...group, offset: group.start - record.start})),
   };
-  const plans = parsed.groups.flatMap(group =>
+  let plans = parsed.groups.flatMap(group =>
     selectPlaylistRange({groups: [group]}, selection.start, selection.end).map(plan => ({...plan, group})),
   );
+  // A selection edge a hair past a stream break must not need its own file.
+  if (plans.length > maxFiles) plans = plans.filter(plan => plan.end - plan.start >= 0.1);
   if (!plans.length) throw new Error('选区中没有可用录像，请调整起止位置。');
+  // Each plan is its own file. With fewer destinations than plans, later parts
+  // would overwrite earlier ones, so refuse before downloading anything.
+  if (plans.length > maxFiles) {
+    throw annotate(new Error('选区跨越了录像中途的断流位置，需要保存为多个文件。请缩小选区，在断流处两侧分别导出。'), {
+      operation: 'selectPlans',
+      plans: plans.length,
+    });
+  }
+  const missingRetries = record.live ? LIVE_MISSING_RETRIES : 0;
   const outputs = [],
     downloaded = new Set();
   let metricsAt = -Infinity,
@@ -199,6 +215,7 @@ export async function exportSelection(
       input,
       destination,
       preparedComments,
+      failure,
       saved = false;
     const entries = new Map(),
       cache = new Map();
@@ -216,6 +233,7 @@ export async function exportSelection(
           segment.url,
           {type: 'arraybuffer', range: segment.range, signal},
           {
+            missingRetries,
             onRetry(state) {
               reconnecting = state ? 1 : 0;
               attempt = state?.attempt ?? 0;
@@ -347,6 +365,8 @@ export async function exportSelection(
         await saveRecording(savingApi, [expanded], temporary.handle, {
           signal,
           concurrency: 2,
+          storageTarget: 'temporary',
+          missingRetries,
           onSegment(entry) {
             entries.set(segmentKey(entry.segment), entry);
           },
@@ -363,7 +383,8 @@ export async function exportSelection(
       }
       cache.clear();
       signal?.throwIfAborted();
-      input = new Input({source: new BlobSource(await temporary.handle.getFile()), formats: [MP4]});
+      const file = await storageStep('getFile', 'temporary', () => temporary.handle.getFile());
+      input = new Input({source: new BlobSource(file), formats: [MP4]});
       const duration = await input.computeDuration();
       const start = Math.max(0, selectionTime(plan, entries, plan.start, false));
       const end = Math.min(duration, selectionTime(plan, entries, plan.end, true));
@@ -398,19 +419,20 @@ export async function exportSelection(
       completedDuration += weight;
       onSaved(output);
     } catch (error) {
-      if (signal?.aborted) throw signal.reason;
-      throw mediaStorageError(error);
+      failure = signal?.aborted ? signal.reason : mediaStorageError(error);
+      throw failure;
     } finally {
       exportSignal?.removeEventListener('abort', abortPlan);
       planController.abort();
-      await preparedComments?.catch(() => {});
-      input?.dispose();
       cache.clear();
-      try {
-        if (destination && !saved) await destination.remove();
-      } finally {
-        if (temporary) await temporary.remove();
-      }
+      // A leftover temporary file is removed by a later export after a day.
+      await cleanUp(
+        failure,
+        () => preparedComments?.catch(() => {}),
+        () => input?.dispose(),
+        () => (destination && !saved ? destination.remove() : undefined),
+        () => temporary?.remove(),
+      );
     }
   }
   progress = processing = 1;

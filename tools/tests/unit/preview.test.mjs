@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {makeHlsLoader, createPlayer} from '../../../src/media/preview-player.js';
+import {makeHlsLoader, createPlayer, previewError} from '../../../src/media/preview-player.js';
 test('整场播放器加载分片字节区间并返回计量', async () => {
   let options;
   const Loader = makeHlsLoader(async (url, o) => {
@@ -561,4 +561,39 @@ test('during a drag a decoded still appears as soon as it is ready', async () =>
   assert.equal(image.getAttribute('src'), 'decoded');
   assert.equal(image.hidden, false);
   f.player.destroy();
+});
+
+test('预览失败携带编码、浏览器原因和是否支持该编码', () => {
+  const cause = new DOMException("Failed to execute 'addSourceBuffer'", 'NotSupportedError');
+  const checked = [];
+  const error = previewError(
+    {
+      type: 'mediaError',
+      details: 'bufferAddCodecError',
+      fatal: true,
+      sourceBufferName: 'video',
+      mimeType: 'video/mp4;codecs=hvc1.1.6.L150.90',
+      error: cause,
+    },
+    {
+      isTypeSupported(type) {
+        checked.push(type);
+        return false;
+      },
+    },
+  );
+  assert.equal(error.message, '录像预览失败：mediaError / bufferAddCodecError');
+  assert.deepEqual(error.diagnostic, {
+    hlsType: 'mediaError',
+    hlsDetails: 'bufferAddCodecError',
+    sourceBuffer: 'video',
+    mimeType: 'video/mp4;codecs=hvc1.1.6.L150.90',
+    typeSupported: false,
+  });
+  assert.equal(error.cause, cause);
+  assert.deepEqual(checked, ['video/mp4;codecs=hvc1.1.6.L150.90']);
+  assert.deepEqual(previewError({type: 'networkError', details: 'fragLoadError'}).diagnostic, {
+    hlsType: 'networkError',
+    hlsDetails: 'fragLoadError',
+  });
 });

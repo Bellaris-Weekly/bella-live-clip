@@ -13,6 +13,35 @@ const NETWORK_ERROR = 'networkError';
 // every Bilibili page, so it starts the first time a recording opens.
 export const loadHls = () => import('hls.js/light').then(module => module.default);
 
+const CODEC_ERRORS = new Set(['bufferAddCodecError', 'bufferIncompatibleCodecsError']);
+
+function isCodecError(data) {
+  return data?.type === 'mediaError' && CODEC_ERRORS.has(data.details);
+}
+
+// The codec and the browser's own reason are what tell an unsupported stream
+// apart from a broken one; the bare hls.js detail names do not.
+export function previewError(data, mediaSource = globalThis.MediaSource) {
+  const error = new Error(`录像预览失败：${data?.type} / ${data?.details}`);
+  const facts = {
+    hlsType: data?.type,
+    hlsDetails: data?.details,
+    reason: typeof data?.reason === 'string' ? data.reason : undefined,
+    sourceBuffer: data?.sourceBufferName,
+    mimeType: data?.mimeType,
+  };
+  if (typeof data?.mimeType === 'string') {
+    try {
+      facts.typeSupported = mediaSource?.isTypeSupported?.(data.mimeType);
+    } catch {
+      /* Diagnostics only. */
+    }
+  }
+  error.diagnostic = Object.fromEntries(Object.entries(facts).filter(([, value]) => value !== undefined));
+  if (data?.error instanceof Error) error.cause = data.error;
+  return error;
+}
+
 export function makeHlsLoader(request) {
   return class {
     constructor() {
@@ -144,9 +173,14 @@ export function createPlayer({
   const requestedEnd = () => (record.live ? Math.floor(Date.now() / 1000) : record.end) - record.start;
   function fail(data) {
     failed = true;
-    onError(new Error(`录像预览失败：${data.type} / ${data.details}`));
-    loading.textContent = '预览暂不可用，请点右上角刷新';
-    status('预览暂不可用，请点右上角刷新。', true);
+    onError(previewError(data));
+    // Refreshing cannot make the browser play a codec it lacks; copy export
+    // does not decode, so it still works.
+    const text = isCodecError(data)
+      ? '当前浏览器无法播放这场录像的视频编码，暂时不能预览；仍可用原画方式导出'
+      : '预览暂不可用，请点右上角刷新';
+    loading.textContent = text;
+    status(`${text}。`, true);
   }
   // A failed read usually means the signed address expired. Fetch a new one once
   // per position and continue from the same place.
