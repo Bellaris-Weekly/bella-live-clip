@@ -281,8 +281,9 @@ window.checkEmoteCache = async pressure => {
             name: `图${id}`,
             kind: 'emoji',
             file: `${id}.png`,
-            width: pressure ? 1000 : 128,
-            height: pressure ? 1000 : 128,
+            // At 40px these decode to 648px squares: 22 exceed the 32 MiB cache.
+            width: pressure ? 1152 : 128,
+            height: pressure ? 1152 : 128,
           })),
         }),
       );

@@ -1,4 +1,4 @@
-// Frozen 2.13.1 renderer: browser pixel-equivalence oracle for performance changes.
+// Full-frame pixel oracle. Defaults preserve the 2.13.1 appearance for benchmarks.
 import {VideoSample} from 'mediabunny';
 import {loadComments} from '../../../src/danmaku/archive.js';
 import {loadEmotes, textTokens, emoteFrame} from '../../../src/danmaku/emotes.js';
@@ -13,7 +13,7 @@ const FONT =
 
 export async function createDanmakuCompositor(
   record,
-  {origin, start, end, sourceTime, width, height, adjustment, signal, fetcher},
+  {origin, start, end, sourceTime, width, height, adjustment, signal, fetcher, appearance = {}},
 ) {
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
   const events = await loadComments(record, {
@@ -24,7 +24,16 @@ export async function createDanmakuCompositor(
     signal,
     fetcher,
   });
-  const fontSize = (45 * height) / 1080;
+  const style = {
+    fontSize: 45,
+    lineWidth: 2,
+    shadowColor: 'transparent',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    ...appearance,
+  };
+  const fontSize = (style.fontSize * height) / 1080;
   const resources = await loadEmotes(events, record.room, fontSize, {signal, fetcher});
   try {
     const canvas = new OffscreenCanvas(width, height),
@@ -38,8 +47,11 @@ export async function createDanmakuCompositor(
     ink.font = `600 ${fontSize}px ${FONT}`;
     ink.textBaseline = 'top';
     ink.lineJoin = 'round';
-    ink.lineWidth = (2 * height) / 1080;
+    ink.lineWidth = (style.lineWidth * height) / 1080;
     ink.strokeStyle = '#000';
+    ink.shadowBlur = (style.shadowBlur * height) / 1080;
+    ink.shadowOffsetX = (style.shadowOffsetX * height) / 1080;
+    ink.shadowOffsetY = (style.shadowOffsetY * height) / 1080;
     const cache = new Map();
     function measure(event) {
       if (cache.has(event.text)) return cache.get(event.text);
@@ -82,7 +94,11 @@ export async function createDanmakuCompositor(
             if (part.asset) ink.drawImage(emoteFrame(part.asset, time - item.started), x + part.x, y);
             else {
               ink.font = part.font;
-              if (!part.emoji) ink.strokeText(part.text, x + part.x, y);
+              if (!part.emoji) {
+                ink.shadowColor = style.shadowColor;
+                ink.strokeText(part.text, x + part.x, y);
+                ink.shadowColor = 'transparent';
+              }
               ink.fillText(part.text, x + part.x, y);
             }
           }

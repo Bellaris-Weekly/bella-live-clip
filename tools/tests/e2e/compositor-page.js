@@ -56,7 +56,20 @@ window.checkCompositor = async ({width, height, encoded, fixed = false, streamin
     };
   };
   const options = {origin: 0, start: 0, end: 30, sourceTime: t => t, width, height};
-  const before = await reference({room: 1}, options);
+  const before = await reference(
+    {room: 1},
+    {
+      ...options,
+      appearance: {
+        fontSize: 40,
+        lineWidth: 4,
+        shadowColor: 'rgba(0, 0, 0, 0.75)',
+        shadowBlur: 3,
+        shadowOffsetX: 2,
+        shadowOffsetY: 2,
+      },
+    },
+  );
   const reader = {
     async read({start, end}) {
       return events.filter(item => item.time >= start && item.time < end).map(item => ({...item}));

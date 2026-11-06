@@ -10,6 +10,8 @@ const EMOJI_RUN =
 const FONT =
   '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
+export const danmakuFontSize = height => (40 * height) / 1080;
+
 export async function createDanmakuCompositor(
   record,
   {origin, start, end, sourceTime, width, height, adjustment, signal, fetcher, prepared},
@@ -25,14 +27,14 @@ export async function createDanmakuCompositor(
     prepared,
   });
   prepared = undefined;
-  const fontSize = (45 * height) / 1080;
+  const fontSize = danmakuFontSize(height);
   const resources = await loadEmotes(events.filter(visibleComment), record.room, fontSize, {signal, fetcher});
   return createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal});
 }
 
 export function createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal, metrics}) {
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
-  const fontSize = (45 * height) / 1080;
+  const fontSize = danmakuFontSize(height);
   try {
     const canvas = new OffscreenCanvas(width, height),
       overlay = new OffscreenCanvas(width, height);
@@ -45,8 +47,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
     ink.font = `600 ${fontSize}px ${FONT}`;
     ink.textBaseline = 'top';
     ink.lineJoin = 'round';
-    ink.lineWidth = (2 * height) / 1080;
+    ink.lineWidth = (4 * height) / 1080;
     ink.strokeStyle = '#000';
+    ink.shadowBlur = (3 * height) / 1080;
+    ink.shadowOffsetX = ink.shadowOffsetY = (2 * height) / 1080;
+    // Include the soft shadow in both dirty-row clearing and compositing.
+    const shadowPadding = Math.ceil(ink.shadowBlur * 2 + Math.abs(ink.shadowOffsetY));
     const cache = new Map();
     function measure(event) {
       if (cache.has(event.text)) return cache.get(event.text);
@@ -70,8 +76,8 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               font,
               emoji,
               x: width,
-              top: -metrics.actualBoundingBoxAscent - ink.lineWidth - 2,
-              bottom: metrics.actualBoundingBoxDescent + ink.lineWidth + 2,
+              top: -metrics.actualBoundingBoxAscent - ink.lineWidth - 2 - (emoji ? 0 : shadowPadding),
+              bottom: metrics.actualBoundingBoxDescent + ink.lineWidth + 2 + (emoji ? 0 : shadowPadding),
             });
             width += metrics.width;
           }
@@ -143,7 +149,11 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               if (frame) ink.drawImage(frame, x, y);
               else {
                 ink.font = part.font;
-                if (!part.emoji) ink.strokeText(part.text, x, y);
+                if (!part.emoji) {
+                  ink.shadowColor = 'rgba(0, 0, 0, 0.75)';
+                  ink.strokeText(part.text, x, y);
+                  ink.shadowColor = 'transparent';
+                }
                 ink.fillText(part.text, x, y);
               }
             }
