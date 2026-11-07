@@ -257,7 +257,7 @@ function start({
   };
 }
 
-test('裁剪点预览结束恢复原进度和时间显示，随后拖动播放进度仍提交新位置', async () => {
+test('裁剪点单击和选区平移提交位置，边界拖动或取消恢复进度，连续操作互不影响', async () => {
   for (const kind of ['live', 'submission'])
     for (const paused of [false, true])
       for (const canceled of [false, true]) {
@@ -314,23 +314,35 @@ test('裁剪点预览结束恢复原进度和时间显示，随后拖动播放�
         });
         f.scenario.timeline.setCurrent = time => (timelineTime = time);
         const {onScrubStart, onPreview, onScrubEnd} = f.scenario.timelineOptions;
-        for (const type of ['start', 'end']) {
+        for (const [type, commitPosition] of [
+          ['start', false],
+          ['end', false],
+          ['start', true],
+          ['end', true],
+          ['selection', true],
+        ]) {
           const before = state.time,
-            boundary = type === 'start' ? 10 : 80,
-            label = `${kind}/${paused}/${canceled}/${type}`;
+            boundary = type === 'end' ? 80 : 10,
+            label = `${kind}/${paused}/${canceled}/${type}/${commitPosition}`;
           onScrubStart({type});
           onPreview(boundary);
+          timelineTime = boundary;
           assert.equal(f.scenario.player.position(), boundary, label);
-          assert.equal(f.$('clock').textContent, type === 'start' ? '00:10 / 01:40' : '01:20 / 01:40', label);
+          assert.equal(f.$('clock').textContent, type === 'end' ? '01:20 / 01:40' : '00:10 / 01:40', label);
           if (kind === 'submission' && !paused) state.time += 3;
-          const expected = kind === 'submission' && canceled ? state.time : before;
-          onScrubEnd(boundary, {canceled});
-          assert.equal(restored.at(-1), before, label);
+          const commit = commitPosition && !canceled;
+          const expected = kind === 'submission' && canceled ? state.time : commit ? boundary : before;
+          onScrubEnd(boundary, {canceled, commitPosition});
+          assert.equal(restored.at(-1), commit ? undefined : before, label);
           assert.equal(f.scenario.player.position(), expected, label);
           assert.equal(timelineTime, expected, label);
-          assert.equal(f.$('clock').textContent, `00:${expected} / 01:40`, label);
+          assert.equal(
+            f.$('clock').textContent,
+            `${String(Math.floor(expected / 60)).padStart(2, '0')}:${String(expected % 60).padStart(2, '0')} / 01:40`,
+            label,
+          );
           assert.equal(state.paused, paused, label);
-          if (kind === 'live') assert.equal(resumedAt.at(-1), before, '恢复播放前先定位到原进度');
+          if (kind === 'live') assert.equal(resumedAt.at(-1), expected, '恢复播放前先定位到目标进度');
 
           onScrubStart({type: 'playhead'});
           onPreview(55);

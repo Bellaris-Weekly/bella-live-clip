@@ -100,7 +100,8 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #thumbnails canvas{width:100%;height:100%;object-fit:cover;display:block}
 #ticks{z-index:1;position:absolute;inset:0;overflow:hidden;font-size:9px;color:white;text-shadow:0 1px 3px #000; background:linear-gradient(transparent 55%,#0009);pointer-events:none}
 #ticks span{position:absolute;bottom:4px;white-space:nowrap;padding:0 4px}
-#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#147d7010;box-shadow:0 0 0 1px #ffffff30 inset;pointer-events:none}
+#selection{position:absolute;top:0;bottom:0;border:2px solid var(--accent);background:#147d7010;box-shadow:0 0 0 1px #ffffff30 inset;cursor:grab}
+#selection:active{cursor:grabbing}
 #playhead{position:absolute;width:2px;top:-5px;bottom:-5px;background:white;box-shadow:0 0 0 1px #183d3580;pointer-events:none;z-index:1}
 #timeline [data-handle]{position:absolute;transform:translateX(-50%);top:-2px;bottom:-2px;width:10px;padding:0;background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent);border-radius:4px;touch-action:none;cursor:ew-resize;z-index:2}
 #timeline [data-handle]::before{content:"";position:absolute;inset:-4px -7px}
@@ -108,6 +109,10 @@ progress{width:100%;height:4px;margin-top:10px;accent-color:var(--accent)}
 #timeline [data-handle]:hover{background:var(--accent-hover)}
 #timeline [data-handle]:focus{outline:none;background:var(--accent-hover);box-shadow:0 0 0 1px var(--accent),0 0 0 4px #147d7018}
 #timeline [data-handle]:active{transform:translateX(-50%)}
+#timeline[data-compact=true] [data-handle=start]{transform:translateX(-100%)}
+#timeline[data-compact=true] [data-handle=end]{transform:none}
+#timeline[data-compact=true] [data-handle]::before{inset:-4px 0}
+#timeline[data-compact=true] #selection::after{content:"⋮⋮";position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:24px;height:20px;border:1px solid var(--paper);border-radius:4px;background:var(--accent);color:var(--paper);font-size:14px;line-height:1;cursor:grab}
 #timelineLabels{grid-column:2;display:flex;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
 #timelineLabels input{width:64px;height:22px;padding:0 2px;border-color:transparent;border-radius:5px;background:transparent;color:inherit;text-align:center;font-size:10px}
 #timelineLabels input:hover:not(:disabled),#timelineLabels input:focus{border-color:var(--line);background:var(--paper)}

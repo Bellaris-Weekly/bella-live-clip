@@ -462,7 +462,7 @@ test('页面外松开导致捕获丢失或松开事件未送达时结束拖动�
     });
     if (lost === 'lostpointercapture') f.track.handlers.lostpointercapture({type: 'lostpointercapture', pointerId: 1});
     else f.track.handlers.pointermove({type: 'pointermove', buttons: 0, clientX: 70, pointerId: 1});
-    assert.deepEqual(ends, [[50, {canceled: false}]], lost);
+    assert.deepEqual(ends, [[50, {canceled: false, commitPosition: true}]], lost);
     const count = f.previews.length;
     f.track.handlers.pointermove({type: 'pointermove', buttons: 0, clientX: 80, pointerId: 1});
     f.advance(0);
@@ -560,4 +560,124 @@ test('Shift 按 1 秒、逗号句号按 0.1 秒移动，其他修饰键不处理
   arrow(f, f.track, 'ArrowRight', {ctrlKey: true});
   assert.equal(f.previews.length, before);
   assert.deepEqual(f.timeline.getBounds(), {start: 0, end: 100});
+});
+
+test('单击裁剪点提交对应进度且不缩放，拖动边界保留原预览语义', t => {
+  const f = fixture(t),
+    ends = [];
+  const timeline = createTimeline({
+    ...f,
+    onPreview: value => f.previews.push(value),
+    onScrubEnd: (time, options) => ends.push({time, ...options}),
+  });
+  for (const type of ['start', 'end']) {
+    for (const delta of [0, 1, 10]) {
+      timeline.reset(100, {start: 20, end: 80});
+      const x = type === 'start' ? 20 : 80;
+      f.track.handlers.pointerdown({
+        button: 0,
+        clientX: x,
+        pointerId: 1,
+        target: f[type + 'Handle'],
+        preventDefault() {},
+      });
+      f.track.handlers.pointermove({buttons: 1, clientX: x + delta, pointerId: 1});
+      f.track.handlers.pointerup({type: 'pointerup', pointerId: 1});
+      const moved = delta >= 3;
+      assert.deepEqual(ends.at(-1), {time: x + (moved ? delta : 0), canceled: false, commitPosition: !moved});
+      assert.equal(timeline.getSelection()[type], x + (moved ? delta : 0));
+      assert.equal(f.frames.size > 0, moved, '只有实际拖动边界才自动适配');
+    }
+  }
+});
+
+test('双击选区回到完整范围，继续调整边界或平移仍保持整场视野', t => {
+  const f = fixture(t);
+  for (const bounds of [
+    {start: 0, end: 7200},
+    {start: 40, end: 100},
+  ]) {
+    const span = bounds.end - bounds.start;
+    const selection = {start: bounds.start + span * 0.3, end: bounds.start + span * 0.5};
+    f.timeline.reset(bounds, selection);
+    f.timeline.setSelection(selection, true);
+    f.advance(0);
+    f.advance(200);
+    f.track.handlers.dblclick({target: f.selectionElement, preventDefault() {}});
+    f.advance(1000);
+    assert.deepEqual(f.timeline.getView(), bounds, '停止旧缩放动画并展示当前完整范围');
+    assert.deepEqual(f.timeline.getSelection(), selection);
+    assert.equal(f.frames.size, 0);
+    f.track.handlers.pointerdown({button: 0, clientX: 30, pointerId: 1, target: f.startHandle, preventDefault() {}});
+    f.track.handlers.pointermove({buttons: 1, clientX: 20, pointerId: 1});
+    f.track.handlers.pointerup({pointerId: 1});
+    assert.ok(Math.abs(f.timeline.getSelection().start - (bounds.start + span * 0.2)) < 1e-9);
+    assert.deepEqual(f.timeline.getView(), bounds);
+    assert.equal(f.frames.size, 0);
+    const length = f.timeline.getSelection().end - f.timeline.getSelection().start;
+    f.track.handlers.pointerdown({
+      button: 0,
+      clientX: 35,
+      pointerId: 2,
+      target: f.selectionElement,
+      preventDefault() {},
+    });
+    f.track.handlers.pointermove({buttons: 1, clientX: 55, pointerId: 2});
+    f.track.handlers.pointerup({pointerId: 2});
+    const moved = f.timeline.getSelection();
+    assert.ok(Math.abs(moved.start - (bounds.start + span * 0.4)) < 1e-9);
+    assert.ok(Math.abs(moved.end - moved.start - length) < 1e-9);
+    assert.equal(f.previews.at(-1), moved.start);
+    assert.deepEqual(f.timeline.getView(), bounds);
+    assert.equal(f.frames.size, 0);
+  }
+});
+
+test('平移以按下时选区为基准，首尾限位不改变时长，松手提交起点', t => {
+  const f = fixture(t),
+    ends = [];
+  const timeline = createTimeline({
+    ...f,
+    onPreview: value => f.previews.push(value),
+    onScrubEnd: (time, options) => ends.push({time, ...options}),
+  });
+  timeline.reset({start: 40, end: 140}, {start: 60, end: 80});
+  f.track.handlers.pointerdown({button: 0, clientX: 30, pointerId: 1, target: f.selectionElement, preventDefault() {}});
+  for (const [x, start] of [
+    [50, 80],
+    [60, 90],
+    [200, 120],
+    [-100, 40],
+    [40, 70],
+  ]) {
+    f.track.handlers.pointermove({buttons: 1, clientX: x, pointerId: 1});
+    f.advance(0);
+    assert.deepEqual(timeline.getSelection(), {start, end: start + 20});
+    assert.equal(f.previews.at(-1), start);
+    assert.equal(f.playhead.style.left, `${start - 40}%`);
+  }
+  f.track.handlers.pointerup({type: 'pointerup', pointerId: 1});
+  assert.deepEqual(ends, [{time: 70, canceled: false, commitPosition: true}]);
+  assert.deepEqual(timeline.getView(), {start: 40, end: 140});
+  assert.equal(f.frames.size, 0);
+});
+
+test('选区单击仍可定位内部进度，锁定时不能双击缩放或移动', t => {
+  const f = fixture(t);
+  f.timeline.reset(100, {start: 20, end: 80});
+  f.track.handlers.pointerdown({button: 0, clientX: 45, pointerId: 1, target: f.selectionElement, preventDefault() {}});
+  f.track.handlers.pointerup({pointerId: 1});
+  assert.deepEqual(f.timeline.getSelection(), {start: 20, end: 80});
+  assert.equal(f.previews.at(-1), 45);
+  f.timeline.setSelection({start: 20, end: 80}, true);
+  f.advance(0);
+  f.advance(420);
+  const view = f.timeline.getView();
+  f.timeline.lock(true);
+  f.track.handlers.dblclick({target: f.selectionElement, preventDefault() {}});
+  f.track.handlers.pointerdown({button: 0, clientX: 45, pointerId: 1, target: f.selectionElement, preventDefault() {}});
+  f.track.handlers.pointermove({buttons: 1, clientX: 65, pointerId: 1});
+  f.track.handlers.pointerup({pointerId: 1});
+  assert.deepEqual(f.timeline.getView(), view);
+  assert.deepEqual(f.timeline.getSelection(), {start: 20, end: 80});
 });

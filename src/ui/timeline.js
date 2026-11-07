@@ -14,6 +14,10 @@ export function fitSelection(start, end, total, min = 0) {
 }
 export function dragSelection(session, x, width, selection, total, min = 0) {
   const delta = ((x - session.x) / width) * (session.view.end - session.view.start);
+  if (session.type === 'selection') {
+    const start = clamp(session.anchor + delta, min, total - session.length);
+    return {start, end: start + session.length};
+  }
   return moveBoundary(selection, session.type, session.anchor + delta, total, min);
 }
 function moveBoundary(selection, type, time, total, min = 0) {
@@ -50,6 +54,8 @@ export function createTimeline({
     zoomFrame = 0,
     zooming = false,
     zoomTarget = null,
+    overview = false,
+    lastPointerType = null,
     tickTimes = [];
   const pct = t => clamp(((t - view.start) / (view.end - view.start)) * 100, 0, 100);
   const timeLabel = t => {
@@ -73,6 +79,9 @@ export function createTimeline({
     endHandle.style.left = `${pct(selection.end)}%`;
     selectionElement.style.left = `${pct(selection.start)}%`;
     selectionElement.style.right = `${100 - pct(selection.end)}%`;
+    // Short clips can become narrower than the handles in the full-recording view.
+    track.dataset.compact =
+      ((pct(selection.end) - pct(selection.start)) / 100) * track.getBoundingClientRect().width < 36;
     for (const [el, value] of [
       [startHandle, selection.start],
       [endHandle, selection.end],
@@ -110,7 +119,10 @@ export function createTimeline({
     selection = next;
     render();
     onSelection({...selection});
-    if (refit) fitView();
+    if (refit) {
+      overview = false;
+      fitView();
+    }
   }
   function fitView() {
     stopZoom();
@@ -152,17 +164,19 @@ export function createTimeline({
   }
   function apply(x) {
     if (!drag) return;
+    drag.moved ||= Math.abs(x - drag.x) >= 3;
     const rect = track.getBoundingClientRect();
+    const previewOnly = drag.type === 'playhead' || (drag.type === 'selection' && !drag.moved);
     let target;
-    if (drag.type === 'playhead')
+    if (previewOnly)
       target = clamp(drag.view.start + ((x - rect.left) / rect.width) * (drag.view.end - drag.view.start), min, total);
     else {
-      selection = dragSelection(drag, x, rect.width, selection, total, min);
-      target = selection[drag.type];
+      selection = dragSelection(drag, drag.moved ? x : drag.x, rect.width, selection, total, min);
+      target = selection[drag.type === 'selection' ? 'start' : drag.type];
       view = {start: Math.min(view.start, selection.start), end: Math.max(view.end, selection.end)};
     }
     current = target;
-    if (drag.type === 'playhead') renderPlayhead();
+    if (previewOnly) renderPlayhead();
     else {
       render();
       onSelection({...selection});
@@ -178,15 +192,24 @@ export function createTimeline({
     }
   }
   track.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || locked || !loaded()) return;
+    if (e.button !== 0 || locked || !loaded() || drag) return;
     e.preventDefault();
     if (zooming) {
       stopZoom();
       render();
     }
-    const type = e.target.closest('[data-handle]')?.dataset.handle || 'playhead';
-    (type === 'playhead' ? track : type === 'start' ? startHandle : endHandle).focus({preventScroll: true});
-    drag = {type, x: e.clientX, view: {...view}, anchor: selection[type]};
+    const type =
+      e.target.closest('[data-handle]')?.dataset.handle || (e.target === selectionElement ? 'selection' : 'playhead');
+    lastPointerType = type;
+    (type === 'start' ? startHandle : type === 'end' ? endHandle : track).focus({preventScroll: true});
+    drag = {
+      type,
+      x: e.clientX,
+      view: {...view},
+      anchor: selection[type === 'selection' ? 'start' : type],
+      length: selection.end - selection.start,
+      moved: false,
+    };
     onScrubStart?.({type});
     track.setPointerCapture(e.pointerId);
     apply(e.clientX);
@@ -204,21 +227,35 @@ export function createTimeline({
   function finish(e) {
     if (!drag) return;
     flush();
-    const type = drag.type;
+    const {type, moved} = drag;
     drag = null;
     if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
-    if (type !== 'playhead') fitView();
-    onScrubEnd?.(current, {canceled: e.type === 'pointercancel'});
+    if ((type === 'start' || type === 'end') && moved && !overview) fitView();
+    onScrubEnd?.(current, {
+      canceled: e.type === 'pointercancel',
+      commitPosition: type === 'playhead' || type === 'selection' || !moved,
+    });
   }
   track.addEventListener('pointerup', finish);
   track.addEventListener('pointercancel', finish);
   track.addEventListener('lostpointercapture', finish);
+  track.addEventListener('dblclick', e => {
+    if (locked || !loaded() || drag) return;
+    // Pointer capture can retarget the synthesized double click to the track.
+    if (e.target !== selectionElement && !(e.target === track && lastPointerType === 'selection')) return;
+    e.preventDefault();
+    stopZoom();
+    overview = true;
+    view = {start: min, end: total};
+    render();
+  });
   track.addEventListener(
     'wheel',
     e => {
       if (locked || !loaded() || drag) return;
       e.preventDefault();
       stopZoom();
+      overview = false;
       const r = track.getBoundingClientRect();
       view =
         e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)
@@ -257,7 +294,7 @@ export function createTimeline({
     } else {
       const next = moveBoundary(selection, type, selection[type] + delta, total, min);
       current = next[type];
-      setSelection(next, true);
+      setSelection(next, !overview);
     }
     onPreview(current);
     onScrubEnd?.(current);
@@ -280,6 +317,8 @@ export function createTimeline({
     reset(bounds, next) {
       const range = typeof bounds === 'number' ? {start: 0, end: bounds} : bounds;
       stopZoom();
+      overview = false;
+      lastPointerType = null;
       min = range.start;
       total = range.end;
       current = min;
