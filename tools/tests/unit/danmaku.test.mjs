@@ -463,3 +463,15 @@ test('archive time bounds remain conservative when received timestamps can be nu
   assert.deepEqual(danmakuBounds(metadata(0n)), {from: 100, to: 120});
   assert.deepEqual(danmakuBounds(metadata(1n)), {from: -Infinity, to: Infinity});
 });
+
+test('the measured stream clock replaces the start-time estimate only for one well-measured epoch', async () => {
+  const {streamOrigin} = await import('../../../src/danmaku/clock.js');
+  const epoch = (origin, segments = 600) => ({origin_us: origin * 1e6, segments});
+  const clock = (...epochs) => ({schemaVersion: 1, epochs});
+  assert.equal(streamOrigin(clock(epoch(1015.718)), 1013.49), 1015.718);
+  assert.equal(streamOrigin(clock(epoch(1015.718), epoch(1400)), 1398), 1400, 'a restart picks its own epoch');
+  assert.equal(streamOrigin(clock(epoch(1030)), 1013.49), null, 'beyond the estimate tolerance');
+  assert.equal(streamOrigin(clock(epoch(1015, 59)), 1013.49), null, 'under one minute measured');
+  assert.equal(streamOrigin(clock(epoch(1010), epoch(1018)), 1013.49), null, 'ambiguous epochs');
+  assert.equal(streamOrigin(null, 1013.49), null);
+});

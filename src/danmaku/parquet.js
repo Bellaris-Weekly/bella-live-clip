@@ -8,12 +8,25 @@ export async function readMetadata(file) {
   return parquetMetadataAsync(file);
 }
 
+const values = new WeakMap();
+// File key/value metadata written by the collector's write_archive.
+export function archiveValues(metadata) {
+  if (!values.has(metadata))
+    values.set(metadata, Object.fromEntries((metadata.key_value_metadata ?? []).map(item => [item.key, item.value])));
+  return values.get(metadata);
+}
+
+const milliseconds = value => {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number / 1000 : undefined;
+};
+
 // Metadata is immutable for one snapshot. Build the section/time index once;
 // missing reception timestamps stay unbounded because sent+1s is the fallback.
 const indexes = new WeakMap();
 function indexFor(metadata) {
   if (indexes.has(metadata)) return indexes.get(metadata);
-  const meta = Object.fromEntries((metadata.key_value_metadata ?? []).map(item => [item.key, item.value]));
+  const meta = archiveValues(metadata);
   if (meta.live_archive_version !== '1' || !meta.sections) throw new Error('弹幕归档格式不支持。');
   const selected = JSON.parse(meta.sections).danmaku ?? [];
   if (!Array.isArray(selected) || selected.some(i => !Number.isInteger(i) || i < 0 || i >= metadata.row_groups.length))
@@ -55,10 +68,12 @@ export function danmakuBounds(metadata) {
 }
 
 export function snapshotCoverage(metadata) {
-  // The collector's live index/Parquet contract has no coverage timestamp.
-  // Use observed reception times (including non-chat events), not sent times or
-  // HTTP Last-Modified: uploading a stale collector buffer does not advance it.
-  // Quiet/missing-statistics intervals remain uncertain and use the bounded wait.
+  // The collector states complete_through_ms: every event it received up to that
+  // instant is in this file, quiet stretches included. Older snapshots lack it;
+  // they fall back to observed reception times (including non-chat events), not
+  // sent times or HTTP Last-Modified, and quiet intervals remain uncertain.
+  const stated = milliseconds(archiveValues(metadata).complete_through_ms);
+  if (stated !== undefined) return stated;
   let through = 0;
   for (const group of metadata.row_groups) {
     const stats = group.columns.find(column => column.meta_data?.path_in_schema?.[0] === 't')?.meta_data?.statistics;
@@ -67,6 +82,26 @@ export function snapshotCoverage(metadata) {
     if (Number.isFinite(time)) through = Math.max(through, time / 1000);
   }
   return through;
+}
+
+// When the collector expects to publish the next snapshot (seconds), if it says.
+export function snapshotSchedule(metadata) {
+  const meta = archiveValues(metadata);
+  const published = milliseconds(meta.published_ms),
+    interval = milliseconds(meta.publish_interval_ms);
+  return published !== undefined && interval !== undefined ? {published, interval} : null;
+}
+
+// The collector's live HLS stream clock measurement, or null when absent/invalid.
+export function streamClock(metadata) {
+  const value = archiveValues(metadata).stream_clock;
+  if (!value) return null;
+  try {
+    const clock = JSON.parse(value);
+    return clock?.schemaVersion === 1 && Array.isArray(clock.epochs) ? clock : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal, metadata, readGroup} = {}) {

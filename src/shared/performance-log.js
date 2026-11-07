@@ -63,6 +63,8 @@ const counters = new Set([
 ]);
 const gauges = new Set([
   'archiveLagMs',
+  'streamClock',
+  'originEstimateErrorMs',
   'downloadConcurrency',
   'activeRequests',
   'bufferedMediaBytes',

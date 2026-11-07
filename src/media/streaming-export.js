@@ -12,6 +12,17 @@ import {createStreamingCompositor} from '../danmaku/streaming-compositor.js';
 
 const DANMAKU_DOWNLOAD_CONCURRENCY = 3;
 
+// The live archive states how far its danmaku is complete; tell the user how much
+// is still missing and when the next snapshot is expected, instead of a silent stall.
+export function danmakuWaitMessage({coverage, needed, delay}) {
+  const missing = Math.max(1, Math.ceil(needed - coverage));
+  const known = coverage > 0 && Number.isFinite(coverage);
+  const next = Math.max(1, Math.round(delay / 1000));
+  return known
+    ? `等待直播弹幕：还差约 ${missing} 秒弹幕，约 ${next} 秒后更新`
+    : `等待直播弹幕：正在确认弹幕进度，约 ${next} 秒后更新`;
+}
+
 export async function exportStreamingDanmaku(
   api,
   record,
@@ -58,11 +69,21 @@ export async function exportStreamingDanmaku(
     failure,
     thrown,
     stopping = false;
+  let progress = 0,
+    waiting = null;
+  const report = (value, detail) => {
+    progress = value;
+    onProgress(value, waiting ? {...detail, message: waiting} : detail);
+  };
   const reader = createCommentReader(record, {
     signal: resourcesController.signal,
     prepared: preparedComments,
     createTemporary,
     metrics,
+    onWait(state) {
+      waiting = state ? danmakuWaitMessage(state) : null;
+      onProgress(progress, waiting ? {message: waiting} : undefined);
+    },
   });
   const firstIndex = expanded.segments.indexOf(plan.segments[0]);
   const lastIndex = expanded.segments.indexOf(plan.segments.at(-1));
@@ -154,7 +175,7 @@ export async function exportStreamingDanmaku(
       metrics,
       signal,
       fileHandle,
-      onProgress: (value, detail) => onProgress(value, detail),
+      onProgress: report,
     });
     if (failure) throw failure;
     if (!Number.isFinite(end) || end <= start) throw new Error('选区结束时间尚未确认，已停止导出。');

@@ -287,7 +287,7 @@ export async function exportSelection(
         report();
         const finishOrigin = metrics?.start('originProbe');
         try {
-          const {partOrigin, firstVideoDecodeTime} = await import('../danmaku/clock.js');
+          const {partOrigin, firstVideoDecodeTime, streamOrigin} = await import('../danmaku/clock.js');
           const [first, init] = await Promise.all([
             read(group.firstSegment),
             group.firstMap ? read(group.firstMap) : null,
@@ -299,6 +299,15 @@ export async function exportSelection(
             origin = partOrigin(group.part, firstVideoDecodeTime(first, track.id, await track.getTimeResolution()));
           } finally {
             probe.dispose();
+          }
+          // Prefer the archive's measured stream clock; the start-time estimate
+          // (whole seconds, about ±3 s) only selects the epoch, else it is the fallback.
+          const [{streamClock}, {metadata}] = await Promise.all([import('../danmaku/parquet.js'), preparedComments]);
+          const measured = streamOrigin(streamClock(metadata), origin);
+          metrics?.gauge('streamClock', measured === null ? 0 : 1);
+          if (measured !== null) {
+            metrics?.gauge('originEstimateErrorMs', Math.abs(origin - measured) * 1000);
+            origin = measured;
           }
         } finally {
           finishOrigin?.();

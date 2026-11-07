@@ -193,11 +193,21 @@ export async function loadComments(record, {origin, start, end, adjustment = 0, 
   return events.sort((a, b) => a.time - b.time || a.order - b.order);
 }
 
+// Poll right after the collector's next expected snapshot (plus upload slack)
+// instead of a fixed 10 s. Without a schedule, or when the last poll returned the
+// same snapshot (quiet stream: the collector republishes only every 30 s), keep 10 s.
+export const SNAPSHOT_SLACK_MS = 2000;
+export function nextSnapshotDelay(schedule, previous, time) {
+  if (!schedule || schedule.published === previous) return 10000;
+  const expected = (schedule.published + schedule.interval) * 1000 + SNAPSHOT_SLACK_MS;
+  return Math.min(10000, Math.max(3000, expected - time));
+}
+
 // One export owns its snapshot generations, temporary files and row-group cache.
 // Only demanded windows refresh live files; consumed windows stay committed.
 export function createCommentReader(
   record,
-  {signal, fetcher = fetch, prepared, createTemporary, metrics, now = Date.now, wait = waitForRetry} = {},
+  {signal, fetcher = fetch, prepared, createTemporary, metrics, now = Date.now, wait = waitForRetry, onWait} = {},
 ) {
   const controller = new AbortController();
   signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -218,7 +228,7 @@ export function createCommentReader(
       // temporary-storage failure must not replace it with a newer snapshot.
       entry.file ??= await archiveFile(part, readOptions);
       let file = entry.file;
-      const {readMetadata, danmakuBounds, snapshotCoverage} = await import('./parquet.js');
+      const {readMetadata, danmakuBounds, snapshotCoverage, snapshotSchedule} = await import('./parquet.js');
       const metadata = (entry.metadata ??= await readMetadata(file));
       if (file.withSignal) file = file.withSignal(signal);
       if (file instanceof ArrayBuffer && createTemporary) {
@@ -248,6 +258,7 @@ export function createCommentReader(
       entry.file = file;
       entry.bounds = danmakuBounds(metadata);
       entry.coverage = snapshotCoverage(metadata);
+      entry.schedule = snapshotSchedule(metadata);
       return entry;
     } finally {
       finish?.();
@@ -294,7 +305,8 @@ export function createCommentReader(
     const budget = new AbortController();
     const timer = setTimeout(() => budget.abort(), deadline > now() ? deadline - now() : 30000);
     const readOptions = {...options, signal: AbortSignal.any([signal, budget.signal])};
-    let candidate;
+    let candidate,
+      seen = entry.schedule?.published;
     try {
       for (;;) {
         signal.throwIfAborted();
@@ -331,13 +343,17 @@ export function createCommentReader(
           candidate = null;
         }
         if (!initial.parts[index].snapshot || entry.coverage >= to || now() >= deadline) break;
-        await wait(Math.min(10000, deadline - now()), readOptions.signal);
+        const delay = Math.min(nextSnapshotDelay(entry.schedule, seen, now()), deadline - now());
+        seen = entry.schedule?.published;
+        onWait?.({coverage: entry.coverage, needed: to, delay});
+        await wait(delay, readOptions.signal);
       }
     } catch (error) {
       signal.throwIfAborted();
       if (!budget.signal.aborted || error !== budget.signal.reason) throw error;
     } finally {
       clearTimeout(timer);
+      onWait?.(null);
       try {
         if (candidate && candidate !== entry) await discard(candidate);
       } finally {

@@ -62,6 +62,8 @@ export function startLogViewer() {
     archiveRefreshWait: '等待直播弹幕更新',
     archiveRefreshes: '直播弹幕刷新次数',
     archiveLagMs: '弹幕覆盖缺口毫秒',
+    streamClock: '使用流时钟对时',
+    originEstimateErrorMs: '开播时间估算偏差毫秒',
     emoteCatalog: '表情目录',
     emoteLoad: '表情下载 / 初始化',
     emoteFrame: '表情帧解码',

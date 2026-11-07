@@ -365,7 +365,7 @@ const before = new Uint8Array(await readFile(new URL('../fixtures/live-before.pa
 const after = new Uint8Array(await readFile(new URL('../fixtures/live-after.parquet', import.meta.url))).buffer;
 const livePart = {live_key: 'growing', part: 1, started_ms: 95000, path: 'live-archive/live/growing.parquet', bytes: 1};
 
-function liveReader({files = [before, after], index, wait, onFile, time = 110000} = {}) {
+function liveReader({files = [before, after], index, wait, onFile, time = 110000, onWait} = {}) {
   const state = {indexes: 0, files: [], waits: [], temporary: []};
   const controller = new AbortController();
   const metrics = createExportMetrics();
@@ -374,6 +374,7 @@ function liveReader({files = [before, after], index, wait, onFile, time = 110000
     {
       signal: controller.signal,
       metrics,
+      onWait,
       now: () => time,
       wait: async (ms, signal) => {
         state.waits.push(ms);
@@ -656,4 +657,80 @@ test('a malformed replacement remains fatal instead of being mistaken for archiv
     await reader.close();
   }
   assert.ok(state.temporary.every(storage => storage.removes === 1));
+});
+
+const progressBefore = new Uint8Array(
+  await readFile(new URL('../fixtures/live-progress-before.parquet', import.meta.url)),
+).buffer;
+const progressAfter = new Uint8Array(
+  await readFile(new URL('../fixtures/live-progress-after.parquet', import.meta.url)),
+).buffer;
+
+test('the collector-stated completeness, schedule and stream clock are read from the snapshot', async () => {
+  const {snapshotSchedule, streamClock} = await import('../../../src/danmaku/parquet.js');
+  const metadata = await readMetadata(progressBefore);
+  assert.equal(snapshotCoverage(metadata), 112, 'complete_through_ms beats the 110 s maximum event');
+  assert.deepEqual(snapshotSchedule(metadata), {published: 110.5, interval: 10});
+  assert.equal(streamClock(metadata).epochs[0].origin_us, 95_500_000);
+  const old = await readMetadata(before);
+  assert.equal(snapshotCoverage(old), 110, 'older snapshots keep the reception-statistics fallback');
+  assert.equal(snapshotSchedule(old), null);
+  assert.equal(streamClock(old), null);
+});
+
+test('a quiet stretch inside the stated completeness needs no refresh', async () => {
+  const {reader, state} = liveReader({files: [progressBefore, progressAfter], time: 113000});
+  try {
+    // Platform window ends at 111 s: no event there, but the collector says it is complete through 112 s.
+    const rows = await reader.read({origin: 0, start: 100, end: 109});
+    assert.deepEqual(
+      rows.map(row => row.text),
+      ['110000'],
+    );
+    assert.equal(state.indexes, 1, 'only the initial index read, no refresh poll');
+    assert.equal(state.files.length, 1);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('waiting reports the missing seconds and polls at the collector schedule', async () => {
+  const reports = [];
+  const {reader, state} = liveReader({
+    files: [progressBefore, progressBefore, progressAfter],
+    time: 113000,
+    onWait: value => reports.push(value),
+  });
+  try {
+    const rows = await reader.read(nextWindow);
+    assert.deepEqual(
+      rows.map(row => row.text),
+      ['110000'],
+    );
+    assert.deepEqual(state.waits, [10000], 'the same snapshot again: the collector is quiet, back off');
+    assert.deepEqual(reports, [{coverage: 112, needed: 120, delay: 10000}, null]);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('next snapshot delay follows the schedule with upload slack, bounded to 3-10 s', async () => {
+  const {nextSnapshotDelay} = await import('../../../src/danmaku/archive.js');
+  const schedule = {published: 110.5, interval: 10};
+  assert.equal(nextSnapshotDelay(schedule, 100, 113000), 9500);
+  assert.equal(nextSnapshotDelay(schedule, 100, 121000), 3000, 'overdue: retry soon, never hammer');
+  assert.equal(nextSnapshotDelay(schedule, 110.5, 113000), 10000, 'unchanged snapshot');
+  assert.equal(nextSnapshotDelay(null, undefined, 113000), 10000);
+});
+
+test('the wait message states how much danmaku is still missing', async () => {
+  const {danmakuWaitMessage} = await import('../../../src/media/streaming-export.js');
+  assert.equal(
+    danmakuWaitMessage({coverage: 112, needed: 120, delay: 9500}),
+    '等待直播弹幕：还差约 8 秒弹幕，约 10 秒后更新',
+  );
+  assert.equal(
+    danmakuWaitMessage({coverage: 0, needed: 120, delay: 10000}),
+    '等待直播弹幕：正在确认弹幕进度，约 10 秒后更新',
+  );
 });
