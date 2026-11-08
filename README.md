@@ -39,11 +39,36 @@
 - 不发布内容、不创建投稿草稿；脚本不保存 Cookie、签名媒体链接或视频到扩展存储。
 - 接口并非承诺稳定的公开 API，平台改版后可能需要更新。
 
+## 构建渠道（维护者）
+
+现有功能全部保留在公开版，后续内部功能通过 `preview` 渠道提供。
+
+| 命令 | 产物 | 用途 |
+|---|---|---|
+| `npm run build` | `bella-live-clip.user.js` | 公开版，不包含内部功能 |
+| `npm run build:preview` | `bella-live-clip.preview.user.js` | Preview 内部版，包含内部功能 |
+| `npm run build:all` | 上述两个文件 | 同时构建两个渠道 |
+
+两个渠道共用 `src/header.txt` 的 `x.y.z` 版本号；任一渠道功能变化时都应按现有规则递增版本。Preview 的名称带有 `Preview（内部版）`，有独立的脚本标识和更新地址 `/bella-live-clip.preview.user.js`，内置检查更新也使用本渠道地址。切换渠道时请在 Tampermonkey 中停用另一版，避免同时运行。
+
+后续内部功能使用构建常量包裹；普通构建会在压缩时移除该分支。若内部模块带有初始化副作用，将动态导入放在分支内，避免顶层导入使内部代码进入公开版：
+
+```js
+if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+  const {startInternalFeature} = await import('./internal/feature.js');
+  startInternalFeature();
+}
+```
+
+示例应放在异步函数内。未注入构建常量的测试和开发入口默认不开启内部功能。两版目前功能相同，尚未添加具体内部功能。
+
+`npm run verify` 检查两个渠道。公开版产物继续提交到仓库，Preview 产物由构建生成、不提交。主分支发布流程会构建并上传两版；本地构建不发布。`--release` 只控制日志服务配置注入，可用于任一渠道，例如 `npm run build:preview -- --release`。Preview 是功能渠道，不是访问控制，发布后的文件可通过其地址访问。
+
 ## 日志服务（维护者）
 
 仓库包含可供多个项目使用的 Cloudflare Worker + D1 日志服务，支持正常运行及导出性能上报、按来源去重、网页筛选查看和 JSONL 下载。发布方式见 [日志服务说明](server/logs/README.md)。
 
-构建和发布只生成、上传压缩的 `bella-live-clip.user.js`，检查更新和安装使用同一地址。
+构建和发布分别生成、上传压缩的公开版及 Preview 脚本，每个渠道的检查更新和安装使用各自同一地址。
 
 生产部署只读取 GitHub Actions Secret `LOG_SERVICE_CONFIG`，不在仓库中保存实际账户、Worker、数据库、域名或令牌配置。资源及域名绑定由维护者预先完成；部署流程只检查并更新已有 Worker 和数据库，不读取、验证或修改域名，也不自动创建替代资源。发布构建从同一个 Secret 注入公开接收地址和对应网络权限，仓库中的构建不含实际地址；管理凭据不会进入插件。
 

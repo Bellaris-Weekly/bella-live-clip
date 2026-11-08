@@ -5,9 +5,15 @@ import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
-export async function buildUserscript({release = false, env = process.env, write = true} = {}) {
+export function userscriptBuildOptions({preview = false, release = false, env = process.env, write = true} = {}) {
   let endpoint = '';
   let header = readFileSync(path.join(root, 'src/header.txt'), 'utf8');
+  if (preview) {
+    header = header
+      .replace(/^(\/\/ @name\s+)(.+)$/m, '$1$2 Preview（内部版）')
+      .replace(/^(\/\/ @namespace\s+)(\S+)$/m, '$1$2/preview')
+      .replaceAll('/bella-live-clip.user.js', '/bella-live-clip.preview.user.js');
+  }
   if (release) {
     let config;
     try {
@@ -29,10 +35,10 @@ export async function buildUserscript({release = false, env = process.env, write
     if (!connections.includes(domain))
       header = header.replace('// ==/UserScript==', `// @connect      ${domain}\n// ==/UserScript==`);
   }
-  return build({
+  return {
     absWorkingDir: root,
     entryPoints: ['src/main.js'],
-    outfile: 'bella-live-clip.user.js',
+    outfile: preview ? 'bella-live-clip.preview.user.js' : 'bella-live-clip.user.js',
     write,
     bundle: true,
     format: 'iife',
@@ -40,16 +46,33 @@ export async function buildUserscript({release = false, env = process.env, write
     minify: true,
     charset: 'utf8',
     loader: {'.txt': 'text', '.html': 'text', '.css': 'text'},
-    define: {__LOG_SERVICE_ENDPOINT__: JSON.stringify(endpoint)},
+    define: {__LOG_SERVICE_ENDPOINT__: JSON.stringify(endpoint), __PREVIEW__: JSON.stringify(preview)},
+    // The application imports this header for its own update checker as well.
+    plugins: preview
+      ? [
+          {
+            name: 'preview-metadata',
+            setup(build) {
+              build.onLoad({filter: /[/\\]src[/\\]header\.txt$/}, () => ({contents: header, loader: 'text'}));
+            },
+          },
+        ]
+      : [],
     banner: {js: header},
     legalComments: 'eof',
     logLevel: 'silent',
-  });
+  };
+}
+
+export async function buildUserscript(options) {
+  return build(userscriptBuildOptions(options));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  buildUserscript({release: process.argv.includes('--release')}).catch(error => {
-    console.error(error.message);
-    process.exitCode = 1;
-  });
+  buildUserscript({preview: process.argv.includes('--preview'), release: process.argv.includes('--release')}).catch(
+    error => {
+      console.error(error.message);
+      process.exitCode = 1;
+    },
+  );
 }

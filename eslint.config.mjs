@@ -2,7 +2,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  {ignores: ['bella-live-clip.user.js', 'node_modules/', '.wrangler/', '.local/']},
+  {ignores: ['bella-live-clip.user.js', 'bella-live-clip.preview.user.js', 'node_modules/', '.wrangler/', '.local/']},
   js.configs.recommended,
   {
     languageOptions: {
@@ -11,6 +11,7 @@ export default [
       globals: {
         ...globals.browser,
         __LOG_SERVICE_ENDPOINT__: 'readonly',
+        __PREVIEW__: 'readonly',
         GM_getValue: 'readonly',
         GM_registerMenuCommand: 'readonly',
         GM_setValue: 'readonly',

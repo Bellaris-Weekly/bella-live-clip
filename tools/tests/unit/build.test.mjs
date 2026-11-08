@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
-import {buildUserscript} from '../../scripts/build.mjs';
-import {readScriptMetadata} from '../../../src/services/updates.js';
+import {build} from 'esbuild';
+import {buildUserscript, userscriptBuildOptions} from '../../scripts/build.mjs';
+import {createUpdateChecker, readScriptMetadata} from '../../../src/services/updates.js';
 
 const deployment = {
   worker: {name: 'private-worker-fixture', domain: 'diagnostics.example.test'},
@@ -12,6 +13,61 @@ const deployment = {
 };
 const env = {LOG_SERVICE_CONFIG: JSON.stringify(deployment)};
 const textOf = result => result.outputFiles[0].text;
+
+test('preview has a separate installation identity and update destination in ordinary and release builds', async () => {
+  const source = await readFile(new URL('../../../src/header.txt', import.meta.url), 'utf8');
+  const stable = readScriptMetadata(source);
+  for (const release of [false, true]) {
+    const result = await buildUserscript({preview: true, release, env, write: false});
+    const script = textOf(result);
+    const metadata = readScriptMetadata(script);
+    assert.equal(result.outputFiles.length, 1);
+    assert.match(result.outputFiles[0].path, /bella-live-clip\.preview\.user\.js$/);
+    assert.match(script, /^\/\/ @name\s+贝报切片助手 Preview（内部版）$/m);
+    assert.equal(metadata.version, stable.version);
+    assert.equal(metadata.namespace, `${stable.namespace}/preview`);
+    assert.equal(metadata.updateURL, stable.updateURL.replace('.user.js', '.preview.user.js'));
+    assert.equal(metadata.downloadURL, metadata.updateURL);
+    assert.ok(!script.includes(stable.updateURL), 'embedded update checker must not point back to public builds');
+    assert.equal(script.includes(`https://${deployment.worker.domain}/v1/logs`), release);
+    assert.ok(!script.includes(deployment.cloudflare.api_token));
+    for (const [installed, response] of [
+      [stable, script],
+      [metadata, source],
+    ]) {
+      const check = createUpdateChecker({metadata: installed, request: async () => ({data: response})});
+      assert.deepEqual(await check(), {status: 'error'}, 'updates must reject the other channel');
+    }
+  }
+});
+
+test('build-time gate removes internal code from public builds and runtime metadata matches the banner', async () => {
+  for (const preview of [false, true]) {
+    const options = userscriptBuildOptions({preview, write: false});
+    const result = await build({
+      ...options,
+      entryPoints: [],
+      stdin: {
+        resolveDir: options.absWorkingDir,
+        contents: `
+          import header from './src/header.txt';
+          import {readScriptMetadata} from './src/services/updates.js';
+          globalThis.metadata = readScriptMetadata(header);
+          if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+            globalThis.internal = 'internal-feature-fixture';
+          }
+        `,
+      },
+    });
+    const script = textOf(result);
+    assert.equal(script.includes('internal-feature-fixture'), preview);
+    assert.ok(!script.includes('__PREVIEW__'));
+    const context = {};
+    runInNewContext(script, context);
+    assert.equal(context.internal, preview ? 'internal-feature-fixture' : undefined);
+    assert.deepEqual({...context.metadata}, readScriptMetadata(script));
+  }
+});
 
 test('ordinary builds ignore deployment secrets and produce identical artifacts', async () => {
   const firstBuild = await buildUserscript({env, write: false});

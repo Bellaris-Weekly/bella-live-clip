@@ -72,10 +72,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build release userscript
+      - name: Build public and preview release userscripts
         env:
           LOG_SERVICE_CONFIG: ${{ secrets.LOG_SERVICE_CONFIG }}
-        run: node tools/scripts/build.mjs --release
+        run: |
+          npm run build -- --release
+          npm run build:preview -- --release
 
       - name: Upload userscript
         env:
@@ -91,6 +93,11 @@ jobs:
             exit 0
           fi
           aws s3 cp bella-live-clip.user.js "s3://${R2_BUCKET}/bella-live-clip.user.js" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+            --content-type "application/javascript" \
+            --content-disposition "inline" \
+            --cache-control "no-cache, no-store, must-revalidate"
+          aws s3 cp bella-live-clip.preview.user.js "s3://${R2_BUCKET}/bella-live-clip.preview.user.js" \
             --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             --content-type "application/javascript" \
             --content-disposition "inline" \
