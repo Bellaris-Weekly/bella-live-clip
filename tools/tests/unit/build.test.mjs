@@ -187,7 +187,21 @@ test('studio network/storage grants and feature strings exist only in preview bu
       /^\/\/ @grant\s+GM_listValues$/m,
     ])
       assert.equal(pattern.test(header), preview);
-    for (const text of ['bella-plugin-link', 'studio.pending.', 'studioLogin', '等待回放'])
+    for (const text of [
+      'bella-plugin-link',
+      'studio.pending.',
+      'studioLogin',
+      '等待回放',
+      '/clip-defaults',
+      '/upload-options',
+      '/cos/uploads',
+      '/submissions',
+      '/covers',
+      '确认投稿',
+      '关联轴：',
+      'studio-compose',
+      'cover-wide.jpg',
+    ])
       assert.equal(script.includes(text), preview, text);
     if (!preview) assert.ok(!script.includes('studio.bk0717.com/api'));
   }

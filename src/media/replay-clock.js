@@ -2,8 +2,7 @@ export const ORIGIN_CORRECTION = 0.49;
 
 export function partOrigin(part, firstDecodeTime) {
   if (part.clockComplete !== true) throw new Error('对时需要从整场开头获取录像信息，请刷新场次后重试。');
-  if (!Number.isFinite(part.start_time) || !Number.isFinite(firstDecodeTime))
-    throw new Error('无法读取分段媒体时钟。');
+  if (!Number.isFinite(part.start_time) || !Number.isFinite(firstDecodeTime)) throw new Error('无法读取分段媒体时钟。');
   return part.start_time - firstDecodeTime + ORIGIN_CORRECTION;
 }
 

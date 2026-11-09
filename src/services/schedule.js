@@ -42,7 +42,14 @@ function parseEvent(fields) {
     return null;
   }
   if (!SCHEDULE_MEMBERS.some(member => member.room === room)) return null;
-  return {uid: fields.UID?.value || null, start, room, type, participants};
+  return {
+    uid: fields.UID?.value || null,
+    start,
+    room,
+    type,
+    participants,
+    ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__ ? {title: decodeText(fields.SUMMARY?.value || '')} : {}),
+  };
 }
 
 export function parseCalendar(text) {

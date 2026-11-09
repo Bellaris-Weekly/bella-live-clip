@@ -1,3 +1,4 @@
+import {createComposer} from '../preview/compose.js';
 import {createWorkflow} from '../preview/workflow.js';
 import metadataText from '../header.txt';
 import {readScriptMetadata, createUpdateChecker} from '../services/updates.js';
@@ -62,7 +63,7 @@ export function createApp({
   const readPageUrl = typeof pageUrl === 'function' ? pageUrl : () => pageUrl;
   const room = roomIdFromUrl(readPageUrl()),
     submissions = createSubmissionService(submissionRequest);
-  let workflow;
+  let workflow, composer;
   const allowed = () => !(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) || Boolean(studio?.identity());
   let player = null,
     playerKind = null,
@@ -237,6 +238,7 @@ export function createApp({
       scrubReturnTime = null;
     },
     onSelection: selection => {
+      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) composer?.clearMark();
       updateExportSummary(selection);
       activePlayback()?.check();
     },
@@ -395,6 +397,7 @@ export function createApp({
       whole: $('wholeRecording').checked,
       stopping: exporter.stopping(),
     });
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) composer?.refresh();
     updateFeedback();
   }
 
@@ -900,7 +903,10 @@ export function createApp({
   window.addEventListener('popstate', checkCurrentVideo);
   window.addEventListener('pagehide', event => {
     if (event.persisted) return;
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) workflow?.dispose();
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+      workflow?.dispose();
+      composer?.dispose();
+    }
     unbindPageProgress();
     clearInterval(navigationTimer);
     window.removeEventListener('popstate', checkCurrentVideo);
@@ -921,6 +927,28 @@ export function createApp({
   $('launcher').addEventListener('pointerenter', preload);
   $('launcher').addEventListener('focus', preload);
   if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+    composer = createComposer({
+      root,
+      client: studio,
+      gmRequest: options => GM_xmlhttpRequest(options),
+      mediaApi,
+      mediaRequest,
+      storage,
+      schedules,
+      session: {
+        ready: () => allowed() && ready && !controller && !isSubmission(),
+        isSubmission,
+        whole: () => $('wholeRecording').checked,
+        snapshot: () => ({
+          record: {...record},
+          selection: {...timeline.getSelection()},
+          mode: exportMode(),
+          streams: [...recordingPlan.streams],
+          segmentIndex,
+          estimate,
+        }),
+      },
+    });
     workflow = createWorkflow({
       root,
       client: studio,
@@ -931,6 +959,7 @@ export function createApp({
       mediaRequest,
       open,
       onLogout() {
+        composer.logout();
         controller?.abort();
         libraries.abortAll();
         leavePage();
@@ -947,12 +976,13 @@ export function createApp({
           if (!ready || controller || !record?.live) return;
           await updater.refresh(record, recordingController.signal);
         },
-        select(selection) {
+        select(selection, mark) {
           if (!allowed() || !ready || controller) return;
           $('wholeRecording').checked = false;
           selectSegment(selection.part.index);
           const offset = selection.part.start_time - record.start;
           timeline.setSelection({start: offset + selection.start, end: offset + selection.end}, true);
+          composer.markSelected(mark);
           seekTo(offset + selection.start);
           controls();
         },

@@ -233,7 +233,7 @@ export function createWorkflow({root, client, get, set, keys, api, mediaRequest,
       return;
     }
     waiting = null;
-    session.select(selection);
+    session.select(selection, mark);
     if (selection.snapped) notice('时间落在断流空档或跨分段，已对齐到最近可用画面；跨段请分段导出。');
   }
   function refresh(force = false) {

@@ -13,14 +13,15 @@ const stubs = {
   version: 'export const createVersionControl=()=>({refresh:async()=>{}});',
   'page-progress': 'export const bindPageProgress=()=>()=>{};',
   'export-progress': 'export const renderExportProgress=()=>{};export const limitProgress=render=>render;',
-  schedule: 'export class ScheduleService{async enrich(records){return {records};}}',
+  schedule:
+    'export const matchSchedule=()=>null;export const scheduleMonths=()=>[];export class ScheduleService{async enrich(records){return {records};}}',
   submission: 'export const createSubmissionService=()=>({load:()=>scenario.loadVideo()});',
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',
   'submission-player': 'export const createSubmissionPlayer=()=>scenario.player;',
   'preview-player': 'export const createPlayer=options=>{scenario.previewOptions=options;return scenario.player;};',
   playback: 'export const createPlayback=()=>scenario.playback;export const bindVideoControls=()=>{};',
   thumbnails:
-    'export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},sweep(){},update(){}});',
+    'export const readThumbnail=async()=>{};export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},sweep(){},update(){}});',
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
   export: 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan':

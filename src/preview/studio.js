@@ -38,7 +38,8 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
     set(TOKEN_KEY, null);
     emit();
   }
-  async function request(path, {method = 'GET', body} = {}) {
+  async function request(path, {method = 'GET', body, signal} = {}) {
+    signal?.throwIfAborted();
     const token = identity?.token;
     if (!token) throw new Error('请先登录');
     return new Promise((resolve, reject) => {
@@ -48,22 +49,29 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
         callback(value);
       };
+      const abort = () => {
+        finish(reject, signal.reason);
+        handle?.abort();
+      };
+      const multipart = body instanceof FormData;
       const fail = () => finish(reject, new Error('创作台连接失败，请稍后重试'));
       // Tampermonkey's anonymous fetch transport can ignore its timeout option.
       const timer = setTimeout(() => {
         fail();
         handle?.abort();
       }, 20000);
+      signal?.addEventListener('abort', abort, {once: true});
       try {
         handle = gmRequest({
           method,
           url: `${STUDIO}/api${path}`,
           anonymous: true,
           timeout: 20000,
-          headers: {Authorization: `Bearer ${token}`, 'Content-Type': 'application/json'},
-          data: body === undefined ? undefined : JSON.stringify(body),
+          headers: {Authorization: `Bearer ${token}`, ...(!multipart ? {'Content-Type': 'application/json'} : {})},
+          data: multipart ? body : body === undefined ? undefined : JSON.stringify(body),
           responseType: 'json',
           onload(response) {
             if (settled) return;
@@ -83,6 +91,8 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
                   : data?.detail?.message || `创作台请求失败（${response.status}）`,
               );
               error.status = response.status;
+              error.code = data?.detail?.code;
+              error.retryAfter = data?.detail?.retry_after;
               error.current = data?.detail?.current;
               finish(reject, error);
             } else finish(resolve, data);
