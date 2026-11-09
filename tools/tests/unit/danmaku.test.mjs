@@ -1,7 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {partOrigin, commentTime, firstVideoDecodeTime, sourceClock} from '../../../src/danmaku/clock.js';
+import {commentTime, sourceClock} from '../../../src/danmaku/clock.js';
+import {partOrigin, firstVideoDecodeTime} from '../../../src/media/replay-clock.js';
 import {
   readDanmaku,
   loadComments,

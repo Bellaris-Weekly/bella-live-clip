@@ -287,7 +287,8 @@ export async function exportSelection(
         report();
         const finishOrigin = metrics?.start('originProbe');
         try {
-          const {partOrigin, firstVideoDecodeTime, streamOrigin} = await import('../danmaku/clock.js');
+          const {partOrigin, firstVideoDecodeTime} = await import('./replay-clock.js');
+          const {streamOrigin} = await import('../danmaku/clock.js');
           const [first, init] = await Promise.all([
             read(group.firstSegment),
             group.firstMap ? read(group.firstMap) : null,

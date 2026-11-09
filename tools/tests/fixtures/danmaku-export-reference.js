@@ -232,7 +232,7 @@ export async function exportSelection(
       if (danmaku) {
         message = '正在读取弹幕媒体时钟';
         report();
-        const {partOrigin, firstVideoDecodeTime} = await import('../../../src/danmaku/clock.js');
+        const {partOrigin, firstVideoDecodeTime} = await import('../../../src/media/replay-clock.js');
         const [first, init] = await Promise.all([
           read(group.firstSegment),
           group.firstMap ? read(group.firstMap) : null,

@@ -176,3 +176,77 @@ test('release build fails for missing, malformed or credential-bearing endpoint 
     });
   }
 });
+
+test('studio network/storage grants and feature strings exist only in preview builds', async () => {
+  for (const preview of [false, true]) {
+    const script = textOf(await buildUserscript({preview, write: false}));
+    const header = script.slice(0, script.indexOf('// ==/UserScript=='));
+    for (const pattern of [
+      /^\/\/ @connect\s+studio\.bk0717\.com$/m,
+      /^\/\/ @grant\s+GM_addValueChangeListener$/m,
+      /^\/\/ @grant\s+GM_listValues$/m,
+    ])
+      assert.equal(pattern.test(header), preview);
+    for (const text of ['bella-plugin-link', 'studio.pending.', 'studioLogin', '等待回放'])
+      assert.equal(script.includes(text), preview, text);
+    if (!preview) assert.ok(!script.includes('studio.bk0717.com/api'));
+  }
+});
+
+test('preview entry runs token handshake and the existing upload bridge together on studio', async () => {
+  const script = textOf(await buildUserscript({preview: true, write: false}));
+  const listeners = [],
+    replies = [],
+    stored = [],
+    uploads = [];
+  const location = {hostname: 'studio.bk0717.com', origin: 'https://studio.bk0717.com', pathname: '/plugin/link'};
+  const target = {
+    location,
+    addEventListener: (_, receive) => listeners.push(receive),
+    postMessage: data => replies.push(data),
+  };
+  runInNewContext(script, {
+    location,
+    unsafeWindow: target,
+    GM_setValue: (...args) => stored.push(args),
+    GM_xmlhttpRequest: options => {
+      uploads.push(options);
+      return {abort() {}};
+    },
+    URL,
+    setTimeout,
+    clearTimeout,
+    TextEncoder,
+    TextDecoder,
+  });
+  const send = data => listeners.forEach(receive => receive({source: target, origin: location.origin, data}));
+  send({channel: 'bella-plugin-link', type: 'hello', nonce: 'n'});
+  send({
+    channel: 'bella-plugin-link',
+    type: 'token',
+    nonce: 'n',
+    token: 'secret',
+    name: '成员',
+    expires_at: 1800000000000,
+  });
+  assert.equal(
+    replies.find(reply => reply.channel === 'bella-plugin-link' && reply.type === 'ready').version,
+    readScriptMetadata(script).version,
+  );
+  assert.equal(stored[0][0], 'biliClip.studio.token');
+  send({channel: 'bella-bridge', type: 'hello', nonce: 'upload'});
+  assert.ok(replies.find(reply => reply.channel === 'bella-bridge' && reply.nonce === 'upload'));
+  send({
+    channel: 'bella-bridge',
+    type: 'request',
+    id: 'upload-1',
+    method: 'PUT',
+    url: 'https://upos-test.bilivideo.com/file',
+    headers: {'x-upos-auth': 'fixture'},
+    body: 'bytes',
+  });
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].data, 'bytes');
+  uploads[0].onload({status: 200, responseText: 'ok'});
+  assert.ok(replies.find(reply => reply.channel === 'bella-bridge' && reply.id === 'upload-1' && reply.status === 200));
+});

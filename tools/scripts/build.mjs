@@ -12,7 +12,11 @@ export function userscriptBuildOptions({preview = false, release = false, env = 
     header = header
       .replace(/^(\/\/ @name\s+)(.+)$/m, '$1$2 Preview（内部版）')
       .replace(/^(\/\/ @namespace\s+)(\S+)$/m, '$1$2/preview')
-      .replaceAll('/bella-live-clip.user.js', '/bella-live-clip.preview.user.js');
+      .replaceAll('/bella-live-clip.user.js', '/bella-live-clip.preview.user.js')
+      .replace(
+        '// ==/UserScript==',
+        '// @connect      studio.bk0717.com\n// @grant        GM_addValueChangeListener\n// @grant        GM_listValues\n// ==/UserScript==',
+      );
   }
   if (release) {
     let config;

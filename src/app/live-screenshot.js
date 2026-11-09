@@ -32,10 +32,22 @@ function getIdentity(document) {
 }
 
 // Runs in live player frames too; the editor and menu stay in the top window.
-export function startLiveScreenshot(document) {
+export function startLiveScreenshot(document, studio) {
+  if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+    const style = document.createElement('style');
+    const update = () => {
+      style.textContent = studio.identity() ? '' : '.web-player-icon-feedback {display:none!important}';
+    };
+    update();
+    studio.subscribe(update);
+    document.documentElement.append(style);
+  }
   return installLiveScreenshot({
     rootDocument: document,
-    selectVideo,
+    selectVideo:
+      typeof __PREVIEW__ !== 'undefined' && __PREVIEW__
+        ? root => (studio.identity() ? selectVideo(root) : null)
+        : selectVideo,
     getIdentity: () => getIdentity(document),
     download: (blob, name) => downloadScreenshot(document, blob, name),
   });

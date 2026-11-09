@@ -1,31 +1,40 @@
 import {DEFAULT_SHORTCUT, normalizeShortcut, formatShortcut, matchesShortcut, isEditing} from '../ui/shortcuts.js';
 
 // The field that records the panel shortcut, and the shortcut itself.
-export function bindShortcut({root, get, set, onPress}) {
+export function bindShortcut({
+  root,
+  get,
+  set,
+  onPress,
+  field = 'shortcut',
+  key = 'shortcut',
+  fallback = DEFAULT_SHORTCUT,
+  accepts = () => true,
+}) {
   const $ = id => root.getElementById(id);
-  let shortcut = normalizeShortcut(get('shortcut', DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT;
-  $('shortcut').value = formatShortcut(shortcut);
-  $('shortcut').onfocus = () => {
-    $('shortcut').classList.add('recording');
-    $('shortcut').value = '按下快捷键';
+  let shortcut = normalizeShortcut(get(key, fallback)) || fallback;
+  $(field).value = formatShortcut(shortcut);
+  $(field).onfocus = () => {
+    $(field).classList.add('recording');
+    $(field).value = '按下快捷键';
   };
-  $('shortcut').onblur = () => {
-    $('shortcut').classList.remove('recording');
-    $('shortcut').value = formatShortcut(shortcut);
+  $(field).onblur = () => {
+    $(field).classList.remove('recording');
+    $(field).value = formatShortcut(shortcut);
   };
-  $('shortcut').onkeydown = e => {
+  $(field).onkeydown = e => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.key === 'Escape') return $('shortcut').blur();
+    if (e.key === 'Escape') return $(field).blur();
     const value = normalizeShortcut(e);
-    if (value) {
+    if (value && accepts(value)) {
       shortcut = value;
-      set('shortcut', value);
-      $('shortcut').blur();
+      set(key, value);
+      $(field).blur();
     }
   };
   document.addEventListener('keydown', e => {
-    if (!isEditing(e) && matchesShortcut(e, shortcut)) {
+    if (!isEditing(e) && accepts(shortcut) && matchesShortcut(e, shortcut)) {
       e.preventDefault();
       onPress();
     }

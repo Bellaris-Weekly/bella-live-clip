@@ -13,6 +13,8 @@ export default [
         __LOG_SERVICE_ENDPOINT__: 'readonly',
         __PREVIEW__: 'readonly',
         GM_getValue: 'readonly',
+        GM_addValueChangeListener: 'readonly',
+        GM_listValues: 'readonly',
         GM_registerMenuCommand: 'readonly',
         GM_setValue: 'readonly',
         GM_xmlhttpRequest: 'readonly',

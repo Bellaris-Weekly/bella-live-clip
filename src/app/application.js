@@ -1,3 +1,4 @@
+import {createWorkflow} from '../preview/workflow.js';
 import metadataText from '../header.txt';
 import {readScriptMetadata, createUpdateChecker} from '../services/updates.js';
 import {createVersionControl} from '../ui/version.js';
@@ -35,6 +36,8 @@ import {formatDuration, formatTimeRange, formatDate, formatBytes} from '../share
 
 export function createApp({
   api,
+  studio,
+  storageKeys,
   diagnostics = createDiagnosticReporter(),
   submissionRequest = api.request,
   mediaRequest = api.request,
@@ -59,6 +62,8 @@ export function createApp({
   const readPageUrl = typeof pageUrl === 'function' ? pageUrl : () => pageUrl;
   const room = roomIdFromUrl(readPageUrl()),
     submissions = createSubmissionService(submissionRequest);
+  let workflow;
+  const allowed = () => !(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) || Boolean(studio?.identity());
   let player = null,
     playerKind = null,
     loadedRoute = null,
@@ -236,6 +241,7 @@ export function createApp({
       activePlayback()?.check();
     },
     onView: (view, motion) => {
+      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) workflow?.renderTicks();
       $('timelineZoom').textContent = $('timeline').dataset.zoom;
       if (!isSubmission() || submissionThumbnails) thumbnails.update(view, motion);
     },
@@ -368,6 +374,7 @@ export function createApp({
     thumbnails.setStreams(recordStreams);
     timeline.extend(segments[segmentIndex].end, {whole: $('wholeRecording').checked});
     renderSegments();
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh();
     updateClock(player.position());
     updateExportSummary();
     if (backgroundStarted) startEstimate(recordingPlan, recordingController.signal, previousEstimate);
@@ -403,7 +410,7 @@ export function createApp({
     controls();
   }
   async function job(action, kind = 'load', details = {}) {
-    if (controller) return;
+    if (!allowed() || controller) return;
     const own = new AbortController();
     const diagnostic = diagnostics.begin(details.action || kind, {pageUrl: readPageUrl(), record, ...details});
     controller = own;
@@ -426,6 +433,7 @@ export function createApp({
       jobKind = null;
       exporter.reset();
       controls();
+      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh(true);
       if (kind === 'export' && record?.live && ready && !$('panel').hidden) updater.start(record);
       if (pendingRoute) {
         pendingRoute = false;
@@ -561,6 +569,7 @@ export function createApp({
     renderExportMode();
     status('正在加载录像…');
     const {total, streams} = await player.load(record, signal);
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) signal.throwIfAborted();
     playbackTotal = total;
     updateClock(0);
     recordingController = new AbortController();
@@ -575,6 +584,7 @@ export function createApp({
     player.refreshStill?.();
     $('editPage').focus({preventScroll: true});
     updater.start(record);
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh();
   }
   function segmentBounds(owner, streams, total) {
     // Only advertise generated footage, including when the last live segment
@@ -622,7 +632,7 @@ export function createApp({
   }
   // Keeps the selection and position. Only a recording that never opened starts over.
   async function refreshRecording() {
-    if (!record) return;
+    if (!allowed() || !record) return;
     if (!ready) {
       await enterRecord(record);
       return;
@@ -720,6 +730,7 @@ export function createApp({
     );
   }
   function checkCurrentVideo() {
+    if (!allowed()) return;
     const route = parseSubmissionUrl(readPageUrl()),
       key = route?.key;
     if (key === observedRoute) {
@@ -741,6 +752,8 @@ export function createApp({
   async function open() {
     syncTheme();
     $('panel').hidden = false;
+    if (!allowed()) return;
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.opened();
     if (playerKind === 'submission') player.resume();
     void versionControl.refresh();
     const route = parseSubmissionUrl(readPageUrl());
@@ -862,7 +875,15 @@ export function createApp({
     togglePlayback: () => activePlayback()?.toggle(),
     isActive: () => ready && !controller && !$('panel').hidden,
   });
-  bindShortcut({root, get, set, onPress: () => ($('panel').hidden ? void open() : close())});
+  bindShortcut({
+    root,
+    get,
+    set,
+    onPress: () => ($('panel').hidden ? void open() : close()),
+    ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__
+      ? {accepts: value => workflow?.acceptsPanelShortcut(value) ?? true}
+      : {}),
+  });
   $('togglePlayback').onclick = () => activePlayback()?.toggle();
   $('playSelection').onclick = () => player.playSelection();
   const unbindPageProgress = bindPageProgress({
@@ -879,6 +900,7 @@ export function createApp({
   window.addEventListener('popstate', checkCurrentVideo);
   window.addEventListener('pagehide', event => {
     if (event.persisted) return;
+    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) workflow?.dispose();
     unbindPageProgress();
     clearInterval(navigationTimer);
     window.removeEventListener('popstate', checkCurrentVideo);
@@ -891,13 +913,63 @@ export function createApp({
   // Bilibili page, and account-bound requests there would add up across tabs.
   let preloaded = Boolean(room || parseSubmissionUrl(readPageUrl()));
   const preload = () => {
-    if (!preloaded) {
+    if (allowed() && !preloaded) {
       preloaded = true;
       void libraries.preload(member);
     }
   };
   $('launcher').addEventListener('pointerenter', preload);
   $('launcher').addEventListener('focus', preload);
+  if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+    workflow = createWorkflow({
+      root,
+      client: studio,
+      get,
+      set,
+      keys: storageKeys,
+      api,
+      mediaRequest,
+      open,
+      onLogout() {
+        controller?.abort();
+        libraries.abortAll();
+        leavePage();
+        initialized = false;
+        showPage('library');
+      },
+      session: {
+        record: () => record,
+        ready: () => ready && !controller,
+        view: () => timeline.getView(),
+        groups: () => recordingPlan.load(),
+        signal: () => recordingController.signal,
+        refresh: async () => {
+          if (!ready || controller || !record?.live) return;
+          await updater.refresh(record, recordingController.signal);
+        },
+        select(selection) {
+          if (!allowed() || !ready || controller) return;
+          $('wholeRecording').checked = false;
+          selectSegment(selection.part.index);
+          const offset = selection.part.start_time - record.start;
+          timeline.setSelection({start: offset + selection.start, end: offset + selection.end}, true);
+          seekTo(offset + selection.start);
+          controls();
+        },
+      },
+    });
+    // Block stale controls and synthetic UI events immediately on logout.
+    for (const type of ['click', 'keydown', 'change', 'submit'])
+      root.addEventListener(
+        type,
+        event => {
+          if (allowed() || event.target.closest('#studioLogin, #launcher, #close')) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        },
+        true,
+      );
+  }
   controls();
   return {open, root};
 }

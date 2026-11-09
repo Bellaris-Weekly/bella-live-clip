@@ -7,8 +7,27 @@ import {createSubmissionRequest} from './services/submission-request.js';
 import {createMediaRequest} from './services/media-request.js';
 import {startLiveScreenshot} from './app/live-screenshot.js';
 import {startPageBridge} from './services/page-bridge.js';
+import {createStudioClient, startLink, TOKEN_KEY} from './preview/studio.js';
 
-if (location.hostname === 'live.bilibili.com') startLiveScreenshot(document);
+let studio;
+if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+  const get = (key, fallback) => GM_getValue(`biliClip.${key}`, fallback);
+  const set = (key, value) => GM_setValue(`biliClip.${key}`, value);
+  if (location.hostname === 'studio.bk0717.com') {
+    startLink({target: unsafeWindow, location, set, version: readScriptMetadata(metadataText).version});
+  } else {
+    studio = createStudioClient({get, set, request: GM_xmlhttpRequest});
+    const check = () => void studio.check().catch(() => {});
+    GM_addValueChangeListener(`biliClip.${TOKEN_KEY}`, (_key, old, value) => {
+      if (old?.token !== value?.token) check();
+    });
+    window.addEventListener('focus', check);
+    check();
+  }
+}
+
+if (location.hostname === 'live.bilibili.com')
+  startLiveScreenshot(document, typeof __PREVIEW__ !== 'undefined' && __PREVIEW__ ? studio : null);
 
 if (location.hostname === 'studio.bk0717.com') {
   startPageBridge({
@@ -26,6 +45,15 @@ if (location.hostname === 'studio.bk0717.com') {
   });
   const request = createRequest(GM_xmlhttpRequest);
   const app = createApp({
+    ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__
+      ? {
+          studio,
+          storageKeys: () =>
+            GM_listValues()
+              .filter(key => key.startsWith('biliClip.'))
+              .map(key => key.slice(9)),
+        }
+      : {}),
     diagnostics,
     api: new BiliApi(request),
     mediaRequest: createMediaRequest({pageFetch: unsafeWindow.fetch.bind(unsafeWindow), fallback: request}),
