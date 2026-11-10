@@ -10,7 +10,7 @@ export function userscriptBuildOptions({preview = false, release = false, env = 
   let header = readFileSync(path.join(root, 'src/header.txt'), 'utf8');
   if (preview) {
     header = header
-      .replace(/^(\/\/ @name\s+)(.+)$/m, '$1$2 Preview（内部版）')
+      .replace(/^(\/\/ @name\s+)(.+)$/m, '$1$2 Preview')
       .replace(/^(\/\/ @namespace\s+)(\S+)$/m, '$1$2/preview')
       .replaceAll('/bella-live-clip.user.js', '/bella-live-clip.preview.user.js')
       .replace(

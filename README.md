@@ -46,10 +46,10 @@
 | 命令 | 产物 | 用途 |
 |---|---|---|
 | `npm run build` | `bella-live-clip.user.js` | 公开版，不包含内部功能 |
-| `npm run build:preview` | `bella-live-clip.preview.user.js` | Preview 内部版，包含内部功能 |
+| `npm run build:preview` | `bella-live-clip.preview.user.js` | Preview，包含内部功能 |
 | `npm run build:all` | 上述两个文件 | 同时构建两个渠道 |
 
-两个渠道共用 `src/header.txt` 的 `x.y.z` 版本号；任一渠道功能变化时都应按现有规则递增版本。Preview 的名称带有 `Preview（内部版）`，有独立的脚本标识和更新地址 `/bella-live-clip.preview.user.js`，内置检查更新也使用本渠道地址。切换渠道时请在 Tampermonkey 中停用另一版，避免同时运行。
+两个渠道共用 `src/header.txt` 的 `x.y.z` 版本号；任一渠道功能变化时都应按现有规则递增版本。Preview 的名称为 `贝报切片助手 Preview`，有独立的脚本标识和更新地址 `/bella-live-clip.preview.user.js`，内置检查更新也使用本渠道地址。切换渠道时请在 Tampermonkey 中停用另一版，避免同时运行。
 
 后续内部功能使用构建常量包裹；普通构建会在压缩时移除该分支。若内部模块带有初始化副作用，将动态导入放在分支内，避免顶层导入使内部代码进入公开版：
 

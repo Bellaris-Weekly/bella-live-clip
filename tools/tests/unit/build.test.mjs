@@ -23,7 +23,7 @@ test('preview has a separate installation identity and update destination in ord
     const metadata = readScriptMetadata(script);
     assert.equal(result.outputFiles.length, 1);
     assert.match(result.outputFiles[0].path, /bella-live-clip\.preview\.user\.js$/);
-    assert.match(script, /^\/\/ @name\s+贝报切片助手 Preview（内部版）$/m);
+    assert.match(script, /^\/\/ @name\s+贝报切片助手 Preview$/m);
     assert.equal(metadata.version, stable.version);
     assert.equal(metadata.namespace, `${stable.namespace}/preview`);
     assert.equal(metadata.updateURL, stable.updateURL.replace('.user.js', '.preview.user.js'));
