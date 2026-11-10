@@ -283,7 +283,7 @@ export async function exportSelection(
       signal?.throwIfAborted();
       let origin;
       if (danmaku) {
-        message = '正在读取弹幕媒体时钟';
+        message = '正在对齐弹幕';
         report();
         const finishOrigin = metrics?.start('originProbe');
         try {

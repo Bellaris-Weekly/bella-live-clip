@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createDiagnosticReporter} from '../../../src/services/diagnostics.js';
+import {mediaStorageError} from '../../../src/media/temporary-media.js';
 import worker from '../../../src/server/logs-worker.js';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -275,12 +276,14 @@ test('失败日志保留被包装的浏览器错误、失败的存储操作和�
   const {reporter, requests} = setup();
   const browser = new DOMException('A requested file or directory could not be found', 'NotFoundError');
   browser.diagnostic = {operation: 'write', target: 'temporary', url: 'https://cdn.example/a.m4s?token=never'};
-  const error = new Error('浏览器临时文件读写失败（NotFoundError）', {cause: browser});
+  const error = mediaStorageError(browser);
   error.suppressed = [new TypeError('Cannot close a ERRORED writable stream')];
   reporter.begin('export').fail(error);
   await settle();
   const failed = requests.map(item => JSON.parse(item.data)).find(item => item.event === 'export_failed');
-  assert.equal(failed.context.error.message, '浏览器临时文件读写失败（NotFoundError）');
+  assert.equal(failed.context.error.message, error.message);
+  assert.match(error.message, /浏览器临时文件读写失败，/);
+  assert.ok(!error.message.includes(browser.name));
   assert.deepEqual(failed.context.error.causes, [
     {
       name: 'NotFoundError',

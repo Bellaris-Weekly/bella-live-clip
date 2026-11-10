@@ -35,8 +35,8 @@ export function renderCover(canvas, source, crop, text) {
 }
 
 export function createCoverEditor({host, selection, readFrame, signal}) {
-  host.innerHTML = `<label>封面帧 <input data-frame type="range" step="0.1"></label><span data-status role="status"></span>
-    <button type="button" data-reload>重新取帧</button>
+  host.innerHTML = `<label>封面画面 <input data-frame type="range" step="0.1"></label><span data-status role="status"></span>
+    <button type="button" data-reload>重新加载</button>
     <canvas data-source aria-label="拖动裁剪框" style="max-width:100%;max-height:260px;touch-action:none"></canvas>
     <label>裁剪范围 <input data-zoom type="range" min="20" max="100" value="100"></label>
     <label>文字（可选）<input data-text maxlength="80"></label>
@@ -78,7 +78,7 @@ export function createCoverEditor({host, selection, readFrame, signal}) {
     const own = (loading = new AbortController());
     const combined = AbortSignal.any([signal, own.signal]);
     source = null;
-    $('status').textContent = '正在取帧…';
+    $('status').textContent = '正在加载画面…';
     pending = (async () => {
       const image = await readFrame(Number(slider.value), combined);
       combined.throwIfAborted();
@@ -89,7 +89,7 @@ export function createCoverEditor({host, selection, readFrame, signal}) {
       draw();
     })();
     void pending.catch(error => {
-      if (!combined.aborted) $('status').textContent = `封面取帧失败：${error.message}`;
+      if (!combined.aborted) $('status').textContent = `封面加载失败：${error.message}`;
     });
   }
   slider.oninput = () => {
@@ -153,7 +153,7 @@ export function createCoverEditor({host, selection, readFrame, signal}) {
       }
       await pending;
       signal.throwIfAborted();
-      if (disposed || !source) throw new Error('请先选择有效封面帧');
+      if (disposed || !source) throw new Error('请先选择封面画面');
       renderCover(output, source, crop, text);
       const blob = await new Promise(resolve => output.toBlob(resolve, 'image/jpeg', 0.9));
       if (!blob) throw new Error('封面导出失败');

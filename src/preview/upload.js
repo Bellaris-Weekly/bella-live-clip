@@ -121,14 +121,14 @@ export async function uploadFile(file, ticket, options) {
   const {transport, signal, onProgress = () => {}, onStage = () => {}} = options;
   signal?.throwIfAborted();
   const headers = {'X-Upos-Auth': ticket.auth};
-  onStage('正在初始化上传');
+  onStage('正在准备上传');
   const init = await transport.request({method: 'POST', url: `${ticket.url}?uploads&output=json`, headers, signal});
   if (init.status !== 200) throw new Error(`初始化上传失败（${init.status}）`);
   const uploadId = JSON.parse(init.text).upload_id;
   if (!uploadId || !(ticket.chunk_size > 0)) throw new Error('上传凭证无效');
   const chunks = Math.ceil(file.size / ticket.chunk_size);
   let finished = 0;
-  onStage('正在直传');
+  onStage('正在上传');
   await pool(chunks, 'upos', options, async (index, signal) => {
     const start = index * ticket.chunk_size,
       end = Math.min(start + ticket.chunk_size, file.size);
@@ -153,7 +153,7 @@ export async function uploadFile(file, ticket, options) {
     onProgress(++finished / chunks);
   });
   signal?.throwIfAborted();
-  onStage('正在合并上传分片');
+  onStage('正在完成上传');
   const query = new URLSearchParams({
     name: file.name,
     uploadId,
@@ -196,7 +196,7 @@ export async function pickLine(lines, transport, signal) {
   }
 }
 
-export const VERIFICATION_MESSAGE = '上传触发安全验证，请前往 studio.bk0717.com 完成上传安全验证后重试';
+export const VERIFICATION_MESSAGE = '请前往 studio.bk0717.com 完成上传安全验证后重试';
 export const needsVerification = error => error.code === 'rate_limited' || error.code === 'upload_verification';
 
 // COS signed URLs use browser CORS, just as the studio does; never attach Bearer or cookies.
@@ -253,7 +253,7 @@ export function createClipUpload({client, transport, put = putCosPart, sleep = d
         cos = cos ? await client.request(`/cos/uploads/${cos.id}`, {signal}) : await post('/cos/uploads', body, signal);
         if (cos.state === 'failed') cos = await post(`/cos/uploads/${cos.id}/retry`, undefined, signal);
         if (cos.state === 'uploading') {
-          onStage('正在上传备用通道');
+          onStage('正在通过备用线路上传');
           const count = Math.ceil(file.size / cos.part_size);
           if (!(cos.part_size > 0)) throw new Error('上传凭证无效');
           let finished = 0;

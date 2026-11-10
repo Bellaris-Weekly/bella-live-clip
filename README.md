@@ -1,6 +1,6 @@
 # 贝报切片助手（bella-live-clip）
 
-当前版本为 `2.13.11`。在浏览器里剪辑 B 站投稿视频和直播回放，导出 MP4。
+当前版本为 `2.13.12`。在浏览器里剪辑 B 站投稿视频和直播回放，导出 MP4。
 
 支持普通投稿视频，以及贝拉、乃琳、嘉然、心宜、思诺的本场直播回看与近 14 天历史回放。
 
@@ -41,26 +41,26 @@
 
 ## 构建渠道（维护者）
 
-现有功能全部保留在公开版，后续内部功能通过 `preview` 渠道提供。
+公开版提供剪辑与导出，Preview 另提供创作台登录、共享轴表和投稿。
 
 | 命令 | 产物 | 用途 |
 |---|---|---|
-| `npm run build` | `bella-live-clip.user.js` | 公开版，不包含内部功能 |
-| `npm run build:preview` | `bella-live-clip.preview.user.js` | Preview，包含内部功能 |
+| `npm run build` | `bella-live-clip.user.js` | 公开版：剪辑与导出 |
+| `npm run build:preview` | `bella-live-clip.preview.user.js` | Preview：另含登录、共享轴表与投稿 |
 | `npm run build:all` | 上述两个文件 | 同时构建两个渠道 |
 
 两个渠道共用 `src/header.txt` 的 `x.y.z` 版本号；任一渠道功能变化时都应按现有规则递增版本。Preview 的名称为 `贝报切片助手 Preview`，有独立的脚本标识和更新地址 `/bella-live-clip.preview.user.js`，内置检查更新也使用本渠道地址。切换渠道时请在 Tampermonkey 中停用另一版，避免同时运行。
 
-后续内部功能使用构建常量包裹；普通构建会在压缩时移除该分支。若内部模块带有初始化副作用，将动态导入放在分支内，避免顶层导入使内部代码进入公开版：
+Preview 专属功能使用构建常量包裹；普通构建会在压缩时移除该分支。若模块带有初始化副作用，将动态导入放在分支内，避免顶层导入使 Preview 专属代码进入公开版：
 
 ```js
 if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
-  const {startInternalFeature} = await import('./internal/feature.js');
-  startInternalFeature();
+  const {startPreviewFeature} = await import('./preview/feature.js');
+  startPreviewFeature();
 }
 ```
 
-示例应放在异步函数内。未注入构建常量的测试和开发入口默认不开启内部功能。
+示例应放在异步函数内。未注入构建常量的测试和开发入口默认不开启 Preview 专属功能。
 
 ### Preview 投稿与简单封面
 
@@ -74,7 +74,7 @@ if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
 
 ### Preview 登录与共享轴表
 
-- 预览版需先点击面板里的「登录」，在 [贝报创作台](https://studio.bk0717.com/plugin/link) 领取插件令牌；连接成功后原面板自动继续。未登录或创作台返回 401 时，剪辑、导出、直播截图和记轴均不可用。设置显示登录身份并可退出；退出只清除本地令牌。
+- Preview 需先点击面板里的「登录」，在 [贝报创作台](https://studio.bk0717.com/plugin/link) 领取插件令牌；连接成功后原面板自动继续。未登录或创作台返回 401 时，剪辑、导出、直播截图和记轴均不可用。设置显示登录身份并可退出；退出只清除本地令牌。
 - 默认 **Alt＋Shift＋M** 记轴（设置可改，不能与面板快捷键冲突）。直播页关闭面板时也可使用；打开面板时使用当前直播／回放的房间。按下时立即保存校正后的 UTC 时间，不扣观看延迟。Enter 保存备注，Esc 留空，12 秒未确认也自动保存；备注最多 200 字。
 - 轴先保存在脚本管理器本地队列，显示「未同步」，网络恢复、下次打开面板或退避重试时使用同一 UUID 补传。队列不会因退出登录而删除；重新登录后继续同步。短房间号首次需要联网解析，之后可使用本地缓存离线记轴。
 - 当前场次轴表每 10 秒刷新（面板关闭或页面不可见时暂停），支持编辑时间／备注、删除与撤销、查看历史及已关联的 BV 链接。并发修改冲突会刷新列表并提示重试。补记如 `21:13:40 跑调` 按 UTC+8 解释，优先取当前场次内的日期，否则取最近的过去时刻。

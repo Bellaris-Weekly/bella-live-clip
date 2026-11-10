@@ -819,7 +819,7 @@ test('临时文件写入失败时报告浏览器原始错误和失败的操作�
       createTemporary: async () => ({handle, async remove() {}}),
     },
   ).catch(error => error);
-  assert.match(error.message, /浏览器临时文件读写失败（NotFoundError）/);
+  assert.match(error.message, /浏览器临时文件读写失败，/);
   assert.equal(error.cause, lost);
   assert.equal(lost.diagnostic.target, 'temporary');
   assert.equal(aborted, 1);

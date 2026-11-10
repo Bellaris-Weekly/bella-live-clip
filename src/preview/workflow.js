@@ -12,7 +12,7 @@ export function createLoginGate({root, client}) {
   const $ = id => root.getElementById(id);
   const login = document.createElement('section');
   login.id = 'studioLogin';
-  login.innerHTML = `<p>预览版需登录贝报创作台后使用，登录后可共享记轴和剪辑。</p><a class="button" href="${STUDIO}/plugin/link" target="_blank" rel="noopener noreferrer">登录</a>`;
+  login.innerHTML = `<p>登录贝报创作台后即可使用。</p><a class="button" href="${STUDIO}/plugin/link" target="_blank" rel="noopener noreferrer">登录</a>`;
   $('body').prepend(login);
   const style = document.createElement('style');
   style.textContent =

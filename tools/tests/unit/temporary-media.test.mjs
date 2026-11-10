@@ -91,10 +91,10 @@ test('unknown sizes and unavailable estimates are not treated as a lack of space
 test('file-state errors become actionable messages that keep the browser error as their cause', () => {
   const lost = annotate(new DOMException('gone', 'NotFoundError'), {operation: 'write', target: 'temporary'});
   const temporary = mediaStorageError(lost);
-  assert.match(temporary.message, /浏览器临时文件读写失败（NotFoundError）/);
+  assert.match(temporary.message, /浏览器临时文件读写失败，/);
   assert.equal(temporary.cause, lost);
   const changed = annotate(new DOMException('changed', 'InvalidStateError'), {target: 'destination'});
-  assert.match(mediaStorageError(changed).message, /保存的文件写入失败（InvalidStateError）/);
+  assert.match(mediaStorageError(changed).message, /保存的文件写入失败，/);
   // Same names from elsewhere, e.g. a decoder or the stream pipe, are left alone.
   for (const error of [
     new DOMException('x', 'InvalidStateError'),

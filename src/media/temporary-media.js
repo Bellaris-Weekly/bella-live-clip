@@ -74,13 +74,11 @@ export function mediaStorageError(error) {
   const target = error?.diagnostic?.target;
   if (!FILE_STATE_ERRORS.has(error?.name) || !['temporary', 'destination'].includes(target)) return error;
   if (target === 'temporary') {
-    return new Error(
-      `浏览器临时文件读写失败（${error.name}），导出已停止。请关闭其他正在导出的页面，或重启浏览器后重试。`,
-      {cause: error},
-    );
+    return new Error('浏览器临时文件读写失败，导出已停止。请关闭其他正在导出的页面，或重启浏览器后重试。', {
+      cause: error,
+    });
   }
-  return new Error(
-    `保存的文件写入失败（${error.name}），文件可能被移动、删除或被其他程序占用。请重新选择保存位置后重试。`,
-    {cause: error},
-  );
+  return new Error('保存的文件写入失败，文件可能被移动、删除或被其他程序占用。请重新选择保存位置后重试。', {
+    cause: error,
+  });
 }
