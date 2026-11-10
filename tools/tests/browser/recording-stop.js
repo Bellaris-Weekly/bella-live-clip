@@ -84,12 +84,12 @@ export async function runRecordingStopChecks() {
     });
     await app.open();
     const $ = id => app.root.getElementById(id);
-    await until(() => app.root.querySelector('.record-card') && !$('refreshLibrary').disabled);
-    app.root.querySelector('.record-card').click();
+    await until(() => app.root.querySelector('.record') && !$('refreshLibrary').disabled);
+    app.root.querySelector('.record').click();
     await until(() => !$('download').disabled);
     $('wholeRecording').click();
     $('download').click();
-    await until(() => closed || aborted || $('status').dataset.error === 'true');
+    await until(() => closed || aborted || $('status')?.dataset.error === 'true');
     await until(() => !$('download').disabled);
     assert(closed && !aborted && phaseLocked, '停止必须锁定按钮并提交文件，不能中止写盘');
     assert($('status').textContent === '已停止。', '不能把部分保存标记为整场完成');

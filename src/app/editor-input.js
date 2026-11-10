@@ -2,7 +2,7 @@ import {isEditing} from '../ui/shortcuts.js';
 import {formatTimeRange, parseTime} from '../shared/format.js';
 
 // Setting the selection by button, typed time or key.
-export function bindEditorInput({root, timeline, status, getPlayer, togglePlayback, isActive}) {
+export function bindEditorInput({root, timeline, status, getPlayer, togglePlayback, isActive, isWhole}) {
   const $ = id => root.getElementById(id);
   function applySelection(next, handle) {
     try {
@@ -24,23 +24,11 @@ export function bindEditorInput({root, timeline, status, getPlayer, togglePlayba
       t = getPlayer().position();
     applySelection({start: t > s.start ? s.start : timeline.getBounds().start, end: t}, $('endHandle'));
   }
-  $('markStart').onclick = markStart;
-  $('markEnd').onclick = markEnd;
-  for (const [id, edge] of [
-    ['selectionStart', 'start'],
-    ['selectionEnd', 'end'],
-  ]) {
-    $(id).onchange = () => {
-      const time = parseTime($(id).value),
-        current = timeline.getSelection();
-      if (time === null) status('时间格式不对，例如 1:02:03 或 62.5。', true);
-      else applySelection({...current, [edge]: time});
-      renderRange(timeline.getSelection());
-    };
-    $(id).onkeydown = event => {
-      if (event.key === 'Enter') $(id).blur();
-      event.stopPropagation();
-    };
+  function typeTime(edge, value) {
+    const time = parseTime(value);
+    if (time === null) status('时间格式不对，例如 1:02:03 或 62.5。', true);
+    else applySelection({...timeline.getSelection(), [edge]: time});
+    renderRange(timeline.getSelection());
   }
   const editorKeys = {' ': () => togglePlayback(), i: markStart, o: markEnd};
   $('editPage').addEventListener(
@@ -56,7 +44,7 @@ export function bindEditorInput({root, timeline, status, getPlayer, togglePlayba
         e.ctrlKey ||
         e.metaKey ||
         isEditing(e) ||
-        $('wholeRecording').checked ||
+        isWhole() ||
         (e.key === ' ' && e.target.closest?.('button'))
       )
         return;
@@ -71,5 +59,5 @@ export function bindEditorInput({root, timeline, status, getPlayer, togglePlayba
     if (root.activeElement !== $('selectionStart')) $('selectionStart').value = from;
     if (root.activeElement !== $('selectionEnd')) $('selectionEnd').value = to;
   }
-  return {renderRange};
+  return {renderRange, markStart, markEnd, typeTime};
 }

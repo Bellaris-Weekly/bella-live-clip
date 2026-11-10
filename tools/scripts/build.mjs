@@ -49,7 +49,9 @@ export function userscriptBuildOptions({preview = false, release = false, env = 
     target: 'chrome110',
     minify: true,
     charset: 'utf8',
-    loader: {'.txt': 'text', '.html': 'text', '.css': 'text'},
+    loader: {'.txt': 'text', '.css': 'text'},
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
     define: {__LOG_SERVICE_ENDPOINT__: JSON.stringify(endpoint), __PREVIEW__: JSON.stringify(preview)},
     // The application imports this header for its own update checker as well.
     plugins: preview

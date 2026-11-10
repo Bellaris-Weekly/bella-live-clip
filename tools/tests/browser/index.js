@@ -123,7 +123,7 @@ const app = createApp({
   api,
   pageUrl: query.has('live') ? 'https://live.bilibili.com/22632424' : location.href,
   get: (key, fallback) =>
-    key === 'windowV2' && (query.has('narrow') || query.has('medium'))
+    key === 'windowV3' && (query.has('narrow') || query.has('medium'))
       ? {left: 20, top: 20, width: query.has('medium') ? 480 : 360, height: 780}
       : fallback,
 });

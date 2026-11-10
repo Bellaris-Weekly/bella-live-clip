@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createUpdateChecker, isNewerVersion, readScriptMetadata} from '../../../src/services/updates.js';
+import {signal} from '@preact/signals';
 import {createVersionControl} from '../../../src/ui/version.js';
 
 const header = readFileSync(new URL('../../../src/header.txt', import.meta.url), 'utf8');
@@ -108,27 +109,11 @@ test('network failures and wrong script identity do not report a current version
 });
 
 function versionFixture() {
-  const attributes = new Map(),
-    element = {
-      dataset: {},
-      setAttribute: (key, value) => attributes.set(key, value),
-      removeAttribute(key) {
-        attributes.delete(key);
-        if (key === 'href') delete this.href;
-      },
-      click() {
-        this.onclick({preventDefault() {}});
-      },
-    };
+  const state = signal(null);
   let resolve,
     calls = 0;
   const control = createVersionControl({
-    root: {
-      getElementById: id => {
-        assert.equal(id, 'version');
-        return element;
-      },
-    },
+    state,
     metadata,
     check: () => {
       calls++;
@@ -137,10 +122,18 @@ function versionFixture() {
       });
     },
   });
+  // The header renders `<a id="version">` from this state: a link only with href, a button otherwise.
+  const event = (extra = {}) => ({
+    prevented: false,
+    preventDefault() {
+      this.prevented = true;
+    },
+    ...extra,
+  });
   return {
-    element,
-    attributes,
+    state,
     control,
+    event,
     get calls() {
       return calls;
     },
@@ -154,34 +147,28 @@ function versionFixture() {
 test('version alone checks on click without changing its text, and becomes a trusted install link when available', async () => {
   const f = versionFixture(),
     label = `v${metadata.version}`;
-  assert.equal(f.element.textContent, label);
-  assert.equal(f.element.href, undefined);
-  assert.equal(f.attributes.get('role'), 'button');
-  let prevented = false;
-  f.element.onclick({
-    preventDefault() {
-      prevented = true;
-    },
-  });
-  assert.equal(prevented, true);
-  assert.equal(f.attributes.get('aria-busy'), 'true');
-  assert.equal(f.element.textContent, label);
-  assert.equal(f.element.dataset.checking, 'true');
-  f.element.click();
+  assert.equal(f.state.value.label, label);
+  assert.equal(f.state.value.href, null);
+  assert.equal(f.state.value.busy, false);
+  const first = f.event();
+  f.control.click(first);
+  assert.equal(first.prevented, true);
+  assert.equal(f.state.value.busy, true);
+  assert.equal(f.state.value.checking, true);
+  assert.equal(f.state.value.label, label);
+  f.control.click(f.event());
   assert.equal(f.calls, 1);
   await f.settle({status: 'available', version: '99.0.0', downloadURL: 'https://example.com/evil'});
-  assert.equal(f.element.dataset.update, 'true');
-  assert.equal(f.element.href, metadata.downloadURL);
-  assert.equal(f.element.textContent, label);
-  assert.match(f.element.title, /99\.0\.0/);
-  assert.equal(f.attributes.has('role'), false);
-  assert.equal(f.attributes.has('aria-busy'), false);
-  assert.equal(f.element.dataset.checking, 'false');
-  f.element.onclick({
-    preventDefault() {
-      assert.fail('installation link should navigate normally');
-    },
-  });
+  assert.equal(f.state.value.update, true);
+  assert.equal(f.state.value.href, metadata.downloadURL);
+  assert.equal(f.state.value.label, label);
+  assert.match(f.state.value.title, /99\.0\.0/);
+  assert.match(f.state.value.description, /99\.0\.0/);
+  assert.equal(f.state.value.busy, false);
+  assert.equal(f.state.value.checking, false);
+  const navigate = f.event();
+  f.control.click(navigate);
+  assert.equal(navigate.prevented, false, 'installation link should navigate normally');
   assert.equal(f.calls, 1);
 });
 
@@ -189,15 +176,16 @@ test('silent current and failed checks only update the tooltip, with no link or 
   const f = versionFixture();
   for (const status of ['current', 'error']) {
     const pending = f.control.refresh();
-    assert.equal(f.element.dataset.checking, 'false');
+    assert.equal(f.state.value.checking, false);
+    assert.equal(f.state.value.busy, true);
     await f.settle({status});
     await pending;
-    assert.equal(f.element.textContent, `v${metadata.version}`);
-    assert.equal(f.element.dataset.update, 'false');
-    assert.equal(f.element.href, undefined);
-    assert.match(f.element.title, status === 'error' ? /重试/ : /已是最新/);
+    assert.equal(f.state.value.label, `v${metadata.version}`);
+    assert.equal(f.state.value.update, false);
+    assert.equal(f.state.value.href, null);
+    assert.match(f.state.value.title, status === 'error' ? /重试/ : /已是最新/);
   }
-  f.element.click();
+  f.control.click(f.event());
   await f.settle({status: 'current'});
 });
 
@@ -209,36 +197,38 @@ test('a failed recheck preserves a known update; a successful current result cle
   pending = f.control.refresh();
   await f.settle({status: 'error'});
   await pending;
-  assert.equal(f.element.dataset.update, 'true');
-  assert.equal(f.element.href, metadata.downloadURL);
-  assert.match(f.element.title, /10\.2\.0/);
+  assert.equal(f.state.value.update, true);
+  assert.equal(f.state.value.href, metadata.downloadURL);
+  assert.match(f.state.value.title, /10\.2\.0/);
   pending = f.control.refresh();
   await f.settle({status: 'current'});
   await pending;
-  assert.equal(f.element.dataset.update, 'false');
-  assert.equal(f.element.href, undefined);
+  assert.equal(f.state.value.update, false);
+  assert.equal(f.state.value.href, null);
 });
 
 test('version supports keyboard checks and preserves native Enter navigation for updates', async () => {
   const f = versionFixture();
   for (const key of ['Enter', ' ']) {
-    let prevented = false;
-    f.element.onkeydown({
+    let clicked = false;
+    const event = f.event({
       key,
-      preventDefault() {
-        prevented = true;
+      currentTarget: {
+        click() {
+          clicked = true;
+          f.control.click(f.event());
+        },
       },
     });
-    assert.equal(prevented, true);
+    f.control.key(event);
+    assert.equal(event.prevented, true);
+    assert.equal(clicked, true);
     await f.settle({status: 'current'});
   }
   const pending = f.control.refresh();
   await f.settle({status: 'available', version: '3.0.0'});
   await pending;
-  f.element.onkeydown({
-    key: 'Enter',
-    preventDefault() {
-      assert.fail('Enter should follow the installation link');
-    },
-  });
+  const enter = f.event({key: 'Enter', currentTarget: {click: () => assert.fail('Enter should follow the link')}});
+  f.control.key(enter);
+  assert.equal(enter.prevented, false);
 });

@@ -9,16 +9,20 @@ before(async () => {
     stdin: {
       contents: `
         import {createTimeline} from './src/ui/timeline.js';
-        import template from './src/ui/template.html';
-        import styles from './src/ui/styles.css';
-        const source = document.createElement('template');
-        source.innerHTML = template;
+        import styles from './src/ui/theme.css';
+        import {mountApp} from './src/ui/app.jsx';
+        import {createStore} from './src/app/store.js';
         const host = document.createElement('div');
         document.body.append(host);
         const root = host.attachShadow({mode: 'open'});
         const style = document.createElement('style');
-        style.textContent = styles + '\\n:host{display:block;width:840px} .timeline-section{margin-top:40px}';
-        root.append(style, source.content.querySelector('.timeline-section'));
+        style.textContent = styles + '\\n#panel{inset:20px auto auto 20px;width:880px}';
+        root.append(style);
+        // The real editor markup: the timeline is rendered once by the Preact tree, then driven imperatively.
+        const store = createStore({member: {id: 'bella', room: 1, color: '#c0392b'}, exportMode: 'copy'});
+        store.open.value = true;
+        store.page.value = 'edit';
+        mountApp(root, {store, actions: {}, preview: false, members: [], studioUrl: ''});
         const $ = id => root.getElementById(id);
         const previews = [], ends = [];
         const timeline = createTimeline({
@@ -35,7 +39,9 @@ before(async () => {
     bundle: true,
     write: false,
     format: 'iife',
-    loader: {'.html': 'text', '.css': 'text'},
+    loader: {'.css': 'text'},
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
     logLevel: 'error',
   });
   script = result.outputFiles[0].text;
@@ -48,6 +54,15 @@ async function fixture(t) {
   t.after(() => page.close());
   await page.setContent('<!doctype html><body></body>');
   await page.addScriptTag({content: script});
+  // The panel scales in on open; measure the track once it has settled.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .querySelector('div')
+        .shadowRoot.getAnimations({subtree: true})
+        .map(item => item.finished),
+    ),
+  );
   const box = await page.locator('#timeline').boundingBox();
   return {page, box};
 }

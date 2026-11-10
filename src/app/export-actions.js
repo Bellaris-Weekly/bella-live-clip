@@ -49,7 +49,6 @@ export async function withExportPicker(pick, signal, metrics, work) {
 // `session` reads the open recording's live state. Each export copies what it
 // needs before its first await, so a later page change cannot alter a running one.
 export function createExportActions({
-  root,
   session,
   job,
   status,
@@ -60,17 +59,13 @@ export function createExportActions({
   timeline,
   clearDownloads,
   refreshControls,
+  view,
 }) {
-  const $ = id => root.getElementById(id);
   let wholeStop = null,
     finishing = false;
   const submissionBytes = (record, selection) =>
     ((record.media.video.bandwidth + (record.media.audio?.bandwidth || 0)) * (selection.end - selection.start)) / 8;
-  const showSaved = output => {
-    const line = document.createElement('p');
-    line.textContent = `已保存 ${output.name} · ${formatBytes(output.bytes)}`;
-    $('downloads').append(line);
-  };
+  const showSaved = output => view.saved(`已保存 ${output.name} · ${formatBytes(output.bytes)}`);
 
   async function loadPlan(signal, metrics) {
     const finish = metrics?.start('playlistLoad');
@@ -154,9 +149,9 @@ export function createExportActions({
             status('正在导出…');
             diagnostic.stage('preparing');
             const updateProgress = limitProgress(progress => {
-              renderExportProgress($('progress'), status, progress, submission);
+              renderExportProgress(view.progress, status, progress, submission);
               if (submission && progress.estimatedBytes !== null)
-                $('estimatedSize').textContent = `约 ${formatBytes(progress.estimatedBytes)}`;
+                view.estimate(`约 ${formatBytes(progress.estimatedBytes)}`);
             });
             const onProgress = progress => {
               diagnostic.progress(progress);
@@ -238,7 +233,7 @@ export function createExportActions({
               missingRetries: record.live ? LIVE_MISSING_RETRIES : 0,
               onProgress: progress => {
                 diagnostic.progress(progress);
-                if (progress.progress !== undefined) $('progress').value = progress.progress * 100;
+                if (progress.progress !== undefined) view.progress(progress.progress * 100);
                 if (progress.phase === 'stopping' || progress.phase === 'finalizing') {
                   finishing = true;
                   refreshControls();
@@ -273,9 +268,9 @@ export function createExportActions({
                   : '导出完成。',
               Boolean(result.interrupted),
             );
-            const message = document.createElement('p');
-            message.textContent = `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`;
-            $('downloads').append(message);
+            view.saved(
+              `已保存${result.stopped ? '已完成部分' : '整场'} · ${formatDuration(result.duration)} · ${formatBytes(result.bytes)}`,
+            );
           },
         );
       },

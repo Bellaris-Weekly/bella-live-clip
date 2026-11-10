@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {JSDOM} from 'jsdom';
-import {readFile} from 'node:fs/promises';
 
 const buildFixture = async (entry, plugins = []) =>
   (
@@ -13,12 +12,14 @@ const buildFixture = async (entry, plugins = []) =>
       format: 'iife',
       globalName: 'fixture',
       define: {__PREVIEW__: 'true'},
-      loader: {'.txt': 'text', '.html': 'text', '.css': 'text'},
+      loader: {'.txt': 'text', '.css': 'text'},
+      jsx: 'automatic',
+      jsxImportSource: 'preact',
       plugins,
     })
   ).outputFiles[0].text;
 const appCode = await buildFixture('src/app/application.js');
-const workflowCode = await buildFixture('src/preview/workflow.js', [
+const marksCode = await buildFixture('src/preview/marks-session.js', [
   {
     name: 'clock-fixture',
     setup(build) {
@@ -30,7 +31,6 @@ const workflowCode = await buildFixture('src/preview/workflow.js', [
     },
   },
 ]);
-const template = await readFile('src/ui/template.html', 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function environment() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -97,7 +97,8 @@ test('preview application opens only login when logged out, blocks editor/export
   assert.equal($('studioLogin').hidden, false);
   assert.equal($('studioLogin').querySelector('a').href, 'https://studio.bk0717.com/plugin/link');
   assert.equal($('studioLogin').querySelector('a').target, '_blank');
-  for (const id of ['download', 'refreshLibrary', 'currentVideo', 'recordMark']) $(id).click();
+  for (const id of ['download', 'refreshLibrary', 'currentVideo', 'launcherMark']) $(id)?.click();
+  assert.equal($('launcherMark'), null, 'no marking while logged out');
   $('launcher').dispatchEvent(new f.w.Event('pointerenter'));
   f.w.document.dispatchEvent(
     new f.w.KeyboardEvent('keydown', {code: 'KeyM', key: 'M', altKey: true, shiftKey: true, bubbles: true}),
@@ -120,23 +121,24 @@ test('preview application opens only login when logged out, blocks editor/export
   assert.equal(calls.length, before);
 });
 
-async function workflow(t) {
+async function session(t) {
   const f = environment();
   f.login();
-  f.w.eval(workflowCode);
-  const host = f.w.document.createElement('div');
-  f.w.document.body.append(host);
-  const root = host.attachShadow({mode: 'open'});
-  root.innerHTML = template;
-  const $ = id => root.getElementById(id);
-  $('panel').hidden = false;
+  f.w.eval(marksCode);
+  // Only the shortcut field is DOM the session binds to; everything else is state.
+  const root = f.w.document.createElement('div');
+  root.innerHTML = '<input id="markShortcut">';
+  root.getElementById = id => root.querySelector(`#${id}`);
+  f.w.document.body.append(root);
   let record = {key: 'session', room: 99, start: 1000, end: 1200, live: true},
     marks = [],
     conflict = false,
-    refreshes = 0;
+    refreshes = 0,
+    open = true;
   f.w.parts = [{start_time: 1000, end_time: 1200, firstDecodeTime: 10, origin: 990.49, index: 0}];
   const requests = [],
-    selections = [];
+    selections = [],
+    notices = [];
   f.client.request = async (path, options = {}) => {
     requests.push({path, ...options});
     if (options.method) {
@@ -161,18 +163,21 @@ async function workflow(t) {
       return [{rev: 1, op: 'create', by: '成员', at_time: 1000000, changes: {note: ['', 'note']}}];
     return marks;
   };
-  const ui = f.w.fixture.createWorkflow({
+  f.client.check = async () => {};
+  const ui = f.w.fixture.createMarksSession({
     root,
     client: f.client,
     ...f.store,
-    api: {current: async () => ({room: 12000})},
+    api: {current: async () => ({room: 12000, live: true, start: 1000, title: '直播', member: '贝拉'})},
     mediaRequest: async () => {},
-    open() {},
+    pageUrl: () => 'https://live.bilibili.com/12',
+    notify: (text, options) => notices.push({text, ...options}),
     onLogout() {},
     session: {
+      isOpen: () => open,
+      open() {},
       record: () => record,
       ready: () => true,
-      view: () => ({start: 0, end: 200}),
       groups: async () => [],
       signal: () => new AbortController().signal,
       select: value => selections.push(value),
@@ -190,15 +195,20 @@ async function workflow(t) {
   return {
     ...f,
     root,
-    $,
     ui,
+    state: ui.state,
+    actions: ui.actions,
     requests,
     selections,
+    notices,
     setMarks: value => {
       marks = value;
     },
     setRecord: value => {
       record = value;
+    },
+    setOpen: value => {
+      open = value;
     },
     conflict: () => {
       conflict = true;
@@ -208,75 +218,78 @@ async function workflow(t) {
 }
 
 test('marks capture uses server time immediately, resolves page short IDs with panel closed, saves notes, and avoids shortcut conflicts', async t => {
-  const f = await workflow(t);
+  const f = await session(t);
   await f.ui.refresh();
-  f.$('recordMark').click();
+  f.actions.capture();
+  await tick();
   let entry = [...f.values.values()].find(value => value?.mark);
   assert.equal(entry.mark.at, 1050000);
   assert.equal(entry.mark.room_id, 99);
-  const input = f.$('studioToast').querySelector('input');
-  input.value = 'note';
-  input.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+  assert.equal(f.state.capture.value.at, 1050000);
+  assert.equal(f.state.mini.value, false, 'the open panel shows the note card itself');
+  f.actions.finishCapture('note');
   await tick();
   const put = f.requests.find(request => request.method === 'PUT');
   assert.equal(put.body.note, 'note');
   assert.equal(put.body.at, 1050000);
-  assert.equal(f.$('studioTicks').children.length, 1);
-  input.blur();
-  f.$('panel').hidden = true;
+  assert.equal(f.state.capture.value, null);
+  assert.equal(f.state.items.value.filter(mark => mark.time !== null).length, 1, 'mapped onto the timeline');
+  f.setOpen(false);
+  f.setRecord(null);
   f.w.document.dispatchEvent(
     new f.w.KeyboardEvent('keydown', {code: 'KeyM', key: 'M', altKey: true, shiftKey: true, bubbles: true}),
   );
+  await tick();
   entry = [...f.values.values()].find(value => value?.mark);
   assert.equal(entry.mark.room_id, 12000, 'closed panel uses the real room of the current page');
-  const note = f.$('studioToast').querySelector('input');
-  note.value = 'discard';
-  note.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
+  assert.equal(f.state.mini.value, true, 'marking with the panel closed opens the mini window');
+  f.actions.finishCapture('');
   await tick();
   assert.equal(f.requests.filter(request => request.method === 'PUT').at(-1).body.note, '');
-  const field = f.$('markShortcut');
+  const field = f.root.getElementById('markShortcut');
   field.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'C', code: 'KeyC', altKey: true, shiftKey: true}));
   assert.equal(f.store.get('marks.shortcut', null), null, 'Alt+Shift+C cannot be assigned to marks');
+  assert.equal(f.state.shortcut.value, 'Alt+Shift+M');
 });
 
 test('list filters session range, jumps with margins, refreshes frozen live replay, handles conflicts/delete/restore/history, and stops hidden polling', async t => {
-  const f = await workflow(t);
+  const f = await session(t);
   const mark = {id: 'id', room_id: 99, at: 1040000, note: 'note', rev: 1, created_by: '成员', bvid: 'BV1234567890'};
   f.setMarks([mark, {...mark, id: 'outside', at: 999000}, {...mark, id: 'other', room_id: 1}]);
   await f.ui.refresh();
-  assert.equal(f.$('studioMarks').children.length, 1);
-  const click = text =>
-    [...f.$('studioMarks').querySelectorAll('button')].find(button => button.textContent === text).click();
-  click('08:17:20');
-  await tick();
+  assert.deepEqual([...f.state.items.value.map(item => item.id)], ['id']);
+  const item = () => f.state.items.value.find(entry => entry.id === 'id');
+  assert.equal(item().mine, true);
+  assert.equal(await f.actions.jump(item()), true);
   assert.ok(Math.abs(f.selections[0].start - 9.51) < 1e-6);
   assert.ok(Math.abs(f.selections[0].end - 54.51) < 1e-6);
-  click('历史');
-  await tick();
-  assert.match(f.$('studioMarks').textContent, /#1 create/);
+  assert.equal(f.state.selected.value, 'id');
+  await f.actions.history(item());
+  assert.equal(f.state.history.value.rows[0].op, 'create');
   f.conflict();
-  click('删除');
-  await tick();
-  assert.match(f.$('studioToast').textContent, /已被修改/);
-  click('删除');
-  await tick();
-  assert.match(f.$('studioMarks').textContent, /已删除/);
-  click('撤销删除');
-  await tick();
-  assert.doesNotMatch(f.$('studioMarks').textContent, /已删除/);
+  await f.actions.remove(item());
+  assert.match(f.notices.at(-1).text, /修改/);
+  await f.actions.remove(item());
+  assert.equal(item().deleted, true);
+  await f.actions.restore(item());
+  assert.equal(item().deleted, false);
+  await f.actions.save(item(), '08:17:25', '改过');
+  assert.equal(f.requests.at(-2).body.note, '改过');
+  f.actions.setMargin('before', 'bad');
+  assert.equal(f.store.get('marks.before'), 30);
   f.w.parts = [{...f.w.parts[0], end_time: 1045}];
   await f.ui.refresh();
-  click('08:17:20');
-  await tick();
+  assert.equal(item().waiting, true);
+  assert.equal(await f.actions.jump(item()), false);
   assert.equal(f.refreshes(), 1);
-  assert.match(f.$('studioToast').textContent, /等待回放/);
+  assert.match(f.notices.at(-1).text, /还没生成/);
   await f.ui.refresh();
   assert.equal(f.selections.length, 2);
   const count = f.requests.length;
-  f.$('panel').hidden = true;
+  f.setOpen(false);
   await f.ui.refresh();
   assert.equal(f.requests.length, count);
-  f.$('panel').hidden = false;
+  f.setOpen(true);
   Object.defineProperty(f.w.document, 'hidden', {value: true, configurable: true});
   await f.ui.refresh();
   assert.equal(f.requests.length, count);

@@ -1,3 +1,4 @@
+import {signal} from '@preact/signals';
 import {createClipUpload, createUploadTransport, pickLine} from './upload.js';
 import {createSubmissionJob} from './submission.js';
 import {submissionSchedule} from './templates.js';
@@ -10,112 +11,49 @@ import {estimateSelectionBytes} from '../media/recording-estimate.js';
 import {readThumbnail} from '../media/thumbnails.js';
 import {fileName} from '../media/file-name.js';
 import {limitProgress} from '../ui/export-progress.js';
-import {markTime} from './marks.js';
 
 export function createComposer({root, client, gmRequest, mediaApi, mediaRequest, storage, schedules, session}) {
-  const $ = id => root.getElementById(id);
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = '投稿';
-  button.id = 'studioSubmit';
-  button.className = 'button export-button';
-  const actions = document.createElement('div');
-  actions.className = 'studio-export-actions';
-  $('download').before(actions);
-  actions.append($('download'), button);
-  const area = document.createElement('section');
-  area.className = 'studio-compose';
-  area.hidden = true;
-  area.innerHTML = `<h3>投稿</h3><p data-selection></p><p data-mark></p>
-    <form><fieldset><div data-template-form></div>
-    <details open><summary>封面</summary><div data-cover></div></details></fieldset>
-    <button data-confirm>确认投稿</button><button type="button" data-cancel>取消</button>
-    <button type="button" data-retry hidden>重试</button></form>
-    <p>导出 <progress data-export max="1" value="0"></progress> <span data-export-percent>0%</span>
-    上传 <progress data-upload max="1" value="0"></progress> <span data-upload-percent>0%</span></p>
-    <p data-state role="status"></p><p data-error role="alert"></p><p data-result></p>`;
-  $('body').append(area);
-  const style = document.createElement('style');
-  style.textContent = `.studio-export-actions {display:flex;gap:8px}.studio-export-actions .export-button {flex:1;width:auto}
-    .studio-compose {padding:12px;border-top:1px solid #8885}.studio-compose label {display:block;margin:8px 0}
-    .studio-compose fieldset {border:0;padding:0;min-width:0}.studio-compose input:not([type]),.studio-compose textarea {width:100%;box-sizing:border-box}
-    .studio-compose input[type=number] {width:70px}.studio-compose progress {width:80px}.studio-compose canvas {display:block}
-    .studio-compose select {max-width:100%}.studio-compose pre {white-space:pre-wrap;overflow-wrap:anywhere}
-    .studio-compose [data-error] {color:#d64c4c}.studio-compose button {margin:4px}`;
-  root.append(style);
-  const field = name => area.querySelector(`[data-${name}]`);
-  const templateForm = createTemplateForm(field('template-form'));
+  const view = signal({open: false, canStart: false});
+  const host = id => root.getElementById(id);
+  const templateForm = createTemplateForm(host('composeForm'));
   const transport = createUploadTransport(gmRequest);
   let current,
     selectedMark,
     switching = false,
     pendingMark = false;
   const active = () => current && !current.cancelled && !current.job?.state().done && !current.job?.state().cancelled;
-  function markLabel() {
-    const mark = current?.mark;
-    field('mark').replaceChildren();
-    if (!mark) return;
-    field('mark').append(document.createTextNode(`关联轴：${markTime(mark.at)} ${mark.note || ''} `));
-    const unlink = document.createElement('button');
-    unlink.type = 'button';
-    unlink.textContent = '解除关联';
-    unlink.disabled = Boolean(current.job?.state().confirmed || current.job?.state().sent);
-    unlink.onclick = () => {
-      current.mark = null;
-      markLabel();
-    };
-    field('mark').append(unlink);
-  }
+  const MODES = {copy: '原画', precise: '精确', danmaku: '弹幕'};
+  // Everything the sheet shows, derived from the current submission and its job.
   function render(own) {
     if (current !== own) return;
     const state = own.job?.state();
     if (state?.done) own.cover?.dispose();
-    area.querySelector('fieldset').disabled =
-      !own.ready || Boolean(state?.confirmed || state?.sent || state?.cancelled || own.confirming);
-    field('confirm').disabled =
-      !own.ready || Boolean(state?.confirmed || state?.sent || state?.cancelled || own.confirming);
-    field('confirm').textContent = state?.confirmed && !state.sent ? '已确认，等待上传完成' : '确认投稿';
-    field('cancel').hidden = Boolean(state?.sent || state?.done || state?.cancelled);
-    field('retry').hidden = !state?.error && !own.setupError;
-    field('retry').disabled = Boolean(state?.busy || own.confirming);
-    field('error').textContent = state?.error?.message || own.setupError?.message || own.formError?.message || '';
-    field('state').textContent = state?.cancelled
-      ? '已取消'
-      : state?.done
-        ? '投稿完成'
-        : state?.sent
-          ? '正在确认投稿结果'
-          : state?.uploaded
-            ? '上传完成，等待确认投稿'
-            : own.stage;
-    for (const kind of ['export', 'upload']) {
-      field(kind).value = own[kind] || 0;
-      field(`${kind}-percent`).textContent = `${Math.round((own[kind] || 0) * 100)}%`;
-    }
-    field('result').replaceChildren();
-    if (state?.result?.bvid) {
-      const bvid = state.result.bvid,
-        link = document.createElement('a'),
-        copy = document.createElement('button');
-      link.href = `https://www.bilibili.com/video/${bvid}`;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = bvid;
-      copy.type = 'button';
-      copy.textContent = '复制 BV';
-      copy.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(bvid);
-          copy.textContent = '已复制';
-        } catch {
-          own.formError = new Error('复制失败，请手动复制 BV 号');
-          render(own);
-        }
-      };
-      field('result').append(link, copy);
-    }
-    markLabel();
-    refresh();
+    view.value = {
+      open: !own.closed,
+      canStart: canStart(),
+      selection: `${own.record.title} · ${Math.round(own.selection.end - own.selection.start)} 秒 · ${MODES[own.mode]}`,
+      mark: own.mark,
+      markLocked: Boolean(state?.confirmed || state?.sent),
+      locked: !own.ready || Boolean(state?.confirmed || state?.sent || state?.cancelled || own.confirming),
+      confirmText: state?.confirmed && !state.sent ? '已确认，等待上传完成' : '确认投稿',
+      cancellable: !(state?.sent || state?.done || state?.cancelled),
+      retry: Boolean(state?.error || own.setupError),
+      retryBusy: Boolean(state?.busy || own.confirming),
+      error: state?.error?.message || own.setupError?.message || own.formError?.message || '',
+      stage: state?.cancelled
+        ? '已取消'
+        : state?.done
+          ? '投稿完成'
+          : state?.sent
+            ? '正在确认投稿结果'
+            : state?.uploaded
+              ? '上传完成，等待确认投稿'
+              : own.stage,
+      export: own.export || 0,
+      upload: own.upload || 0,
+      bvid: state?.result?.bvid || null,
+      copied: Boolean(own.copied),
+    };
   }
   async function stop(own) {
     own.setup.abort();
@@ -130,8 +68,8 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     if (!session.ready()) return;
     const prior = current;
     if (active() && !preserve) {
-      area.hidden = false;
-      area.scrollIntoView({block: 'nearest'});
+      current.closed = false;
+      render(current);
       return;
     }
     switching = true;
@@ -149,12 +87,8 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
         stage: '正在读取投稿配置',
       });
       const {signal} = own.setup;
-      area.hidden = false;
-      field('cover').replaceChildren();
-      field('selection').textContent =
-        `${own.record.title} · ${Math.round(own.selection.end - own.selection.start)} 秒（${own.mode === 'copy' ? '原画' : own.mode === 'danmaku' ? '弹幕' : '精确'}）`;
+      host('composeCover').replaceChildren();
       render(own);
-      area.scrollIntoView({block: 'start'});
       try {
         const [defaults, me, options, templates, schedule] = await Promise.all([
           client.request('/clip-defaults', {signal}),
@@ -244,7 +178,7 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
           },
         });
         own.cover = createCoverEditor({
-          host: field('cover'),
+          host: host('composeCover'),
           selection: own.selection,
           signal: own.job.signal,
           readFrame(time, signal) {
@@ -273,9 +207,7 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       }
     }
   }
-  button.onclick = () => void start();
-  area.querySelector('form').onsubmit = async event => {
-    event.preventDefault();
+  async function confirm() {
     const own = current;
     if (!own?.ready || own.confirming || own.job.state().confirmed) return;
     own.formError = null;
@@ -297,29 +229,27 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       own.confirming = false;
       render(own);
     }
-  };
-  field('cancel').onclick = async () => {
+  }
+  async function cancel() {
     const own = current;
-    if (own.job?.state().sent) return;
-    field('cancel').disabled = true;
+    if (!own || own.job?.state().sent || own.stopping) return;
+    own.stopping = true;
     try {
       await stop(own);
-      area.hidden = true;
+      own.closed = true;
     } catch (error) {
       own.formError = error;
-      render(own);
     } finally {
-      field('cancel').disabled = false;
+      own.stopping = false;
+      render(own);
       refresh();
     }
-  };
-  field('retry').onclick = () => {
-    if (current.setupError) void start({preserve: true});
-    else void current.job.retry();
-  };
+  }
+  const canStart = () => !switching && session.ready() && !session.isSubmission() && !session.whole();
+  // The sheet stays mounted; only the start button depends on the editor.
   function refresh() {
-    button.hidden = session.isSubmission() || session.whole();
-    button.disabled = switching || !session.ready();
+    if (current) render(current);
+    else view.value = {...view.value, canStart: canStart()};
   }
   const beforeUnload = event => {
     if (active() && !current.cancelled) {
@@ -329,6 +259,34 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
   };
   window.addEventListener('beforeunload', beforeUnload);
   return {
+    view,
+    actions: {
+      start: () => void start(),
+      confirm: () => void confirm(),
+      cancel: () => void cancel(),
+      // Hiding keeps a running export or upload going; the dock button reopens it.
+      close() {
+        if (!current) return;
+        current.closed = true;
+        render(current);
+      },
+      retry: () => (current.setupError ? void start({preserve: true}) : void current.job.retry()),
+      unlinkMark() {
+        if (!current || view.value.markLocked) return;
+        current.mark = null;
+        render(current);
+      },
+      async copyBv() {
+        const own = current;
+        try {
+          await navigator.clipboard.writeText(view.value.bvid);
+          own.copied = true;
+        } catch {
+          own.formError = new Error('复制失败，请手动复制 BV 号');
+        }
+        render(own);
+      },
+    },
     refresh,
     markSelected(mark) {
       selectedMark = mark;

@@ -35,17 +35,24 @@ export function renderCover(canvas, source, crop, text) {
 }
 
 export function createCoverEditor({host, selection, readFrame, signal}) {
-  host.innerHTML = `<label>封面画面 <input data-frame type="range" step="0.1"></label><span data-status role="status"></span>
-    <button type="button" data-reload>重新加载</button>
-    <canvas data-source aria-label="拖动裁剪框" style="max-width:100%;max-height:260px;touch-action:none"></canvas>
-    <label>裁剪范围 <input data-zoom type="range" min="20" max="100" value="100"></label>
-    <label>文字（可选）<input data-text maxlength="80"></label>
-    <label>字号 <input data-size type="number" min="12" max="300" value="90"></label>
-    <label>文字颜色 <input data-fill type="color" value="#ffffff"></label>
-    <label>描边颜色 <input data-stroke type="color" value="#000000"></label>
-    <label>描边宽度 <input data-width type="number" min="0" max="30" value="6"></label>
-    <p>拖动上图裁剪框；拖动下图调整文字位置。</p>
-    <canvas data-output aria-label="封面效果，拖动调整文字位置" style="width:100%;touch-action:none"></canvas>`;
+  host.innerHTML = `<div class="cover-frame">
+      <canvas data-output aria-label="封面效果，拖动调整文字位置"></canvas>
+      <span class="cover-status" data-status role="status"></span>
+    </div>
+    <div class="field"><label>封面画面<button type="button" class="link small" data-reload>重新加载</button></label><input data-frame type="range" step="0.1" aria-label="封面画面在选段中的位置"></div>
+    <div class="field"><label>文字（可选，拖动封面调整位置）</label><input data-text maxlength="80"></div>
+    <details class="advanced"><summary>裁剪与文字样式</summary><div class="adv-body">
+      <canvas class="cover-source" data-source aria-label="拖动裁剪框"></canvas>
+      <div class="field"><label>裁剪范围</label><input data-zoom type="range" min="20" max="100" value="100"></div>
+      <div class="field-row">
+        <div class="field"><label>字号</label><input data-size type="number" min="12" max="300" value="90"></div>
+        <div class="field"><label>描边宽度</label><input data-width type="number" min="0" max="30" value="6"></div>
+      </div>
+      <div class="cover-colors">
+        <label>文字颜色 <input data-fill type="color" value="#ffffff"></label>
+        <label>描边颜色 <input data-stroke type="color" value="#000000"></label>
+      </div>
+    </div></details>`;
   const $ = name => host.querySelector(`[data-${name}]`),
     sourceCanvas = $('source'),
     output = $('output');

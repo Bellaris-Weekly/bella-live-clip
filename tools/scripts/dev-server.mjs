@@ -11,7 +11,9 @@ await build({
   bundle: true,
   format: 'iife',
   target: 'chrome110',
-  loader: {'.txt': 'text', '.html': 'text', '.css': 'text'},
+  loader: {'.txt': 'text', '.css': 'text'},
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
 });
 const fixture = process.env.BILI_CLIP_FIXTURE || '.local/media/mediabunny-test.mp4';
 const hlsFixture = process.env.BILI_CLIP_HLS_FIXTURE || `${artifacts}/preview-fragmented.mp4`;

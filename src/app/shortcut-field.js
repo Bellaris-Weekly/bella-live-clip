@@ -10,10 +10,12 @@ export function bindShortcut({
   key = 'shortcut',
   fallback = DEFAULT_SHORTCUT,
   accepts = () => true,
+  onChange = () => {},
 }) {
   const $ = id => root.getElementById(id);
   let shortcut = normalizeShortcut(get(key, fallback)) || fallback;
   $(field).value = formatShortcut(shortcut);
+  onChange(formatShortcut(shortcut));
   $(field).onfocus = () => {
     $(field).classList.add('recording');
     $(field).value = '按下快捷键';
@@ -30,6 +32,7 @@ export function bindShortcut({
     if (value && accepts(value)) {
       shortcut = value;
       set(key, value);
+      onChange(formatShortcut(value));
       $(field).blur();
     }
   };

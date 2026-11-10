@@ -11,29 +11,36 @@ import {
 } from './templates.js';
 
 export function createTemplateForm(host) {
-  host.innerHTML = `<label>投稿模板<select data-template></select></label>
-    <label>直播场次<select data-live></select></label><p data-schedule-note></p>
-    <label data-live-custom-label hidden>自行输入直播信息<input data-live-custom placeholder="替换整个 {live}"></label>
-    <label>二创署名<input data-clipper></label>
-    <label>标题（最多 80 字）<input data-title required></label>
-    <label>标签（逗号分隔，最多 12 个）<input data-tags></label>
-    <label>简介<textarea data-desc rows="4"></textarea></label>
-    <label>简介预览<pre data-desc-preview></pre></label>
-    <details><summary>更多投稿设置</summary>
-      <label>分区 ID<input data-tid type="number" min="1" max="65535"></label>
-      <label>稿件类型<select data-copyright><option value="">请选择</option><option value="1">自制</option><option value="2">转载</option></select></label>
-      <label>转载来源<input data-source></label><label>同步动态<textarea data-dynamic></textarea></label>
-      ${Object.entries(FLAG_FIELDS)
-        .map(([key, label]) => `<label><input type="checkbox" data-${key}>${label}</label>`)
-        .join('')}
-      ${Object.entries(ID_FIELDS)
-        .map(([key, label]) => `<label>${label}<input type="number" min="1" data-${key}></label>`)
-        .join('')}
-      <label>定时发布<input type="datetime-local" step="1" data-scheduleAt></label>
-      <label><input type="checkbox" data-isOnlySelf>仅自己可见</label>
-      <label>合作成员（JSON：mid、title）<textarea data-staff></textarea></label>
-      <label>简介片段 / @ 用户（JSON：type_id、raw_text、biz_id）<textarea data-desc_v2></textarea></label>
-    </details>`;
+  const flags = Object.entries(FLAG_FIELDS)
+    .map(([key, label]) => `<label class="switch"><input type="checkbox" role="switch" data-${key}>${label}</label>`)
+    .join('');
+  const ids = Object.entries(ID_FIELDS)
+    .map(([key, label]) => `<div class="field"><label>${label}</label><input type="number" min="1" data-${key}></div>`)
+    .join('');
+  host.innerHTML = `<div class="field-row">
+      <div class="field"><label>投稿模板</label><select data-template></select></div>
+      <div class="field"><label>直播场次</label><select data-live></select></div>
+    </div>
+    <p class="hint" data-schedule-note></p>
+    <div class="field" data-live-custom-label hidden><label>自行输入直播信息</label><input data-live-custom placeholder="替换整个 {live}"></div>
+    <div class="field"><label>标题<span class="counter" data-title-count></span></label><input data-title required></div>
+    <div class="field"><label>标签<span class="counter">逗号分隔，最多 12 个</span></label><input data-tags></div>
+    <div class="field"><label>二创署名</label><input data-clipper></div>
+    <div class="field"><label>简介</label><textarea data-desc rows="3"></textarea></div>
+    <div class="field"><label>简介预览</label><pre class="desc-preview" data-desc-preview></pre></div>
+    <details class="advanced"><summary>更多投稿设置</summary><div class="adv-body">
+      <div class="field-row">
+        <div class="field"><label>分区 ID</label><input data-tid type="number" min="1" max="65535"></div>
+        <div class="field"><label>稿件类型</label><select data-copyright><option value="">请选择</option><option value="1">自制</option><option value="2">转载</option></select></div>
+      </div>
+      <div class="field"><label>转载来源</label><input data-source></div>
+      <div class="field"><label>同步动态</label><textarea data-dynamic rows="2"></textarea></div>
+      <div class="switches">${flags}<label class="switch"><input type="checkbox" role="switch" data-isOnlySelf>仅自己可见</label></div>
+      <div class="field-row">${ids}</div>
+      <div class="field"><label>定时发布</label><input type="datetime-local" step="1" data-scheduleAt></div>
+      <div class="field"><label>合作成员（JSON：mid、title）</label><textarea data-staff rows="2"></textarea></div>
+      <div class="field"><label>简介片段 / @ 用户（JSON：type_id、raw_text、biz_id）</label><textarea data-desc_v2 rows="2"></textarea></div>
+    </div></details>`;
   const field = key => host.querySelector(`[data-${key}]`);
   let templates = [],
     events = [];
@@ -41,6 +48,7 @@ export function createTemplateForm(host) {
     field('live').value === 'custom' ? field('live-custom').value : liveValue(events[Number(field('live').value)]);
   function preview() {
     field('live-custom-label').hidden = field('live').value !== 'custom';
+    field('title-count').textContent = `${[...field('title').value].length}/80`;
     field('desc-preview').textContent = substitute(field('desc').value, live(), field('clipper').value);
   }
   function write(draft) {

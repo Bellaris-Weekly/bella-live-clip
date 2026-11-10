@@ -6,9 +6,8 @@ import {createDiagnosticReporter} from '../../../src/services/diagnostics.js';
 
 // Keep real application/error boundaries; replace rendering and media work only.
 const stubs = {
-  controls: 'export const createControls=()=>()=>{};',
-  'record-card':
-    'export const createRecordCard=(record,select)=>{const card=document.createElement("div");card.onclick=select;return card;};',
+  // Rendering is Preact's job (see ui-panel.test.mjs); here the app is driven through its store and actions.
+  app: 'export const mountApp=(root,props)=>{scenario.store=props.store;scenario.actions=props.actions;};',
   timeline: 'export const createTimeline=options=>{scenario.timelineOptions=options;return scenario.timeline;};',
   version: 'export const createVersionControl=()=>({refresh:async()=>{}});',
   'page-progress': 'export const bindPageProgress=()=>()=>{};',
@@ -38,13 +37,15 @@ const {outputFiles} = await build({
   write: false,
   format: 'iife',
   globalName: 'application',
-  loader: {'.txt': 'text', '.html': 'text', '.css': 'text'},
+  loader: {'.txt': 'text', '.css': 'text'},
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
   plugins: [
     {
       name: 'render-media-fixtures',
       setup(build) {
-        build.onResolve({filter: /\.js$/}, args => {
-          const match = args.path.match(/\.\.\/(ui|services|media)\/([^/]+)\.js$/);
+        build.onResolve({filter: /\.jsx?$/}, args => {
+          const match = args.path.match(/\.\.\/(ui|services|media)\/([^/]+)\.jsx?$/);
           if (match && stubs[match[2]]) return {path: match[2], namespace: 'fixture'};
         });
         build.onLoad({filter: /.*/, namespace: 'fixture'}, args => ({contents: stubs[args.path]}));
@@ -56,7 +57,7 @@ const {outputFiles} = await build({
 function element() {
   return {
     dataset: {},
-    style: {},
+    style: {setProperty() {}},
     hidden: false,
     children: [],
     listeners: {},
@@ -90,6 +91,9 @@ function element() {
   };
 }
 
+// Panel actions are fire-and-forget like button clicks; wait for the job they start.
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
 const videoRecord = {
   kind: 'submission',
   key: 'BV1234567890:12',
@@ -116,14 +120,13 @@ function start({
   settings = {},
 } = {}) {
   let page = url;
-  const modes = ['copy', 'precise', 'danmaku'].map(mode => ({...element(), dataset: {mode}}));
   const nodes = new Map(),
     root = {
       getElementById(id) {
         if (!nodes.has(id)) nodes.set(id, element());
         return nodes.get(id);
       },
-      querySelectorAll: selector => (selector === '[data-mode]' ? modes : []),
+      querySelectorAll: () => [],
     };
   const document = {
     createElement: () => ({...element(), attachShadow: () => root}),
@@ -237,7 +240,6 @@ function start({
   });
   return {
     app,
-    modes,
     events: requests,
     get failures() {
       return requests.filter(event => event.level === 'error');
@@ -329,7 +331,7 @@ test('裁剪点单击和选区平移提交位置，边界拖动或取消恢复�
           onPreview(boundary);
           timelineTime = boundary;
           assert.equal(f.scenario.player.position(), boundary, label);
-          assert.equal(f.$('clock').textContent, type === 'end' ? '01:20 / 01:40' : '00:10 / 01:40', label);
+          assert.equal(f.scenario.store.clock.value, type === 'end' ? '01:20 / 01:40' : '00:10 / 01:40', label);
           if (kind === 'submission' && !paused) state.time += 3;
           const commit = commitPosition && !canceled;
           const expected = kind === 'submission' && canceled ? state.time : commit ? boundary : before;
@@ -338,7 +340,7 @@ test('裁剪点单击和选区平移提交位置，边界拖动或取消恢复�
           assert.equal(f.scenario.player.position(), expected, label);
           assert.equal(timelineTime, expected, label);
           assert.equal(
-            f.$('clock').textContent,
+            f.scenario.store.clock.value,
             `${String(Math.floor(expected / 60)).padStart(2, '0')}:${String(expected % 60).padStart(2, '0')} / 01:40`,
             label,
           );
@@ -350,7 +352,7 @@ test('裁剪点单击和选区平移提交位置，边界拖动或取消恢复�
           onScrubEnd(55);
           assert.equal(restored.at(-1), undefined, '连续拖动播放进度不能复用上次裁剪点的恢复位置');
           assert.equal(f.scenario.player.position(), 55, label);
-          assert.equal(f.$('clock').textContent, '00:55 / 01:40', label);
+          assert.equal(f.scenario.store.clock.value, '00:55 / 01:40', label);
           assert.equal(state.paused, paused, label);
         }
       }
@@ -401,7 +403,7 @@ test('实际导出失败在清理 abort 前上报，路由变更仍使用原始�
     },
   });
   await fixture.app.open();
-  const exporting = fixture.$('download').onclick();
+  const exporting = fixture.scenario.actions.download();
   await gate;
   fixture.navigate('https://www.bilibili.com/video/BV0987654321');
   reject(new Error('timestamp backwards'));
@@ -413,7 +415,7 @@ test('实际导出失败在清理 abort 前上报，路由变更仍使用原始�
   assert.equal(payload.context.page, 'https://www.bilibili.com/video/BV1234567890');
   assert.equal(payload.context.selection.start, 2);
   assert.equal(payload.context.stage, 'processing');
-  assert.equal(fixture.$('status').textContent, 'timestamp backwards');
+  assert.equal(fixture.scenario.store.status.value.text, 'timestamp backwards');
 });
 
 test('保存位置取消和运行中取消都保持原有 UI，均不记录为错误', async () => {
@@ -423,9 +425,9 @@ test('保存位置取消和运行中取消都保持原有 UI，均不记录为�
     },
   });
   await pickerCancel.app.open();
-  await pickerCancel.$('download').onclick();
+  await pickerCancel.scenario.actions.download();
   assert.equal(pickerCancel.failures.length, 0);
-  assert.equal(pickerCancel.$('status').textContent, '已停止。');
+  assert.equal(pickerCancel.scenario.store.status.value.text, '已停止。');
   let started;
   const gate = new Promise(resolve => {
     started = resolve;
@@ -438,9 +440,9 @@ test('保存位置取消和运行中取消都保持原有 UI，均不记录为�
       }),
   });
   await running.app.open();
-  const download = running.$('download').onclick();
+  const download = running.scenario.actions.download();
   await gate;
-  running.$('cancel').onclick();
+  running.scenario.actions.cancel();
   await download;
   assert.equal(running.failures.length, 0);
 });
@@ -448,10 +450,10 @@ test('保存位置取消和运行中取消都保持原有 UI，均不记录为�
 test('缺少浏览器保存能力仍走统一失败入口，保留原有说明', async () => {
   const fixture = start({picker: null});
   await fixture.app.open();
-  await fixture.$('download').onclick();
+  await fixture.scenario.actions.download();
   assert.equal(fixture.failures.length, 1);
   assert.equal(fixture.failures[0].context.stage, 'select_destination');
-  assert.match(fixture.$('status').textContent, /浏览器不支持保存文件/);
+  assert.match(fixture.scenario.store.status.value.text, /浏览器不支持保存文件/);
 });
 
 test('已捕获的视频和直播加载错误仍上报，正常未开播不当错误', async () => {
@@ -462,7 +464,7 @@ test('已捕获的视频和直播加载错误仍上报，正常未开播不当�
   });
   await video.app.open();
   assert.equal(video.failures[0].event, 'video_load_failed');
-  assert.equal(video.$('offlineReason').textContent, 'video metadata unavailable');
+  assert.equal(video.scenario.store.offline.value.reason, 'video metadata unavailable');
   const live = start({
     url: 'https://live.bilibili.com/123',
     current: async () => {
@@ -472,11 +474,11 @@ test('已捕获的视频和直播加载错误仍上报，正常未开播不当�
   await live.app.open();
   assert.equal(live.failures[0].event, 'room_load_failed');
   assert.equal(live.failures[0].context.record.room, 123);
-  assert.equal(live.$('offlineReason').textContent, 'room API unavailable');
+  assert.equal(live.scenario.store.offline.value.reason, 'room API unavailable');
   const offline = start({url: 'https://live.bilibili.com/456'});
   await offline.app.open();
   assert.equal(offline.failures.length, 0);
-  assert.match(offline.$('offlineReason').textContent, /当前没有直播/);
+  assert.equal(offline.scenario.store.offline.value.title, '当前没有直播');
 });
 
 test('断流产生的多段录像可逐段选择，整场与片段只保存当前段，单段时隐藏分段', async () => {
@@ -505,13 +507,12 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
     },
   });
   await fixture.app.open();
-  const segments = fixture.$('segments');
-  assert.equal(segments.hidden, false);
-  assert.equal(segments.children.length, 2);
+  const {store, actions} = fixture.scenario;
+  assert.equal(store.segments.value.length, 2);
   assert.deepEqual(fixture.seeks, [0]);
-  segments.children[1].onclick();
+  actions.selectSegment(1);
   assert.deepEqual(fixture.seeks, [0, 200]);
-  await fixture.$('download').onclick();
+  await fixture.scenario.actions.download();
   assert.equal(saves.length, 1);
   assert.equal(names.length, 1);
   assert.deepEqual(
@@ -520,9 +521,8 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
   );
   const clip = await saves[0].createFile({start: 202, end: 208, index: 0, count: 1});
   assert.equal(clip.name, names[0]);
-  fixture.$('wholeRecording').checked = true;
-  fixture.$('wholeRecording').onchange();
-  await fixture.$('download').onclick();
+  fixture.scenario.actions.setWhole(true);
+  await fixture.scenario.actions.download();
   assert.equal(saves.length, 2);
   assert.deepEqual(
     saves[1].groups.map(group => group.streamIndex),
@@ -530,9 +530,9 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
   );
   assert.equal(names.length, 2);
   assert.match(names[1], /_00-03-20-00-05-00_整场_第2段\.mp4$/);
-  assert.equal(fixture.$('downloads').children.length, 1);
-  assert.match(fixture.$('downloads').children[0].textContent, /^已保存整场/);
-  assert.equal(fixture.$('status').textContent, '导出完成。');
+  assert.equal(store.downloads.value.length, 1);
+  assert.match(store.downloads.value[0], /^已保存整场/);
+  assert.equal(fixture.scenario.store.status.value.text, '导出完成。');
 
   const single = start({
     url: 'https://live.bilibili.com/123',
@@ -541,8 +541,8 @@ test('断流产生的多段录像可逐段选择，整场与片段只保存当�
     streams: [{start_time: 1000, end_time: 1300, stream: 'a'}],
   });
   await single.app.open();
-  assert.equal(single.$('segments').hidden, true);
-  assert.equal(single.$('segments').children.length, 0);
+  // One segment: nothing to choose between (the picker is only rendered for two or more).
+  assert.equal(single.scenario.store.segments.value.length, 1);
 });
 
 for (const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999'])
@@ -570,29 +570,28 @@ for (const url of ['https://www.bilibili.com/', 'https://live.bilibili.com/999']
     });
     await f.app.open();
     if (url.includes('live.bilibili.com')) {
-      f.$('browseHistory').onclick();
+      f.scenario.actions.library();
       await new Promise(resolve => setImmediate(resolve));
     }
-    assert.ok(f.$('cards').children.length);
-    f.$('cards').children[0].onclick();
+    assert.ok(f.scenario.store.records.value.length);
+    f.scenario.actions.openRecord(f.scenario.store.records.value[0]);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(f.scenario.loads.length, 1);
     assert.deepEqual(f.seeks, [85]);
     calls.length = 0;
     streams.push({start_time: 1200, end_time: 1250, stream: 'latest'});
     const selection = {...f.scenario.selection};
-    await f.$('refreshEditor').onclick();
+    f.scenario.actions.refreshEditor();
+    await settle();
     assert.equal(f.scenario.loads.length, 1, '刷新不能重新打开场次，否则丢失选区');
     assert.deepEqual(calls, [], '刷新录像不应重新解析所在网页的直播间');
     assert.equal(f.scenario.plans.at(-1).streams.length, 2);
-    assert.equal(f.$('segments').children.length, 2);
+    assert.equal(f.scenario.store.segments.value.length, 2);
     assert.deepEqual(f.seeks, [85], '播放位置不变');
     assert.deepEqual(f.scenario.selection, selection);
     assert.equal(f.failures.length, 0);
-    assert.equal(f.$('editPage').hidden, false);
-    assert.match(f.$('refreshEditor').innerHTML, /glyph-refresh/);
-    assert.equal(f.$('refreshEditor').getAttribute('aria-label'), '刷新录像');
-    assert.equal(f.$('refreshEditor').title, '刷新录像');
+    assert.equal(f.scenario.store.page.value, 'edit');
+    assert.equal(f.scenario.store.record.value.key, record.key);
   });
 
 test('不打开面板不发账号请求；鼠标移到入口才准备列表，只准备一次', async () => {
@@ -601,7 +600,7 @@ test('不打开面板不发账号请求；鼠标移到入口才准备列表，�
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.scenario.historyCalls ?? 0, 0);
   launcher.listeners.pointerenter();
-  launcher.listeners.focus();
+  launcher.listeners.focusin();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.scenario.historyCalls, 1);
 });
@@ -620,7 +619,8 @@ test('打开失败的录像刷新时重新打开；回放地址更新不打断�
   };
   await f.app.open();
   assert.equal(clips, 1);
-  await f.$('refreshEditor').onclick();
+  f.scenario.actions.refreshEditor();
+  await settle();
   assert.equal(clips, 2);
 });
 
@@ -639,19 +639,17 @@ test('设为开始越过终点时选区延伸到录像边缘，手动输入时�
   f.scenario.timeline.getBounds = () => ({start: 0, end: 100});
   f.scenario.timeline.getSelection = () => ({start: 2, end: 8});
   f.scenario.player.position = () => 50;
-  f.$('markStart').onclick();
+  f.scenario.actions.markStart();
   assert.deepEqual({...sets.at(-1)}, {start: 50, end: 100}, '不能缩成一毫秒的选区');
   f.scenario.player.position = () => 1;
-  f.$('markEnd').onclick();
+  f.scenario.actions.markEnd();
   assert.deepEqual({...sets.at(-1)}, {start: 0, end: 1});
-  f.$('selectionStart').value = '0:05';
-  f.$('selectionStart').onchange();
+  f.scenario.actions.typeTime('start', '0:05');
   assert.deepEqual({...sets.at(-1)}, {start: 5, end: 8});
   const count = sets.length;
-  f.$('selectionEnd').value = 'abc';
-  f.$('selectionEnd').onchange();
+  f.scenario.actions.typeTime('end', 'abc');
   assert.equal(sets.length, count);
-  assert.match(f.$('status').textContent, /时间格式/);
+  assert.match(f.scenario.store.status.value.text, /时间格式/);
 });
 
 test('编辑快捷键：空格播放、I / O 设起止点，输入框和整场模式下不触发', async () => {
@@ -690,9 +688,10 @@ test('编辑快捷键：空格播放、I / O 设起止点，输入框和整场�
   assert.equal(sets.length, 2);
   press('i', {target: {tagName: 'INPUT', closest: () => null}});
   assert.equal(sets.length, 2);
-  f.$('wholeRecording').checked = true;
+  f.scenario.actions.setWhole(true);
+  const whole = sets.length; // switching to whole also pins the selection to the segment
   press('i');
-  assert.equal(sets.length, 2);
+  assert.equal(sets.length, whole);
 });
 
 test('页面进入前进后退缓存时保留面板，真正离开才销毁', async () => {
@@ -716,7 +715,7 @@ test('导出期间拦截关闭页面，结束后解除；空间不足时不开�
   });
   await f.app.open();
   f.scenario.windowEvents.length = 0;
-  await f.$('download').onclick();
+  await f.scenario.actions.download();
   assert.deepEqual(
     f.scenario.windowEvents.filter(name => name.endsWith('beforeunload')),
     ['+beforeunload', '-beforeunload'],
@@ -729,9 +728,9 @@ test('导出期间拦截关闭页面，结束后解除；空间不足时不开�
     exported = true;
     return [];
   };
-  await f.$('download').onclick();
+  await f.scenario.actions.download();
   assert.equal(exported, false);
-  assert.match(f.$('status').textContent, /临时空间不足/);
+  assert.match(f.scenario.store.status.value.text, /临时空间不足/);
 });
 
 test('直播自动增长同步分段、缩略图和导出计划，保留原选区与播放位置', async () => {
@@ -760,14 +759,14 @@ test('直播自动增长同步分段、缩略图和导出计划，保留原选�
   assert.equal(f.scenario.plans.at(-1).streams[0].end_time, 1150);
   assert.equal(f.scenario.thumbnailStreams[0].end_time, 1150);
   assert.equal(f.scenario.extensions.at(-1).end, 150);
-  assert.match(f.$('clock').textContent, /02:30$/);
+  assert.match(f.scenario.store.clock.value, /02:30$/);
   parts = [growing, latest];
   await f.poll();
-  assert.equal(f.$('segments').children.length, 2);
-  assert.equal(f.$('segments').children[0].getAttribute('aria-pressed'), 'true');
+  assert.equal(f.scenario.store.segments.value.length, 2);
+  assert.equal(f.scenario.store.segmentIndex.value, 0);
   assert.deepEqual(f.seeks, oldSeeks);
   assert.equal(f.scenario.extensions.at(-1).end, 150, '新增段不强制切走正在剪辑的旧段');
-  f.$('segments').children[1].onclick();
+  f.scenario.actions.selectSegment(1);
   assert.equal(f.seeks.at(-1), 285);
   f.scenario.groups = [
     {streamIndex: 0, start: 1000},
@@ -780,12 +779,11 @@ test('直播自动增长同步分段、缩略图和导出计划，保留原选�
     );
     return {saved: true, bytes: 1, duration: 100};
   };
-  f.$('wholeRecording').checked = true;
-  f.$('wholeRecording').onchange();
-  await f.$('download').onclick();
+  f.scenario.actions.setWhole(true);
+  await f.scenario.actions.download();
   assert.equal(f.failures.length, 0);
   assert.equal(f.timers.size, 1);
-  f.$('close').onclick();
+  f.scenario.actions.close();
   assert.equal(f.timers.size, 0);
 });
 
@@ -815,7 +813,7 @@ test('自动增长在拖动、后台、导出、关闭时暂停；重新打开�
   f.document.hidden = false;
   const pending = f.poll();
   assert.equal(calls, 1);
-  f.$('close').onclick();
+  f.scenario.actions.close();
   assert.equal(f.timers.size, 0);
   finish([{start_time: 1000, end_time: 1200, stream: 'late'}]);
   await pending;
@@ -832,13 +830,13 @@ test('自动增长在拖动、后台、导出、关闭时暂停；重新打开�
       done = resolve;
       started();
     });
-  const exporting = f.$('download').onclick();
+  const exporting = f.scenario.actions.download();
   await gate;
   assert.equal(f.timers.size, 0);
   done({saved: true, bytes: 1, duration: 6});
   await exporting;
   assert.equal(f.timers.size, 1);
-  f.$('back').onclick();
+  f.scenario.actions.back();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.timers.size, 0);
 });
@@ -854,22 +852,19 @@ test('三种导出方式互斥：弹幕按默认时间压制，切回原画或�
   });
   await f.app.open();
   for (const mode of ['danmaku', 'copy', 'precise', 'danmaku']) {
-    f.modes.find(button => button.dataset.mode === mode).onclick();
-    assert.deepEqual(
-      f.modes.filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.dataset.mode),
-      [mode],
-    );
+    f.scenario.actions.setExportMode(mode);
+    assert.equal(f.scenario.store.exportMode.value, mode);
     assert.equal(settings['exportMode.live'], mode);
-    await f.$('download').onclick();
+    await f.scenario.actions.download();
     const options = outputs.at(-1);
     assert.equal(options.precise, mode !== 'copy');
     assert.equal(options.danmaku?.adjustment, mode === 'danmaku' ? 0 : undefined);
   }
-  f.$('wholeRecording').checked = true;
-  await f.$('download').onclick();
+  f.scenario.actions.setWhole(true);
+  await f.scenario.actions.download();
   assert.equal(outputs.at(-1).danmaku, undefined);
-  f.$('wholeRecording').checked = false;
-  await f.$('download').onclick();
+  f.scenario.actions.setWhole(false);
+  await f.scenario.actions.download();
   assert.equal(outputs.at(-1).danmaku.adjustment, 0);
 });
 
@@ -887,25 +882,22 @@ test('旧弹幕开关迁移为弹幕模式，投稿与直播分别记住选择',
   };
   const f = start(options);
   await f.app.open();
-  const danmaku = f.modes.find(button => button.dataset.mode === 'danmaku');
-  assert.equal(danmaku.getAttribute('aria-pressed'), 'true');
-  assert.equal(danmaku.hidden, false);
+  assert.equal(f.scenario.store.exportMode.value, 'danmaku');
   assert.equal(settings['danmaku.enabled'], false);
   assert.equal(settings['exportMode.live'], 'danmaku');
   f.navigate('https://www.bilibili.com/video/BV1234567890');
   await f.app.open();
-  assert.equal(danmaku.hidden, true);
-  assert.equal(danmaku.getAttribute('aria-pressed'), 'false');
-  await f.$('download').onclick();
+  assert.equal(f.scenario.store.exportMode.value, 'precise', '投稿使用自己的方式，弹幕选项在投稿页面不渲染');
+  await f.scenario.actions.download();
   assert.equal(outputs.at(-1).precise, true);
   assert.equal(outputs.at(-1).danmaku, undefined);
   const reopened = start(options);
   await reopened.app.open();
-  assert.equal(reopened.modes[2].getAttribute('aria-pressed'), 'true');
-  reopened.modes[0].onclick();
+  assert.equal(reopened.scenario.store.exportMode.value, 'danmaku');
+  reopened.scenario.actions.setExportMode('copy');
   const again = start(options);
   await again.app.open();
-  assert.equal(again.modes[0].getAttribute('aria-pressed'), 'true');
+  assert.equal(again.scenario.store.exportMode.value, 'copy');
 });
 
 test('successful exports include normal lifecycle logs and live performance aggregates', async () => {
@@ -919,7 +911,7 @@ test('successful exports include normal lifecycle logs and live performance aggr
     },
   });
   await f.app.open();
-  await f.$('download').onclick();
+  await f.scenario.actions.download();
   await new Promise(resolve => setImmediate(resolve));
   const events = f.events.filter(event => event.context.operation.action === 'export');
   assert.deepEqual(

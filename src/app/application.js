@@ -1,13 +1,15 @@
+import {batch, effect} from '@preact/signals';
 import {createComposer} from '../preview/compose.js';
-import {createWorkflow} from '../preview/workflow.js';
+import {createMarksSession} from '../preview/marks-session.js';
+import {MarkPins, MarksPanel, MiniMarks} from '../ui/marks.jsx';
+import {ComposeSheet} from '../ui/compose.jsx';
+import {STUDIO} from '../preview/studio.js';
 import metadataText from '../header.txt';
 import {readScriptMetadata, createUpdateChecker} from '../services/updates.js';
 import {createVersionControl} from '../ui/version.js';
-import html from '../ui/template.html';
-import css from '../ui/styles.css';
-import {createControls} from '../ui/controls.js';
-import {createRecordCard} from '../ui/record-card.js';
-import {icon} from '../ui/icons.js';
+import css from '../ui/theme.css';
+import {mountApp} from '../ui/app.jsx';
+import {createStore, toast} from './store.js';
 import {createScreenshotControls} from '../ui/live-screenshot.js';
 import {downloadScreenshot} from './live-screenshot.js';
 import {createTimeline} from '../ui/timeline.js';
@@ -48,23 +50,43 @@ export function createApp({
   saveFilePicker = typeof window.showSaveFilePicker === 'function' ? window.showSaveFilePicker.bind(window) : null,
   storage = globalThis.navigator?.storage,
 }) {
+  const preview = typeof __PREVIEW__ !== 'undefined' && __PREVIEW__;
   const host = document.createElement('div');
   host.id = 'bella-live-clip-host';
   const root = host.attachShadow({mode: 'open'});
-  root.innerHTML = `<style>${css}</style>${html}`;
+  root.innerHTML = `<style>${css}</style>`;
   document.documentElement.append(host);
   const syncTheme = () => {
     const page = document.documentElement;
     host.dataset.theme = page.classList?.contains?.('bili_dark') || page.dataset?.theme === 'dark' ? 'dark' : 'light';
   };
   syncTheme();
-  const $ = id => root.getElementById(id),
-    video = $('fullVideo');
   const readPageUrl = typeof pageUrl === 'function' ? pageUrl : () => pageUrl;
   const room = roomIdFromUrl(readPageUrl()),
     submissions = createSubmissionService(submissionRequest);
-  let workflow, composer;
-  const allowed = () => !(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) || Boolean(studio?.identity());
+  let marks, composer;
+  const allowed = () => !preview || Boolean(studio?.identity());
+  // Live clips default to lossless; video clips keep their exact cut, as they always have.
+  const exportModes = {live: get('exportMode.live', 'copy'), submission: get('exportMode.submission', 'precise')};
+  if (get('danmaku.enabled', false)) {
+    exportModes.live = 'danmaku';
+    set('exportMode.live', 'danmaku');
+    set('danmaku.enabled', false);
+  }
+  const store = createStore({
+    member: MEMBERS.find(m => m.room === room) || MEMBERS.find(m => m.id === get('member', 'bella')) || MEMBERS[0],
+    exportMode: exportModes.live,
+  });
+  if (preview) {
+    store.identity.value = studio.identity();
+    studio.subscribe(() => (store.identity.value = studio.identity()));
+  }
+  const isOpen = () => store.open.value;
+  // The open record's member (or the chosen one in the list) tints the brand mark and dates.
+  effect(() => {
+    const owner = MEMBERS.find(m => m.room === Number(store.record.value?.room)) || store.member.value;
+    host.style.setProperty('--member', owner.color);
+  });
   let player = null,
     playerKind = null,
     loadedRoute = null,
@@ -72,34 +94,7 @@ export function createApp({
     jobKind = null,
     pendingRoute = false,
     submissionThumbnails = false;
-  const isSubmission = () => record?.kind === 'submission';
-  const metadata = readScriptMetadata(metadataText);
-  const versionControl = createVersionControl({
-    root,
-    metadata,
-    check: createUpdateChecker({request: api.request, metadata}),
-  });
-  for (const [id, name] of [
-    ['close', 'close'],
-    ['refreshLibrary', 'refresh'],
-    ['refreshEditor', 'refresh'],
-    ['togglePlayback', 'play'],
-  ])
-    $(id).innerHTML = icon(name);
-  $('back').innerHTML = icon('back') + '<span>选择直播</span>';
-  $('download').innerHTML = '<span>导出</span>' + icon('download');
-  $('launcher').innerHTML = icon('scissors') + '<span>切片</span>';
-  for (const m of MEMBERS) {
-    const button = document.createElement('button');
-    button.dataset.member = m.id;
-    const dot = document.createElement('i');
-    dot.style.backgroundColor = m.color;
-    button.append(dot, document.createTextNode(m.name));
-    $('members').append(button);
-  }
-  let member = MEMBERS.find(m => m.room === room) || MEMBERS.find(m => m.id === get('member', 'bella')) || MEMBERS[0];
-  let page = 'library',
-    record = null,
+  let record = null,
     initialized = false,
     controller = null,
     ready = false,
@@ -115,10 +110,77 @@ export function createApp({
   let recordStreams = [],
     segments = [],
     segmentIndex = 0;
-  function setTitle(element, text) {
-    element.textContent = text;
-    element.classList.toggle('hanging-title', /^[\p{Ps}\p{Pi}]/u.test(text));
-  }
+  const isSubmission = () => record?.kind === 'submission';
+  const member = () => store.member.value;
+  const metadata = readScriptMetadata(metadataText);
+  const versionControl = createVersionControl({
+    state: store.version,
+    metadata,
+    check: createUpdateChecker({request: api.request, metadata}),
+  });
+  const actions = {
+    launch: () => {
+      if (!panelWindow.launcherDragged()) isOpen() ? close() : void open();
+    },
+    close: () => close(),
+    back: () => void library(),
+    library: () => void library(),
+    retryCurrent: () => void (parseSubmissionUrl(readPageUrl()) ? currentVideo() : currentRoom()),
+    refreshLibrary: () => void library(true),
+    refreshEditor: () => void (isSubmission() ? currentVideo() : refreshRecording()),
+    currentVideo: () => void currentVideo(),
+    selectMember(next) {
+      store.member.value = next;
+      set('member', next.id);
+      libraryScroll = 0;
+      void library();
+    },
+    openRecord(next) {
+      libraryScroll = $('body').scrollTop;
+      void enterRecord(next);
+    },
+    cancel() {
+      if (exporter.stopWhole()) {
+        controls();
+        status('正在保存…');
+      } else controller?.abort();
+    },
+    download: () => (store.whole.value ? exporter.exportWhole() : exporter.exportSelected()),
+    setWhole(whole) {
+      store.whole.value = whole;
+      if (whole) {
+        clipSelection = timeline.getSelection();
+        timeline.setSelection({...segments[segmentIndex]}, true);
+      } else {
+        timeline.setSelection(clipSelection, true);
+        clipSelection = null;
+      }
+      controls();
+    },
+    setExportMode(mode) {
+      const kind = modeKind();
+      exportModes[kind] = mode;
+      set(`exportMode.${kind}`, mode);
+      store.exportMode.value = mode;
+      updateExportSummary();
+    },
+    selectSegment: index => {
+      if (index !== segmentIndex) selectSegment(index);
+    },
+    togglePlayback: () => activePlayback()?.toggle(),
+    playSelection: () => player.playSelection(),
+    markStart: () => editorInput.markStart(),
+    markEnd: () => editorInput.markEnd(),
+    typeTime: (edge, value) => editorInput.typeTime(edge, value),
+    versionClick: event => versionControl.click(event),
+    versionKey: event => versionControl.key(event),
+    logout: () => studio.logout(),
+  };
+  mountApp(root, {store, actions, preview, members: MEMBERS, studioUrl: STUDIO});
+  const $ = id => root.getElementById(id),
+    video = $('fullVideo');
+  const modeKind = () => (isSubmission() ? 'submission' : 'live'),
+    exportMode = () => exportModes[modeKind()];
   const schedules = new ScheduleService(api.request);
   const libraries = createLibraryLoader({
     api,
@@ -126,7 +188,7 @@ export function createApp({
     backgroundEnrichment: true,
     store: {read: id => get(`library.${id}`, null), write: (id, value) => set(`library.${id}`, value)},
     onUpdate(selected, result) {
-      if (member.id === selected.id && page === 'library' && !$('panel').hidden) {
+      if (member().id === selected.id && store.page.value === 'library' && isOpen()) {
         renderCards();
         showScheduleResult(result);
       }
@@ -134,32 +196,10 @@ export function createApp({
   });
   let scheduleController = null,
     backgroundStarted = false;
-  // Live clips default to lossless; video clips keep their exact cut, as they always have.
-  const exportModes = {live: get('exportMode.live', 'copy'), submission: get('exportMode.submission', 'precise')};
-  if (get('danmaku.enabled', false)) {
-    exportModes.live = 'danmaku';
-    set('exportMode.live', 'danmaku');
-    set('danmaku.enabled', false);
-  }
-  const modeKind = () => (isSubmission() ? 'submission' : 'live'),
-    exportMode = () => exportModes[modeKind()];
-  function renderExportMode() {
-    root.querySelectorAll('[data-mode]').forEach(el => {
-      el.hidden = el.dataset.mode === 'danmaku' && isSubmission();
-      el.setAttribute('aria-pressed', el.dataset.mode === exportMode());
-    });
-  }
   const panelWindow = createPanelWindow({root, get, set});
   let exporter = null,
     editorInput = null;
-  const status = (text, error = false) => {
-    $('status').textContent = text;
-    $('status').dataset.error = error;
-    updateFeedback();
-  };
-  function updateFeedback() {
-    $('feedback').hidden = !controller && $('status').dataset.error !== 'true' && !$('downloads').childElementCount;
-  }
+  const status = (text, error = false) => (store.status.value = {text, error});
   createScreenshotControls({
     rootDocument: document,
     getVideo: () => (ready ? player.getScreenshotVideo() : null),
@@ -238,13 +278,15 @@ export function createApp({
       scrubReturnTime = null;
     },
     onSelection: selection => {
-      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) composer?.clearMark();
+      if (preview) composer?.clearMark();
       updateExportSummary(selection);
       activePlayback()?.check();
     },
     onView: (view, motion) => {
-      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) workflow?.renderTicks();
-      $('timelineZoom').textContent = $('timeline').dataset.zoom;
+      batch(() => {
+        store.view.value = {start: view.start, end: view.end};
+        store.zoom.value = $('timeline').dataset.zoom;
+      });
       if (!isSubmission() || submissionThumbnails) thumbnails.update(view, motion);
     },
   });
@@ -254,15 +296,13 @@ export function createApp({
     canRefresh: () =>
       ready &&
       record?.live &&
-      page === 'edit' &&
+      store.page.value === 'edit' &&
       !controller &&
-      !$('panel').hidden &&
+      isOpen() &&
       !document.hidden &&
       !timeline.isInteracting(),
   });
-  const updateClock = t => {
-    $('clock').textContent = formatTimeRange(t, playbackTotal, ' / ');
-  };
+  const updateClock = t => (store.clock.value = formatTimeRange(t, playbackTotal, ' / '));
   function usePlayer(kind) {
     if (playerKind === kind) return;
     player?.destroy();
@@ -305,29 +345,22 @@ export function createApp({
           })
         : createPlayer(options);
   }
-  let lastPlaybackPaused;
-  const syncPlayback = () => {
-    const paused = playerKind === 'submission' ? player.isPaused() : video.paused || video.ended;
-    if (paused === lastPlaybackPaused) return;
-    lastPlaybackPaused = paused;
-    $('togglePlayback').innerHTML = icon(paused ? 'play' : 'pause');
-    $('togglePlayback').setAttribute('aria-label', paused ? '播放' : '暂停');
-    $('togglePlayback').title = paused ? '播放' : '暂停';
-  };
+  const syncPlayback = () =>
+    (store.paused.value = playerKind === 'submission' ? player.isPaused() : video.paused || video.ended);
   for (const event of ['play', 'pause', 'ended', 'emptied']) video.addEventListener(event, syncPlayback);
   function updateExportSummary(selection = timeline.getSelection()) {
     // Both the timeline and the whole-download action refer to the active segment.
-    const whole = $('wholeRecording').checked && !isSubmission();
+    const whole = store.whole.value && !isSubmission();
     const range = whole && segments.length ? segments[segmentIndex] : selection;
-    $('selectionDuration').textContent = formatDuration(range.end - range.start);
+    store.duration.value = formatDuration(range.end - range.start);
     if (isSubmission()) {
       const rate = record.media.video.bandwidth + (record.media.audio?.bandwidth || 0);
-      $('estimatedSize').textContent = rate
+      store.estimate.value = rate
         ? `约 ${formatBytes((rate * (selection.end - selection.start)) / 8)}`
         : '大小暂不可用';
       return;
     }
-    $('estimatedSize').textContent = estimate
+    store.estimate.value = estimate
       ? `约 ${formatBytes(estimateSelectionBytes(estimate, record.start, range))}`
       : estimateState === 'error'
         ? '大小暂不可用'
@@ -374,41 +407,28 @@ export function createApp({
     estimate = null;
     estimateState = 'loading';
     thumbnails.setStreams(recordStreams);
-    timeline.extend(segments[segmentIndex].end, {whole: $('wholeRecording').checked});
+    timeline.extend(segments[segmentIndex].end, {whole: store.whole.value});
     renderSegments();
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh();
+    if (preview) void marks?.refresh();
     updateClock(player.position());
     updateExportSummary();
     if (backgroundStarted) startEstimate(recordingPlan, recordingController.signal, previousEstimate);
   }
-  const updateControls = createControls(root, timeline);
+  // The timeline is locked whenever its range cannot change.
+  effect(() => timeline.lock(store.busy.value || !store.ready.value || store.whole.value));
   function controls() {
     const route = parseSubmissionUrl(readPageUrl());
-    $('currentVideo').hidden = !route || (page === 'edit' && loadedRoute === route.key);
-    $('wholeRecordingLabel').hidden = isSubmission();
-    $('playSelection').hidden = !isSubmission();
-    const refreshLabel = isSubmission() ? '重新加载视频' : '刷新录像';
-    $('refreshEditor').setAttribute('aria-label', refreshLabel);
-    $('refreshEditor').title = refreshLabel;
-    updateControls({
-      busy: Boolean(controller),
-      ready,
-      page,
-      whole: $('wholeRecording').checked,
-      stopping: exporter.stopping(),
+    batch(() => {
+      store.currentVideo.value = Boolean(route) && !(store.page.value === 'edit' && loadedRoute === route.key);
+      store.busy.value = Boolean(controller);
+      store.ready.value = ready;
+      store.stopping.value = exporter.stopping();
     });
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) composer?.refresh();
-    updateFeedback();
+    if (preview) composer?.refresh();
   }
 
   function showPage(next) {
-    page = next;
-    for (const [id, value] of [
-      ['library', 'library'],
-      ['editPage', 'edit'],
-      ['offline', 'offline'],
-    ])
-      $(id).hidden = next !== value;
+    store.page.value = next;
     $('body').scrollTop = next === 'library' ? libraryScroll : 0;
     controls();
   }
@@ -418,6 +438,7 @@ export function createApp({
     const diagnostic = diagnostics.begin(details.action || kind, {pageUrl: readPageUrl(), record, ...details});
     controller = own;
     jobKind = kind;
+    store.progress.value = kind === 'export' ? NaN : null;
     if (kind === 'export') {
       updater.stop();
       window.addEventListener('beforeunload', holdPage);
@@ -436,11 +457,11 @@ export function createApp({
       jobKind = null;
       exporter.reset();
       controls();
-      if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh(true);
-      if (kind === 'export' && record?.live && ready && !$('panel').hidden) updater.start(record);
+      if (preview) void marks?.refresh(true);
+      if (kind === 'export' && record?.live && ready && isOpen()) updater.start(record);
       if (pendingRoute) {
         pendingRoute = false;
-        if (!$('panel').hidden) void currentVideo();
+        if (isOpen()) void currentVideo();
       }
     }
   }
@@ -449,14 +470,12 @@ export function createApp({
     event.preventDefault();
     event.returnValue = '';
   }
-  function clearDownloads() {
-    $('downloads').replaceChildren();
-  }
+  const clearDownloads = () => (store.downloads.value = []);
   function leavePage() {
     updater.stop();
     scheduleController?.abort();
     scheduleController = null;
-    $('scheduleNote').hidden = true;
+    store.libraryNote.value = '';
     recordingController?.abort();
     recordingController = null;
     recordingPlan = null;
@@ -467,6 +486,7 @@ export function createApp({
     estimateState = 'loading';
     backgroundStarted = false;
     record = null;
+    store.record.value = null;
     ready = false;
     playbackTotal = 0;
     clipSelection = null;
@@ -474,7 +494,7 @@ export function createApp({
     segments = [];
     segmentIndex = 0;
     renderSegments();
-    $('wholeRecording').checked = false;
+    store.whole.value = false;
     timeline.stop();
     player?.clear();
     thumbnails.clear();
@@ -485,30 +505,15 @@ export function createApp({
     updateClock(0);
   }
   function renderCards() {
-    const focusedKey = root.activeElement?.dataset.recordKey,
-      scroll = $('body').scrollTop;
-    root
-      .querySelectorAll('[data-member]')
-      .forEach(el => el.setAttribute('aria-pressed', el.dataset.member === member.id));
-    const records = libraries.get(member)?.records || [];
-    $('cards').replaceChildren();
-    $('libraryEmpty').hidden = records.length > 0;
-    $('libraryEmpty').textContent = '近 14 天暂无可用回放';
-    for (const r of records) {
-      const card = createRecordCard(r, () => {
-        libraryScroll = $('body').scrollTop;
-        void enterRecord(r);
-      });
-      card.dataset.recordKey = r.key;
-      $('cards').append(card);
-      if (r.key === focusedKey) card.focus({preventScroll: true});
-    }
-    $('body').scrollTop = scroll;
+    const loaded = libraries.get(member());
+    batch(() => {
+      store.records.value = loaded?.records || [];
+      store.libraryLoaded.value = Boolean(loaded);
+    });
     controls();
   }
   function showScheduleResult(result) {
-    $('scheduleNote').hidden = !result.failed && !result.liveFailed;
-    $('scheduleNote').textContent = [
+    store.libraryNote.value = [
       result.liveFailed ? '当前直播状态暂不可用，可刷新重试。' : '',
       result.failed ? '部分日程暂不可用，可刷新重试。' : '',
     ]
@@ -519,12 +524,12 @@ export function createApp({
     leavePage();
     showPage('library');
     renderCards();
-    const selected = member;
+    const selected = member();
     await job(
       async signal => {
         status('正在加载场次…');
         const result = await libraries.load(selected, {refresh, signal});
-        if (signal.aborted || member !== selected) return;
+        if (signal.aborted || member() !== selected) return;
         renderCards();
         showScheduleResult(libraries.get(selected) || result);
       },
@@ -532,21 +537,25 @@ export function createApp({
       {action: 'library_load', record: {room: selected.room}},
     );
   }
-  function renderRecordMeta() {
-    $('recordMeta').textContent = (
-      isSubmission()
-        ? [
-            record.uploader,
-            record.partTitle ? `P${record.part} · ${record.partTitle}` : '',
-            `导出 ${record.qualityLabel}`,
-          ]
-        : [record.member, formatDate(record.start), record.schedule?.type]
-    )
-      .filter(Boolean)
-      .join(' · ');
+  function showRecord() {
+    batch(() => {
+      store.record.value = record;
+      store.recordMeta.value = (
+        isSubmission()
+          ? [
+              record.uploader,
+              record.partTitle ? `P${record.part} · ${record.partTitle}` : '',
+              `导出 ${record.qualityLabel}`,
+            ]
+          : [record.member, formatDate(record.start), record.schedule?.type]
+      )
+        .filter(Boolean)
+        .join(' · ');
+      store.exportMode.value = exportMode();
+    });
   }
   function enrichRecordType() {
-    if (!record || isSubmission() || record.schedule !== undefined || $('panel').hidden) return;
+    if (!record || isSubmission() || record.schedule !== undefined || !isOpen()) return;
     scheduleController?.abort();
     const own = new AbortController();
     scheduleController = own;
@@ -554,9 +563,9 @@ export function createApp({
     void schedules
       .enrich([selected], {signal: own.signal})
       .then(result => {
-        if (own.signal.aborted || record !== selected || page !== 'edit') return;
+        if (own.signal.aborted || record !== selected || store.page.value !== 'edit') return;
         record = result.records[0];
-        renderRecordMeta();
+        showRecord();
       })
       .catch(() => {});
   }
@@ -566,13 +575,11 @@ export function createApp({
     previewDiagnostic = diagnostics.begin('preview', {pageUrl: readPageUrl(), record: next});
     loadedRoute = null;
     showPage('edit');
-    setTitle($('recordTitle'), record.title);
-    renderRecordMeta();
+    showRecord();
     enrichRecordType();
-    renderExportMode();
     status('正在加载录像…');
     const {total, streams} = await player.load(record, signal);
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) signal.throwIfAborted();
+    if (preview) signal.throwIfAborted();
     playbackTotal = total;
     updateClock(0);
     recordingController = new AbortController();
@@ -587,7 +594,7 @@ export function createApp({
     player.refreshStill?.();
     $('editPage').focus({preventScroll: true});
     updater.start(record);
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.refresh();
+    if (preview) void marks?.refresh();
   }
   function segmentBounds(owner, streams, total) {
     // Only advertise generated footage, including when the last live segment
@@ -598,24 +605,13 @@ export function createApp({
     }));
   }
   function renderSegments() {
-    const container = $('segments');
-    container.hidden = segments.length < 2;
-    container.replaceChildren(
-      ...(segments.length < 2
-        ? []
-        : segments.map((bounds, i) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.setAttribute('aria-pressed', i === segmentIndex);
-            const range = document.createElement('span');
-            range.textContent = formatTimeRange(bounds.start, bounds.end, '–');
-            button.append(`第 ${i + 1} 段`, range);
-            button.onclick = () => {
-              if (i !== segmentIndex) selectSegment(i);
-            };
-            return button;
-          })),
-    );
+    batch(() => {
+      store.segments.value = segments.map(bounds => ({
+        ...bounds,
+        label: formatTimeRange(bounds.start, bounds.end, '–'),
+      }));
+      store.segmentIndex.value = segmentIndex;
+    });
     controls();
   }
   function selectSegment(index) {
@@ -624,7 +620,7 @@ export function createApp({
     segmentIndex = index;
     player.pause();
     timeline.reset(bounds);
-    clipSelection = $('wholeRecording').checked ? {...bounds} : null;
+    clipSelection = store.whole.value ? {...bounds} : null;
     // Live recordings open near the newest picture; replays open at the segment start.
     seekTo(
       record.live && index === segments.length - 1
@@ -660,18 +656,18 @@ export function createApp({
       {action: 'record_load', record: next},
     );
   }
+  const offline = (title, reason) => (store.offline.value = {title, reason});
   async function currentRoom() {
     await job(
       async (signal, diagnostic) => {
         leavePage();
-        $('offlineTitle').textContent = '暂时无法打开本场直播';
+        offline('暂时无法打开本场直播', '正在加载…');
         showPage('offline');
-        $('offlineReason').textContent = '正在加载…';
         try {
           const source = MEMBERS.find(m => m.room === room) || {room, name: '当前直播间'};
           const next = await api.current(source, signal, {allowOffline: true});
           if (!next) {
-            $('offlineReason').textContent = '当前没有直播，可以看看历史回放。';
+            offline('当前没有直播', '可以看看历史回放。');
             return;
           }
           await loadRecord(next, signal);
@@ -679,7 +675,7 @@ export function createApp({
           if (e.name === 'AbortError') throw e;
           diagnostic.fail(e, signal);
           showPage('offline');
-          $('offlineReason').textContent = e.message;
+          offline('暂时无法打开本场直播', e.message);
         }
       },
       'load',
@@ -694,18 +690,15 @@ export function createApp({
       async (signal, diagnostic) => {
         leavePage();
         loadedRoute = null;
-        $('offlineTitle').textContent = '暂时无法打开当前视频';
+        offline('暂时无法打开当前视频', '正在加载…');
         showPage('offline');
-        $('offlineReason').textContent = '正在加载…';
         try {
           const next = await submissions.load(url, {signal});
           signal.throwIfAborted();
           usePlayer('submission');
           record = next;
           showPage('edit');
-          setTitle($('recordTitle'), record.title);
-          renderRecordMeta();
-          renderExportMode();
+          showRecord();
           loadedRoute = route.key;
           const {total} = await player.load(record, signal);
           signal.throwIfAborted();
@@ -715,7 +708,7 @@ export function createApp({
           ready = true;
           timeline.setCurrent(player.position());
           updateClock(player.position());
-          if ($('panel').hidden) player.suspend();
+          if (!isOpen()) player.suspend();
           $('editPage').focus({preventScroll: true});
         } catch (error) {
           if (signal.aborted) throw error;
@@ -724,7 +717,7 @@ export function createApp({
           ready = false;
           player?.clear();
           showPage('offline');
-          $('offlineReason').textContent = error.message;
+          offline('暂时无法打开当前视频', error.message);
           status(error.message, true);
         }
       },
@@ -737,12 +730,12 @@ export function createApp({
     const route = parseSubmissionUrl(readPageUrl()),
       key = route?.key;
     if (key === observedRoute) {
-      if (playerKind === 'submission' && !$('panel').hidden) player.refresh();
+      if (playerKind === 'submission' && isOpen()) player.refresh();
       return;
     }
     observedRoute = key;
     controls();
-    if (!route || $('panel').hidden) return;
+    if (!route || !isOpen()) return;
     if (controller) {
       if (jobKind === 'load') {
         pendingRoute = true;
@@ -754,9 +747,9 @@ export function createApp({
   }
   async function open() {
     syncTheme();
-    $('panel').hidden = false;
+    store.open.value = true;
     if (!allowed()) return;
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) void workflow?.opened();
+    if (preview) void marks?.opened();
     if (playerKind === 'submission') player.resume();
     void versionControl.refresh();
     const route = parseSubmissionUrl(readPageUrl());
@@ -769,26 +762,29 @@ export function createApp({
     if (!initialized) {
       initialized = true;
       await (room ? currentRoom() : library());
-    } else if (page === 'library') {
+    } else if (store.page.value === 'library') {
       renderCards();
-      const selected = member;
+      const selected = member();
       void libraries
         .load(selected)
         .then(result => {
-          if (member !== selected || page !== 'library' || $('panel').hidden) return;
+          if (member() !== selected || store.page.value !== 'library' || !isOpen()) return;
           renderCards();
           showScheduleResult(libraries.get(selected) || result);
         })
         .catch(() => {});
-    } else if (page === 'edit') {
+    } else if (store.page.value === 'edit') {
       enrichRecordType();
       if (ready && record?.live) updater.start(record);
     }
   }
-  const close = () => {
+  function close() {
     updater.stop();
     timeline.stop();
-    $('panel').hidden = true;
+    batch(() => {
+      store.open.value = false;
+      store.settingsOpen.value = false;
+    });
     scheduleController?.abort();
     if (playerKind === 'submission') {
       player.suspend();
@@ -796,55 +792,8 @@ export function createApp({
       if (record) thumbnails.load(record, []);
       submissionThumbnails = false;
     } else playback.cancel();
-  };
-  $('close').onclick = close;
-  $('launcher').onclick = () => {
-    if (!panelWindow.launcherDragged()) $('panel').hidden ? void open() : close();
-  };
-  $('currentVideo').onclick = () => void currentVideo();
-  $('back').onclick = () => void library();
-  $('browseHistory').onclick = () => void library();
-  $('retryCurrent').onclick = () => (parseSubmissionUrl(readPageUrl()) ? currentVideo() : currentRoom());
-  $('refreshLibrary').onclick = () => void library(true);
-  $('refreshEditor').onclick = () => (isSubmission() ? currentVideo() : refreshRecording());
-  root.querySelectorAll('[data-member]').forEach(
-    el =>
-      (el.onclick = () => {
-        member = MEMBERS.find(m => m.id === el.dataset.member);
-        set('member', member.id);
-        libraryScroll = 0;
-        void library();
-      }),
-  );
-  $('cancel').onclick = () => {
-    if (exporter.stopWhole()) {
-      controls();
-      status('正在保存…');
-    } else controller?.abort();
-  };
-  $('download').onclick = () => ($('wholeRecording').checked ? exporter.exportWhole() : exporter.exportSelected());
-  $('wholeRecording').onchange = () => {
-    if ($('wholeRecording').checked) {
-      clipSelection = timeline.getSelection();
-      timeline.setSelection({...segments[segmentIndex]}, true);
-    } else {
-      timeline.setSelection(clipSelection, true);
-      clipSelection = null;
-    }
-    controls();
-  };
-  root.querySelectorAll('[data-mode]').forEach(
-    button =>
-      (button.onclick = () => {
-        const kind = modeKind();
-        exportModes[kind] = button.dataset.mode;
-        set(`exportMode.${kind}`, button.dataset.mode);
-        renderExportMode();
-        updateExportSummary();
-      }),
-  );
+  }
   exporter = createExportActions({
-    root,
     job,
     status,
     saveFilePicker,
@@ -854,6 +803,11 @@ export function createApp({
     timeline,
     clearDownloads,
     refreshControls: controls,
+    view: {
+      progress: value => (store.progress.value = value),
+      estimate: text => (store.estimate.value = text),
+      saved: text => (store.downloads.value = [...store.downloads.value, text]),
+    },
     session: {
       busy: () => Boolean(controller),
       ready: () => ready,
@@ -863,8 +817,7 @@ export function createApp({
       plan: () => recordingPlan,
       estimate: () => estimate,
       exportMode,
-      danmaku: () =>
-        !isSubmission() && !$('wholeRecording').checked && exportMode() === 'danmaku' ? {adjustment: 0} : null,
+      danmaku: () => (!isSubmission() && !store.whole.value && exportMode() === 'danmaku' ? {adjustment: 0} : null),
       segments: () => segments,
       segmentIndex: () => segmentIndex,
       total: () => playbackTotal,
@@ -876,19 +829,16 @@ export function createApp({
     status,
     getPlayer: () => player,
     togglePlayback: () => activePlayback()?.toggle(),
-    isActive: () => ready && !controller && !$('panel').hidden,
+    isActive: () => ready && !controller && isOpen(),
+    isWhole: () => store.whole.value,
   });
   bindShortcut({
     root,
     get,
     set,
-    onPress: () => ($('panel').hidden ? void open() : close()),
-    ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__
-      ? {accepts: value => workflow?.acceptsPanelShortcut(value) ?? true}
-      : {}),
+    onPress: () => (isOpen() ? close() : void open()),
+    ...(preview ? {accepts: value => marks?.acceptsPanelShortcut(value) ?? true} : {}),
   });
-  $('togglePlayback').onclick = () => activePlayback()?.toggle();
-  $('playSelection').onclick = () => player.playSelection();
   const unbindPageProgress = bindPageProgress({
     document,
     getPlayer: () => player,
@@ -896,15 +846,15 @@ export function createApp({
       playerKind === 'submission' &&
       ready &&
       (!controller || jobKind === 'export') &&
-      !$('panel').hidden &&
+      isOpen() &&
       parseSubmissionUrl(readPageUrl())?.key === loadedRoute,
   });
   const navigationTimer = setInterval(checkCurrentVideo, 500);
   window.addEventListener('popstate', checkCurrentVideo);
   window.addEventListener('pagehide', event => {
     if (event.persisted) return;
-    if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
-      workflow?.dispose();
+    if (preview) {
+      marks?.dispose();
       composer?.dispose();
     }
     unbindPageProgress();
@@ -921,12 +871,15 @@ export function createApp({
   const preload = () => {
     if (allowed() && !preloaded) {
       preloaded = true;
-      void libraries.preload(member);
+      void libraries.preload(member());
     }
   };
   $('launcher').addEventListener('pointerenter', preload);
-  $('launcher').addEventListener('focus', preload);
-  if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
+  $('launcher').addEventListener('focusin', preload);
+  if (preview) {
+    // The compose sheet renders the hosts its form and cover editor are built into.
+    const ui = {MarkPins, MarksPanel, MiniMarks, ComposeSheet};
+    store.extras.value = {ui};
     composer = createComposer({
       root,
       client: studio,
@@ -938,7 +891,7 @@ export function createApp({
       session: {
         ready: () => allowed() && ready && !controller && !isSubmission(),
         isSubmission,
-        whole: () => $('wholeRecording').checked,
+        whole: () => store.whole.value,
         snapshot: () => ({
           record: {...record},
           selection: {...timeline.getSelection()},
@@ -949,7 +902,7 @@ export function createApp({
         }),
       },
     });
-    workflow = createWorkflow({
+    marks = createMarksSession({
       root,
       client: studio,
       get,
@@ -957,16 +910,20 @@ export function createApp({
       keys: storageKeys,
       api,
       mediaRequest,
-      open,
+      pageUrl: readPageUrl,
+      notify: (text, options) => toast(store, text, options),
       onLogout() {
         composer.logout();
         controller?.abort();
         libraries.abortAll();
         leavePage();
         initialized = false;
+        store.settingsOpen.value = false;
         showPage('library');
       },
       session: {
+        isOpen,
+        open,
         record: () => record,
         ready: () => ready && !controller,
         view: () => timeline.getView(),
@@ -978,7 +935,7 @@ export function createApp({
         },
         select(selection, mark) {
           if (!allowed() || !ready || controller) return;
-          $('wholeRecording').checked = false;
+          store.whole.value = false;
           selectSegment(selection.part.index);
           const offset = selection.part.start_time - record.start;
           timeline.setSelection({start: offset + selection.start, end: offset + selection.end}, true);
@@ -988,12 +945,22 @@ export function createApp({
         },
       },
     });
+    store.extras.value = {
+      ui,
+      marks,
+      composer,
+      // From a mark row: select its clip, then start the submission with that mark linked.
+      composeMark: async mark => {
+        if (await marks.actions.jump(mark)) composer.actions.start();
+      },
+      expand: () => void open(),
+    };
     // Block stale controls and synthetic UI events immediately on logout.
     for (const type of ['click', 'keydown', 'change', 'submit'])
       root.addEventListener(
         type,
         event => {
-          if (allowed() || event.target.closest('#studioLogin, #launcher, #close')) return;
+          if (allowed() || event.target.closest('#studioLogin, #launcher, #close, #miniMarks')) return;
           event.preventDefault();
           event.stopImmediatePropagation();
         },

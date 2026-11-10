@@ -1,9 +1,8 @@
 import {formatBytes} from '../shared/format.js';
 
-export function renderExportProgress(progress, status, state, submission) {
+export function renderExportProgress(setProgress, status, state, submission) {
   const preparing = submission && state.phase === 'preparing';
-  if (preparing) progress.removeAttribute('value');
-  else progress.value = state.progress * 100;
+  setProgress(preparing ? NaN : state.progress * 100);
   const parts = [];
   if (state.reconnecting) parts.push(`网络波动，正在重连（第 ${state.attempt} 次）`);
   if (state.message) parts.push(state.message);

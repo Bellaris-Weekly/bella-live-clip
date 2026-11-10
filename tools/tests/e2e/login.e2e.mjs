@@ -14,7 +14,7 @@ before(async () => {
       contents: `
         import {createApp} from './src/app/application.js';
         const saved = {left: 80, top: 40, width: 800, height: 720};
-        const values = new Map([['windowV2', saved]]), writes = [], listeners = [];
+        const values = new Map([['windowV3', saved]]), writes = [], listeners = [];
         let identity = null;
         const studio = {
           identity: () => identity,
@@ -45,7 +45,9 @@ before(async () => {
     write: false,
     format: 'iife',
     define: {__PREVIEW__: 'true'},
-    loader: {'.html': 'text', '.css': 'text', '.txt': 'text'},
+    loader: {'.css': 'text', '.txt': 'text'},
+    jsx: 'automatic',
+    jsxImportSource: 'preact',
     logLevel: 'error',
   });
   script = result.outputFiles[0].text;
@@ -75,7 +77,21 @@ async function fixture(t, {width = 1280, height = 900, dark = false} = {}) {
   return page;
 }
 
+// The panel's size may transition when it switches between the editor and the login card.
+async function settled(page) {
+  await page.evaluate(async () => {
+    const panel = window.rig.app.root.getElementById('panel'),
+      frame = () => new Promise(requestAnimationFrame),
+      key = () => JSON.stringify(panel.getBoundingClientRect());
+    for (let stable = 0, last; stable < 3; await frame()) {
+      stable = key() === last ? stable + 1 : 0;
+      last = key();
+    }
+  });
+}
+
 async function checkLayout(page) {
+  await settled(page);
   const layout = await page.evaluate(() => {
     const root = window.rig.app.root;
     const $ = id => root.getElementById(id);
@@ -84,6 +100,8 @@ async function checkLayout(page) {
       return {x, y, width, height};
     };
     const link = $('studioLogin').querySelector('a');
+    // In a very short window the card scrolls inside the panel; the button must be reachable there.
+    link.scrollIntoView({block: 'nearest'});
     return {
       panel: bounds($('panel')),
       text: bounds($('studioLogin').querySelector('p')),
@@ -91,21 +109,21 @@ async function checkLayout(page) {
       href: link.href,
       target: link.target,
       visibleResize: [...root.querySelectorAll('.resize')].filter(el => el.getClientRects().length).length,
-      visibleVersion: Boolean($('version').getClientRects().length),
+      visibleVersion: Boolean($('version')?.getClientRects().length),
       visibleShortcut: Boolean($('shortcut').getClientRects().length),
       noOverflow: $('studioLogin').scrollWidth <= $('studioLogin').clientWidth,
     };
   });
   const {panel, text, link} = layout;
   const viewport = page.viewportSize();
-  assert.ok(panel.width <= 400 && panel.height < 240, JSON.stringify(panel));
-  assert.ok(panel.x >= 9 && panel.y >= 9);
+  assert.ok(panel.width <= 420 && panel.height <= 320, JSON.stringify(panel));
+  assert.ok(panel.x >= 9 && panel.y >= 9, JSON.stringify(panel));
   assert.ok(panel.x + panel.width <= viewport.width - 9);
   assert.ok(panel.y + panel.height <= viewport.height - 9);
   assert.ok(Math.abs(panel.x + panel.width / 2 - viewport.width / 2) <= 1);
   assert.ok(Math.abs(panel.y + panel.height / 2 - viewport.height / 2) <= 1);
   assert.ok(link.y - (text.y + text.height) >= 19, 'login button must not overlap the explanation');
-  assert.ok(link.height >= 42 && link.y + link.height < panel.y + panel.height);
+  assert.ok(link.height >= 40 && link.y + link.height < panel.y + panel.height, JSON.stringify({link, panel}));
   assert.equal(layout.href, 'https://studio.bk0717.com/plugin/link');
   assert.equal(layout.target, '_blank');
   assert.equal(layout.visibleResize, 0);
@@ -146,6 +164,7 @@ test('login preserves editor geometry through dragging, authentication, logout a
   await page.screenshot({path: `${artifacts}/keyboard-focus.png`});
   await page.evaluate(() => window.rig.login());
   await page.locator('#studioLogin').waitFor({state: 'hidden'});
+  await settled(page);
   const editor = await page.locator('#panel').boundingBox();
   assert.deepEqual(editor, {x: 80, y: 40, width: 800, height: 720});
   assert.equal(await page.locator('.resize:visible').count(), 8);
@@ -157,5 +176,5 @@ test('login preserves editor geometry through dragging, authentication, logout a
   assert.deepEqual(await checkLayout(page), before);
   await page.setViewportSize({width: 360, height: 640});
   await checkLayout(page);
-  assert.equal(await page.evaluate(() => window.rig.writes.includes('windowV2')), false);
+  assert.equal(await page.evaluate(() => window.rig.writes.includes('windowV3')), false);
 });

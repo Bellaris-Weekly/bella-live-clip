@@ -154,13 +154,36 @@ pageVideo.muted = true;
 pageVideo.controls = true;
 pageVideo.width = 240;
 document.body.append(pageVideo);
+// The application saves through the file picker; keep what it writes in memory.
+const saved = {name: null, writes: []};
+const saveFilePicker = async ({suggestedName}) => ({
+  name: suggestedName,
+  async createWritable() {
+    saved.name = suggestedName;
+    saved.writes = [];
+    return {
+      async write(value) {
+        saved.writes.push({...value, data: value.data.slice()});
+      },
+      async close() {
+        const bytes = new Uint8Array(Math.max(...saved.writes.map(value => value.position + value.data.length)));
+        for (const value of saved.writes) bytes.set(value.data, value.position);
+        saved.blob = new Blob([bytes], {type: 'video/mp4'});
+      },
+      async abort() {},
+    };
+  },
+});
 const app = createApp({
   api,
+  saveFilePicker,
   pageUrl: () => pageUrl,
-  get: (key, fallback) => (key === 'windowV2' ? {left: 480, top: 20, width: 780, height: 780} : fallback),
+  get: (key, fallback) => (key === 'windowV3' ? {left: 480, top: 20, width: 780, height: 780} : fallback),
 });
 const $ = id => app.root.getElementById(id);
 const editable = () => !$('editPage').hidden && !$('download').disabled;
+const back = () => app.root.querySelector('[aria-label="返回场次列表"]');
+const head = () => app.root.querySelector('.head-meta').textContent;
 const title = index => $('recordTitle').textContent === `测试投稿 ${index + 1}`;
 const navigate = async (index, part = 1) => {
   pageUrl = route(index, part);
@@ -188,9 +211,9 @@ document.getElementById('test').onclick = async () => {
     assert(!pageVideo.paused, '打开插件中断了页面播放');
     assert(!reads.some(item => item.url), '打开面板不应请求任何预览媒体或缩略图');
     assert(!$('pageMirror').hidden && $('fullVideo').hidden, '投稿仍使用独立播放器');
-    assert($('recordMeta').textContent.includes('P1 · 测试分段 1'), '第一投稿分 P 错误');
-    assert($('wholeRecordingLabel').hidden, '投稿仍显示直播整场入口');
-    assert($('exportMode').hidden, '投稿不应提供导出模式选项');
+    assert(head().includes('P1 · 测试分段 1'), '第一投稿分 P 错误');
+    assert(!$('wholeRecordingLabel'), '投稿仍显示直播整场入口');
+    assert(!$('exportMode').querySelector('[data-mode="danmaku"]'), '投稿不应提供弹幕压制选项');
     pass('打开面板不中断页面播放，镜像无需额外媒体请求');
     $('togglePlayback').click();
     assert(pageVideo.paused, '插件暂停没有控制页面');
@@ -299,10 +322,7 @@ document.getElementById('test').onclick = async () => {
     await until(() => reads.some(item => item.url), '操作后按需加载缩略图');
     pass('标记不中断观看，时间轴定位页面并恢复播放，缩略图按需读取');
     await navigate(1, 2);
-    await until(
-      () => editable() && title(1) && $('recordMeta').textContent.includes('P2 · 测试分段 2'),
-      '第二投稿第二分 P',
-    );
+    await until(() => editable() && title(1) && head().includes('P2 · 测试分段 2'), '第二投稿第二分 P');
     pass('切换不同投稿和非首分 P');
 
     delayedView = {...gate(), bvid: ids[0]};
@@ -312,10 +332,7 @@ document.getElementById('test').onclick = async () => {
     assert(delayedView.reads[0].signal.aborted, '切换视频没有取消旧加载');
     delayedView.release();
     delayedView = null;
-    await until(
-      () => editable() && title(1) && $('recordMeta').textContent.includes('P1 · 测试分段 1'),
-      '迟到结果后新视频',
-    );
+    await until(() => editable() && title(1) && head().includes('P1 · 测试分段 1'), '迟到结果后新视频');
     pass('旧请求迟到不能覆盖新视频');
 
     delayedView = {...gate(), bvid: ids[1]};
@@ -347,7 +364,7 @@ document.getElementById('test').onclick = async () => {
     await until(() => $('clock').textContent.startsWith('00:19'), '重新打开追上页面进度');
     pass('加载中关闭面板后保持休眠，重开同步最新进度');
 
-    assert($('exportMode').hidden, '切换视频后重新显示了模式选择');
+    assert(!$('exportMode').querySelector('[data-mode="danmaku"]'), '切换视频后重新显示了弹幕选项');
     pageVideo.pause();
     pageVideo.currentTime = 7.13;
     await until(() => !pageVideo.seeking, '选区起点');
@@ -362,7 +379,7 @@ document.getElementById('test').onclick = async () => {
       pixels.some((value, index) => index % 4 !== 3 && value > 0),
       '镜像画面为空',
     );
-    $('playSelection').click();
+    [...app.root.querySelectorAll('button')].find(button => button.textContent.includes('播放选段')).click();
     await until(() => pageVideo.paused && Math.abs(pageVideo.currentTime - 10.47) < 0.05, '选段自动停止');
     await pageVideo.play();
     mediaGate = gate();
@@ -372,24 +389,23 @@ document.getElementById('test').onclick = async () => {
     assert(!pageVideo.paused, '导出中断了页面播放');
     await navigate(0, 2);
     assert(title(1), '导航改变了正在导出的标题');
-    assert(!$('currentVideo').hidden, '导出期间未提供新当前视频入口');
+    assert($('currentVideo'), '导出期间未提供新当前视频入口');
     exportGate.release();
     mediaGate = null;
-    await until(() => $('downloads').querySelector('a') && !$('download').disabled, '源视频导出完成');
-    const link = $('downloads').querySelector('a');
-    assert(link.download.startsWith('测试投稿 2_P1_测试分段 1'), '导出文件名跟随了新页面');
-    const blob = await (await fetch(link.href)).blob(),
+    await until(() => $('downloads') && saved.blob && !$('download').disabled, '源视频导出完成');
+    assert(saved.name.startsWith('测试投稿 2_P1_测试分段 1'), '导出文件名跟随了新页面');
+    const blob = saved.blob,
       info = await inspectMedia(blob);
     assert(info.hasAudio && info.hasVideo && Math.abs(info.duration - 3.34) < 0.05, '投稿没有固定精确裁剪或丢失音视频');
     await fetch('/artifact/submission-navigation-export.mp4', {method: 'POST', body: blob});
-    pass('投稿无模式选项且固定精确裁剪，导出期间导航保持原视频、文件名及声音');
+    pass('投稿无弹幕选项且默认精确裁剪，导出期间导航保持原视频、文件名及声音');
 
     $('currentVideo').click();
     await until(() => editable() && title(0), '主动载入新当前视频');
-    assert($('recordMeta').textContent.includes('P2 · 测试分段 2'), '导出后当前视频分 P 错误');
-    $('back').click();
-    await until(() => !$('library').hidden && !$('currentVideo').disabled, '返回直播列表');
-    assert(!$('currentVideo').hidden, '直播列表丢失当前视频入口');
+    assert(head().includes('P2 · 测试分段 2'), '导出后当前视频分 P 错误');
+    back().click();
+    await until(() => !$('library').hidden && $('currentVideo') && !$('currentVideo').disabled, '返回直播列表');
+    assert($('currentVideo'), '直播列表丢失当前视频入口');
     $('currentVideo').click();
     await until(() => editable() && title(0), '从列表返回当前视频');
     pass('直播列表与当前视频入口往返');
@@ -397,7 +413,7 @@ document.getElementById('test').onclick = async () => {
     $('close').click();
     await navigate(1, 2);
     await app.open();
-    await until(() => editable() && title(1) && $('recordMeta').textContent.includes('P2'), '关闭期间导航后重开');
+    await until(() => editable() && title(1) && head().includes('P2'), '关闭期间导航后重开');
     pass('关闭期间换视频，重开重新核对身份');
     const replacement = document.createElement('video');
     replacement.src = '/fixture.mp4';

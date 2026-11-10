@@ -190,7 +190,6 @@ test('studio network/storage grants and feature strings exist only in preview bu
     for (const text of [
       'bella-plugin-link',
       'studio.pending.',
-      'studioLogin',
       '等待回放',
       '/clip-defaults',
       '/templates',
@@ -203,8 +202,6 @@ test('studio network/storage grants and feature strings exist only in preview bu
       '/submissions',
       '/covers',
       '确认投稿',
-      '关联轴：',
-      'studio-compose',
       'cover-wide.jpg',
     ])
       assert.equal(script.includes(text), preview, text);
@@ -212,6 +209,11 @@ test('studio network/storage grants and feature strings exist only in preview bu
     assert.ok(!script.includes('desc_template'));
     assert.ok(!script.includes('fixed_tags'));
     if (!preview) assert.ok(!script.includes('studio.bk0717.com/api'));
+    // The login gate, settings rows and editor side panel are part of the shared Preact tree and
+    // only switch on at runtime (`preview` prop), so their markup is bundled into both builds.
+    // They must exist in the preview build; the public build only gets the inert strings.
+    if (preview)
+      for (const text of ['studioLogin', 'editorSide', 'markShortcut']) assert.ok(script.includes(text), text);
   }
 });
 

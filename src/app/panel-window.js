@@ -6,8 +6,14 @@ import {constrainRect, resizeRect} from '../ui/panel-geometry.js';
 export function createPanelWindow({root, get, set}) {
   const $ = id => root.getElementById(id);
   const viewport = () => ({width: innerWidth, height: innerHeight});
-  const defaults = () => constrainRect({left: innerWidth - 820, top: 20, width: 800, height: 880}, viewport());
-  let rect = constrainRect(get('windowV2', defaults()), viewport());
+  // The editor shows the picture, the timeline and (internally) the marks side by side, so
+  // the panel opens large; people who want it smaller resize it once and it stays that way.
+  const defaults = () => {
+    const width = Math.min(1320, innerWidth - 40),
+      height = Math.min(920, innerHeight - 40);
+    return constrainRect({left: (innerWidth - width) / 2, top: (innerHeight - height) / 2, width, height}, viewport());
+  };
+  let rect = constrainRect(get('windowV3', defaults()), viewport());
   const applyRect = () =>
     Object.assign($('panel').style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
   applyRect();
@@ -18,7 +24,8 @@ export function createPanelWindow({root, get, set}) {
       const x = e.clientX,
         y = e.clientY,
         initial = {...rect};
-      element.setPointerCapture(e.pointerId);
+      // Capture on the pressed launcher button, so a press without a drag still clicks that button.
+      (e.target.closest('button') ?? element).setPointerCapture(e.pointerId);
       e.preventDefault();
       const move = ev => onMove(ev.clientX - x, ev.clientY - y, initial);
       const finish = () => {
@@ -37,7 +44,7 @@ export function createPanelWindow({root, get, set}) {
       rect = constrainRect({...r, left: r.left + dx, top: r.top + dy}, viewport());
       applyRect();
     },
-    () => set('windowV2', rect),
+    () => set('windowV3', rect),
   );
   root.querySelectorAll('[data-edge]').forEach(el =>
     drag(
@@ -46,16 +53,17 @@ export function createPanelWindow({root, get, set}) {
         rect = resizeRect(r, el.dataset.edge, dx, dy, viewport());
         applyRect();
       },
-      () => set('windowV2', rect),
+      () => set('windowV3', rect),
     ),
   );
   let launcherMoved = false,
     launcherStart;
   const savedLauncher = get('launcher', null);
   function moveLauncher(left, top) {
+    const {width, height} = $('launcher').getBoundingClientRect();
     Object.assign($('launcher').style, {
-      left: `${clamp(left, 0, innerWidth - 58)}px`,
-      top: `${clamp(top, 0, innerHeight - 62)}px`,
+      left: `${clamp(left, 0, innerWidth - width)}px`,
+      top: `${clamp(top, 0, innerHeight - height)}px`,
       right: 'auto',
       bottom: 'auto',
     });
