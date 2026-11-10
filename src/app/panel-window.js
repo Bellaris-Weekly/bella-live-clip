@@ -13,6 +13,7 @@ export function createPanelWindow({root, get, set}) {
   applyRect();
   function drag(element, onMove, onEnd) {
     element.addEventListener('pointerdown', e => {
+      if (element !== $('launcher') && $('panel').hasAttribute('data-logged-out')) return;
       if (e.button !== 0 || (e.target.closest('button,input,select,a') && element !== $('launcher'))) return;
       const x = e.clientX,
         y = e.clientY,

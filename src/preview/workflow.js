@@ -15,8 +15,17 @@ export function createLoginGate({root, client}) {
   login.innerHTML = `<p>登录贝报创作台后即可使用。</p><a class="button" href="${STUDIO}/plugin/link" target="_blank" rel="noopener noreferrer">登录</a>`;
   $('body').prepend(login);
   const style = document.createElement('style');
-  style.textContent =
-    '#panel[data-logged-out] #body > :not(#studioLogin), #panel[data-logged-out] #shortcut, #panel[data-logged-out] #version {display:none!important} #studioLogin {padding:24px}';
+  style.textContent = `
+    #panel[data-logged-out] {inset:0!important;margin:auto;width:min(400px,calc(100vw - 20px))!important;height:fit-content!important;max-height:calc(100dvh - 20px)}
+    #panel[data-logged-out] #body > :not(#studioLogin), #panel[data-logged-out] #shortcut,
+    #panel[data-logged-out] #version, #panel[data-logged-out] .resize {display:none!important}
+    #panel[data-logged-out] #header {cursor:default}
+    #studioLogin {display:flex;flex-direction:column;align-items:flex-start;gap:20px;padding:24px}
+    #studioLogin p {line-height:1.6}
+    #studioLogin a {display:inline-flex;align-items:center;justify-content:center;min-width:88px;min-height:42px;line-height:20px;text-decoration:none;background:var(--accent);color:var(--paper)}
+    #studioLogin a:hover {background:var(--accent-hover)}
+    #studioLogin a:focus-visible {outline:2px solid var(--text);outline-offset:3px}
+  `;
   root.append(style);
   const render = () => {
     const loggedOut = !client.identity();
