@@ -1,5 +1,7 @@
 import {createClipUpload, createUploadTransport, pickLine} from './upload.js';
-import {createSubmissionJob, descriptionFor, submissionTags} from './submission.js';
+import {createSubmissionJob} from './submission.js';
+import {submissionSchedule} from './templates.js';
+import {createTemplateForm} from './template-form.js';
 import {createCoverEditor} from './cover.js';
 import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
 import {createExportMetrics} from '../media/export-metrics.js';
@@ -25,9 +27,7 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
   area.className = 'studio-compose';
   area.hidden = true;
   area.innerHTML = `<h3>投稿</h3><p data-selection></p><p data-mark></p>
-    <form><fieldset><label>标题（最多 80 字）<input data-title required maxlength="80"></label>
-    <div data-fixed></div><label>添加标签（逗号分隔，合计最多 12 个）<input data-tags></label>
-    <label>简介<textarea data-desc maxlength="2000" rows="4"></textarea></label>
+    <form><fieldset><div data-template-form></div>
     <details open><summary>封面</summary><div data-cover></div></details></fieldset>
     <button data-confirm>确认投稿</button><button type="button" data-cancel>取消</button>
     <button type="button" data-retry hidden>重试</button></form>
@@ -40,10 +40,11 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     .studio-compose {padding:12px;border-top:1px solid #8885}.studio-compose label {display:block;margin:8px 0}
     .studio-compose fieldset {border:0;padding:0;min-width:0}.studio-compose input:not([type]),.studio-compose textarea {width:100%;box-sizing:border-box}
     .studio-compose input[type=number] {width:70px}.studio-compose progress {width:80px}.studio-compose canvas {display:block}
-    .studio-compose [data-fixed] span {display:inline-block;padding:3px 6px;margin:3px;background:#8883;border-radius:4px}
+    .studio-compose select {max-width:100%}.studio-compose pre {white-space:pre-wrap;overflow-wrap:anywhere}
     .studio-compose [data-error] {color:#d64c4c}.studio-compose button {margin:4px}`;
   root.append(style);
   const field = name => area.querySelector(`[data-${name}]`);
+  const templateForm = createTemplateForm(field('template-form'));
   const transport = createUploadTransport(gmRequest);
   let current,
     selectedMark,
@@ -83,9 +84,7 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       : state?.done
         ? '投稿完成'
         : state?.sent
-          ? state.result?.bvid
-            ? '已投稿，正在加入合集'
-            : '正在确认投稿结果'
+          ? '正在确认投稿结果'
           : state?.uploaded
             ? '上传完成，等待确认投稿'
             : own.stage;
@@ -151,31 +150,22 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       });
       const {signal} = own.setup;
       area.hidden = false;
-      if (!preserve) {
-        field('title').value = '';
-        field('tags').value = '';
-        field('desc').value = '';
-      }
-      field('fixed').replaceChildren();
       field('cover').replaceChildren();
       field('selection').textContent =
         `${own.record.title} · ${Math.round(own.selection.end - own.selection.start)} 秒（${own.mode === 'copy' ? '原画' : own.mode === 'danmaku' ? '弹幕' : '精确'}）`;
       render(own);
       area.scrollIntoView({block: 'start'});
       try {
-        const [defaults, me, options] = await Promise.all([
+        const [defaults, me, options, templates, schedule] = await Promise.all([
           client.request('/clip-defaults', {signal}),
           client.request('/me', {signal}),
           client.request('/upload-options', {signal}),
+          client.request('/templates', {signal}),
+          submissionSchedule(own.record, schedules, signal),
         ]);
         signal.throwIfAborted();
-        if (!defaults.account_mid || !defaults.tid) throw new Error('创作台尚未配置投稿账号/分区，请联系管理员');
-        own.defaults = defaults;
-        for (const tag of defaults.fixed_tags) {
-          const badge = document.createElement('span');
-          badge.textContent = `${tag}（固定）`;
-          field('fixed').append(badge);
-        }
+        if (!defaults.account_mid) throw new Error('创作台尚未配置投稿账号，请联系管理员');
+        templateForm.configure(templates, schedule, me.name, preserve && prior?.ready);
         own.uploader = createClipUpload({client, transport});
         let temporary;
         const clean = async () => {
@@ -268,8 +258,6 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
           },
         });
         void own.job.start();
-        if (!preserve)
-          field('desc').value = await descriptionFor(defaults.desc_template, own.record, me.name, schedules, signal);
         signal.throwIfAborted();
         own.ready = true;
       } catch (error) {
@@ -292,12 +280,8 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     if (!own?.ready || own.confirming || own.job.state().confirmed) return;
     own.formError = null;
     try {
-      const title = field('title').value.trim();
-      if (!title || [...title].length > 80) throw new Error('标题必填，最多 80 字');
       const fields = {
-        title,
-        tags: submissionTags(own.defaults.fixed_tags, field('tags').value),
-        desc: field('desc').value,
+        ...templateForm.fields(),
         ...(own.mark ? {mark_id: own.mark.id} : {}),
       };
       own.confirming = true;

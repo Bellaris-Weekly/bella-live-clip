@@ -49,9 +49,30 @@ async function until(predicate) {
   }
   assert.ok(predicate(), 'expected UI state');
 }
-function fixture(
-  defaults = {account_mid: 7, tid: 8, fixed_tags: ['固定'], desc_template: '{stream_title} {stream_date} {name}'},
-) {
+const templates = [
+  {
+    id: 1,
+    kind: 'shared',
+    name: '贝拉单播',
+    payload: {
+      liveParticipants: ['bella'],
+      title: '{live} 切片',
+      tid: 8,
+      tags: ['模板标签'],
+      desc: '{live} 视频二创组——{clipper}',
+      copyright: 2,
+      source: '直播间',
+      human_type2: 100,
+    },
+  },
+  {
+    id: 1,
+    kind: 'own',
+    name: '自定义',
+    payload: {title: '自选标题', desc: '自选 {clipper}', tid: 9, tags: ['自选模板']},
+  },
+];
+function fixture(defaults = {account_mid: 7}, items = templates, matched = true) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', {
     runScripts: 'outside-only',
     url: 'https://www.bilibili.com',
@@ -100,6 +121,7 @@ function fixture(
       request: async (path, options = {}) => {
         calls.push([path, options]);
         if (path === '/clip-defaults') return defaults;
+        if (path === '/templates') return items;
         if (path === '/me') return {name: '成员', lines: {bda2: 'upos-test.bilivideo.com'}};
         if (path === '/upload-options') return {cos_enabled: true, max_file_bytes: 100};
         if (path === '/uploads')
@@ -125,7 +147,23 @@ function fixture(
     },
     mediaRequest: async () => {},
     storage: {getDirectory: async () => directory},
-    schedules: {calendar: async () => []},
+    schedules: {
+      calendar: async month => {
+        if (month === '1970-01')
+          return matched
+            ? [{uid: 'record', room: 7, title: '排期标题', start: 100000, participants: [{id: 'bella'}]}]
+            : [];
+        if (month === new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 7))
+          return Array.from({length: 5}, (_, i) => ({
+            uid: `recent-${i}`,
+            room: 7,
+            title: `近期场次${i}`,
+            start: Date.now() / 1000 - (i + 1) * 86400,
+            participants: [{id: 'bella'}, {id: 'diana'}],
+          }));
+        throw new Error('no calendar');
+      },
+    },
     session: {
       ready: () => true,
       isSubmission: () => false,
@@ -171,8 +209,10 @@ test('composer exports to OPFS while form is open, captures midpoint at native s
   assert.equal(f.w.frames[0].sample.local, 5);
   assert.equal(f.w.frames[0].options.nativeSize, true);
   assert.match(f.field('mark').textContent, /关联轴：.*备注/);
-  assert.match(f.field('fixed').textContent, /固定（固定）/);
-  assert.match(f.field('desc').value, /直播标题.*成员/);
+  assert.equal(f.field('template').value, 'shared:1');
+  assert.equal(f.field('desc').value, '{live} 视频二创组——{clipper}');
+  assert.match(f.field('desc-preview').textContent, /1970\.1\.2 {2}排期标题.*成员/);
+  assert.equal(f.field('live').options.length, 7);
   f.field('title').value = '投稿标题';
   f.field('tags').value = '自选';
   f.root.getElementById('body').hidden = true;
@@ -186,7 +226,14 @@ test('composer exports to OPFS while form is open, captures midpoint at native s
   const submitted = f.calls.find(([path]) => path === '/submissions')[1].body;
   assert.equal(submitted.mark_id, 'mark');
   assert.equal(submitted.cover_id, 'cover-id');
-  assert.deepEqual([...submitted.tags], ['固定', '自选']);
+  assert.deepEqual([...submitted.tags], ['自选']);
+  assert.equal(submitted.tid, 8);
+  assert.equal(submitted.copyright, 2);
+  assert.equal(submitted.no_reprint, false);
+  assert.equal(submitted.source, '直播间');
+  assert.equal(submitted.human_type2, 100);
+  assert.equal(submitted.desc, '1970.1.2  排期标题 视频二创组——成员');
+  assert.ok(!f.calls.some(([path]) => path.includes('/seasons/')));
   assert.equal(f.field('cancel').hidden, true);
   assert.match(f.field('result').textContent, /BV1234567890/);
   assert.equal(f.files.size, 0);
@@ -224,11 +271,75 @@ test('missing studio configuration prevents export and upload and explains the r
     f.dom.window.close();
   });
   f.root.getElementById('studioSubmit').click();
-  await until(() => f.field('error').textContent.includes('创作台尚未配置投稿账号/分区，请联系管理员'));
+  await until(() => f.field('error').textContent.includes('创作台尚未配置投稿账号，请联系管理员'));
   assert.equal(f.w.exports.length, 0);
   assert.equal(f.files.size, 0);
   assert.equal(f.calls.filter(([path]) => path === '/uploads').length, 0);
   assert.equal(f.field('retry').hidden, false);
   f.field('cancel').click();
   await tick();
+});
+
+test('template switching and free-text live/clipper edits affect only this submission', async t => {
+  const original = structuredClone(templates);
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.root.getElementById('studioSubmit').click();
+  await until(() => !f.field('confirm').disabled);
+  f.field('clipper').value = '自选署名 $&';
+  f.field('clipper').dispatchEvent(new f.w.Event('input', {bubbles: true}));
+  f.field('template').value = 'own:1';
+  f.field('template').dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.field('title').value, '自选标题');
+  assert.equal(f.field('tid').value, '9');
+  assert.equal(f.field('tags').value, '自选模板');
+  assert.equal(f.field('desc-preview').textContent, '自选 自选署名 $&');
+  f.field('template').value = 'shared:1';
+  f.field('template').dispatchEvent(new f.w.Event('change'));
+  f.field('live').value = 'custom';
+  f.field('live').dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.field('live-custom-label').hidden, false);
+  f.field('live-custom').value = '手动完整直播信息';
+  f.field('live-custom').dispatchEvent(new f.w.Event('input', {bubbles: true}));
+  assert.equal(f.field('desc-preview').textContent, '手动完整直播信息 视频二创组——自选署名 $&');
+  f.field('confirm').click();
+  await until(() => f.field('confirm').textContent.includes('等待上传'));
+  f.gate.resolve();
+  await until(() => f.field('state').textContent === '投稿完成');
+  const body = f.calls.find(([path]) => path === '/submissions')[1].body;
+  assert.equal(body.title, '手动完整直播信息 切片');
+  assert.equal(body.desc, '手动完整直播信息 视频二创组——自选署名 $&');
+  assert.deepEqual(templates, original);
+  assert.ok(f.calls.filter(([path]) => path === '/templates').every(([, options]) => !options.method));
+  f.root.getElementById('studioSubmit').click();
+  await until(() => f.field('clipper').value === '成员');
+});
+
+test('no matching event leaves template unselected, defaults live to newest, and validates missing fields', async t => {
+  const f = fixture({account_mid: 7}, templates, false);
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.root.getElementById('studioSubmit').click();
+  await until(() => !f.field('confirm').disabled);
+  assert.equal(f.field('template').value, '');
+  assert.equal(f.field('live').value, '0');
+  assert.match(f.field('live').selectedOptions[0].textContent, /近期场次0/);
+  assert.equal(f.field('live').options.length, 6);
+  f.field('title').value = '标题';
+  f.field('confirm').click();
+  await until(() => f.field('error').textContent.includes('有效分区'));
+  f.field('tid').value = '27';
+  f.field('confirm').click();
+  await until(() => f.field('error').textContent.includes('标签'));
+  f.field('tags').value = '标签';
+  f.field('desc').value = '{clipper}';
+  f.field('clipper').value = '';
+  f.field('confirm').click();
+  await until(() => f.field('error').textContent.includes('占位符'));
+  assert.ok(!f.calls.some(([path]) => path === '/covers' || path === '/submissions'));
 });

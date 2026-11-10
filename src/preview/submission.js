@@ -1,34 +1,5 @@
-import {matchSchedule, scheduleMonths} from '../services/schedule.js';
 import {delay} from './upload.js';
-
-export function fillDescription(template, record, event, name) {
-  const values = {
-    stream_title: event?.title || record.title || '',
-    stream_date: new Date(((event?.start ?? record.start) + 8 * 3600) * 1000).toISOString().slice(0, 10),
-    name,
-  };
-  return (template || '').replace(/\{(stream_title|stream_date|name)\}/g, (_, key) => values[key]);
-}
-
-export async function descriptionFor(template, record, name, schedules, signal) {
-  let event;
-  try {
-    const calendars = await Promise.all(
-      scheduleMonths(record.start).map(month => schedules.calendar(month, {signal, refresh: false})),
-    );
-    event = matchSchedule(record, calendars.flat());
-  } catch {
-    signal.throwIfAborted();
-  }
-  return fillDescription(template, record, event, name);
-}
-
-export function submissionTags(fixed, added) {
-  const tags = [...new Set([...fixed, ...added.split(/[,，\n]/)].map(tag => tag.trim()).filter(Boolean))];
-  if (!tags.length || tags.length > 12 || tags.some(tag => [...tag].length > 20))
-    throw new Error('请填写 1–12 个标签，每个标签最多 20 字（包含固定标签）');
-  return tags;
-}
+import {assertResolved} from './templates.js';
 
 // A request is frozen before its first send and retained after ambiguous network errors.
 export function createSubmissionJob({
@@ -42,8 +13,7 @@ export function createSubmissionJob({
 }) {
   const controller = new AbortController(),
     {signal} = controller;
-  const requestId = uuid(),
-    collectionId = uuid();
+  const requestId = uuid();
   let fields,
     uploadId,
     request,
@@ -74,13 +44,7 @@ export function createSubmissionJob({
         ...fields,
         request_id: requestId,
         account_mid: defaults.account_mid,
-        tid: defaults.tid,
-        copyright: 1,
-        source: '',
-        no_reprint: true,
         cover43_id: null,
-        dtime: null,
-        is_only_self: false,
         parts: [{upload_id: uploadId, title: fields.title}],
       };
       sent = true;
@@ -95,18 +59,7 @@ export function createSubmissionJob({
           await sleep(2000, signal);
           result = await client.request(`/submissions/${result.id}`, {signal});
         }
-        // A collection error must not retain a large local file or hide a successful BV.
         await clean();
-        if (defaults.season_id && defaults.section_id) {
-          try {
-            await client.request(
-              `/accounts/${defaults.account_mid}/seasons/${defaults.season_id}/sections/${defaults.section_id}`,
-              {method: 'POST', body: {request_id: collectionId, action: 'season_add', video_ids: [result.bvid]}},
-            );
-          } catch (failure) {
-            throw new Error(`已投稿，加入合集未确认：${failure.message}。可重试或到创作台核对`);
-          }
-        }
         done = true;
       } catch (failure) {
         error = failure;
@@ -143,6 +96,7 @@ export function createSubmissionJob({
     },
     confirm(value) {
       if (cancelled || sent) return;
+      assertResolved(value.title, value.desc, ...(value.desc_v2 || []).map(row => row.raw_text));
       fields = structuredClone(value);
       emit();
       return send();

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {uploadFile, createClipUpload, createUploadTransport, delay} from '../../../src/preview/upload.js';
-import {createSubmissionJob, fillDescription, descriptionFor, submissionTags} from '../../../src/preview/submission.js';
+import {createSubmissionJob} from '../../../src/preview/submission.js';
 import {centerCrop, clampCrop, renderCover} from '../../../src/preview/cover.js';
 import {createStudioClient} from '../../../src/preview/studio.js';
 import {deferred} from '../../../src/shared/deferred.js';
@@ -216,36 +216,6 @@ test('API/verification/completion errors and user abort never trigger COS fallba
   assert.equal(fixture.calls.at(-1)[1].method, 'DELETE');
 });
 
-test('description uses matched schedule title/date across midnight and falls back to UTC+8 live start', async () => {
-  const record = {room: 7, title: '直播名', start: Date.parse('2026-11-08T16:03:00Z') / 1000};
-  const event = {room: 7, title: '排期标题', start: record.start - 600};
-  const template = '{stream_title}\n{stream_date}\n视频二创组----{name} {unknown}';
-  const signal = new AbortController().signal;
-  const schedules = {calendar: async () => [event]};
-  assert.equal(
-    await descriptionFor(template, record, '成员', schedules, signal),
-    '排期标题\n2026-11-08\n视频二创组----成员 {unknown}',
-  );
-  schedules.calendar = async () => {
-    throw new Error('offline');
-  };
-  assert.equal(
-    await descriptionFor(template, record, '成员', schedules, signal),
-    '直播名\n2026-11-09\n视频二创组----成员 {unknown}',
-  );
-  assert.equal(fillDescription('{stream_title}', record, null, '$&'), '直播名');
-  assert.deepEqual(submissionTags(['固定'], '固定, 自选'), ['固定', '自选']);
-  assert.throws(
-    () =>
-      submissionTags(
-        Array.from({length: 12}, (_, i) => String(i)),
-        '第13个',
-      ),
-    /1–12/,
-  );
-  assert.throws(() => submissionTags([], 'a'.repeat(21)), /20/);
-});
-
 function jobFixture(overrides = {}) {
   const uploaded = deferred(),
     calls = [];
@@ -270,9 +240,21 @@ function jobFixture(overrides = {}) {
   });
   return {job, uploaded, calls, cleaned: () => cleaned};
 }
-const fields = {title: 'title', tags: ['tag'], desc: 'desc', cover_id: 'cover', mark_id: 'mark'};
+const fields = {
+  title: 'title',
+  tid: 99,
+  copyright: 2,
+  source: 'source',
+  no_reprint: false,
+  dtime: null,
+  is_only_self: true,
+  tags: ['tag'],
+  desc: 'desc',
+  cover_id: 'cover',
+  mark_id: 'mark',
+};
 
-test('submits exactly once when both ready in either order and adds BV to configured collection', async () => {
+test('submits template fields exactly once in either order and ignores legacy collection defaults', async () => {
   for (const confirmFirst of [true, false]) {
     const f = jobFixture();
     const work = f.job.start();
@@ -287,30 +269,20 @@ test('submits exactly once when both ready in either order and adds BV to config
       await f.job.confirm(fields);
     }
     await tick();
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0][0], '/submissions');
     assert.deepEqual(f.calls[0][1].body, {
       ...fields,
       request_id: 'request-1',
       account_mid: 7,
-      tid: 8,
-      copyright: 1,
-      source: '',
-      no_reprint: true,
       cover43_id: null,
-      dtime: null,
-      is_only_self: false,
       parts: [{upload_id: 'upload-id', title: 'title'}],
     });
-    assert.deepEqual(f.calls[1], [
-      '/accounts/7/seasons/9/sections/10',
-      {method: 'POST', body: {request_id: 'request-2', action: 'season_add', video_ids: ['BV1234567890']}},
-    ]);
     assert.equal(f.cleaned(), 1);
     assert.equal(f.job.state().done, true);
     await f.job.confirm(fields);
     await f.job.retry();
-    assert.equal(f.calls.length, 2);
+    assert.equal(f.calls.length, 1);
   }
 });
 
@@ -352,7 +324,7 @@ test('after sending no cancellation is offered; network retry uses the same requ
   await f.job.confirm({...fields, title: 'different'});
   await f.job.retry();
   assert.deepEqual(calls[1], calls[0]);
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 2);
   assert.equal(f.job.state().done, true);
 });
 
@@ -378,27 +350,19 @@ test('polling failure retains the submission id; explicit retry uses studio retr
   assert.equal(f.job.state().done, true);
 });
 
-test('collection retry preserves BV and collection request id without resubmitting the video', async () => {
-  const calls = [];
-  let attempts = 0;
-  const f = jobFixture({
-    client: {
-      request: async (path, options) => {
-        calls.push([path, options]);
-        if (path.includes('/sections/') && ++attempts === 1) throw new Error('response lost');
-        return {id: 's', bvid: 'BV1234567890', status: 'submitted'};
-      },
-    },
-  });
+test('unresolved placeholders cannot be confirmed or sent', async () => {
+  const f = jobFixture();
   f.uploaded.resolve('u');
   await f.job.start();
-  await f.job.confirm(fields);
-  assert.equal(f.cleaned(), 1);
-  assert.equal(f.job.state().result.bvid, 'BV1234567890');
-  assert.match(f.job.state().error.message, /已投稿，加入合集未确认/);
-  await f.job.retry();
-  assert.deepEqual(calls[1], calls[2]);
-  assert.equal(calls.filter(([path]) => path === '/submissions').length, 1);
+  for (const value of [
+    {...fields, title: '{live}'},
+    {...fields, desc: '{clipper}'},
+    {...fields, desc: '前缀 {live} 后缀'},
+  ]) {
+    assert.throws(() => f.job.confirm(value), /占位符/);
+    assert.equal(f.job.state().confirmed, false);
+  }
+  assert.deepEqual(f.calls, []);
 });
 
 test('cover crop stays inside landscape/portrait sources and renders 1920×1080 with optional text', () => {

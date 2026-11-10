@@ -193,6 +193,11 @@ test('studio network/storage grants and feature strings exist only in preview bu
       'studioLogin',
       '等待回放',
       '/clip-defaults',
+      '/templates',
+      'liveParticipants',
+      '{live}',
+      'clipper',
+      '简介预览',
       '/upload-options',
       '/cos/uploads',
       '/submissions',
@@ -203,6 +208,9 @@ test('studio network/storage grants and feature strings exist only in preview bu
       'cover-wide.jpg',
     ])
       assert.equal(script.includes(text), preview, text);
+    assert.ok(!script.includes('season_add'));
+    assert.ok(!script.includes('desc_template'));
+    assert.ok(!script.includes('fixed_tags'));
     if (!preview) assert.ok(!script.includes('studio.bk0717.com/api'));
   }
 });
