@@ -87,7 +87,8 @@ function snapshot(details) {
   };
 }
 
-function transfer(request, endpoint, body) {
+// Resolves the HTTP status, 0 when the network failed, or null when the request never went out.
+function post(request, endpoint, body) {
   return new Promise(resolve => {
     try {
       request({
@@ -97,15 +98,21 @@ function transfer(request, endpoint, body) {
         timeout: 8000,
         headers: {'Content-Type': 'application/json'},
         data: body,
-        onload: result => resolve(result.status === 429 || result.status >= 500),
-        onerror: () => resolve(true),
-        ontimeout: () => resolve(true),
-        onabort: () => resolve(false),
+        onload: result => resolve(result.status),
+        onerror: () => resolve(0),
+        ontimeout: () => resolve(0),
+        onabort: () => resolve(null),
       });
     } catch {
-      resolve(false);
+      resolve(null);
     }
   });
+}
+
+// Whether a background log is worth one retry.
+async function transfer(request, endpoint, body) {
+  const status = await post(request, endpoint, body);
+  return status === 0 || status === 429 || status >= 500;
 }
 
 export function createDiagnosticReporter({
@@ -165,6 +172,28 @@ export function createDiagnosticReporter({
     pump();
   }
   return {
+    canFeedback: Boolean(endpoint) && typeof request === 'function',
+    // User-written feedback, sent at once rather than queued so the sheet can say whether it arrived.
+    async feedback(kind, message, details = {}) {
+      if (!endpoint || typeof request !== 'function' || !['issue', 'suggestion'].includes(kind)) return 'failed';
+      const body = JSON.stringify({
+        id: id(),
+        source: 'bella-live-clip',
+        event: `feedback_${kind}`,
+        level: 'info',
+        version,
+        message: text(message.trim(), 4096),
+        context: {
+          ...snapshot(details),
+          ...(details.record ? {} : {record: undefined}),
+          user: text(details.user, 64),
+          browser: text(userAgent, 512),
+          clientAt: clock(),
+        },
+      });
+      const status = await post(request, endpoint, body);
+      return status >= 200 && status < 300 ? 'sent' : status === 429 ? 'rate_limited' : 'failed';
+    },
     begin(action, details = {}) {
       if (!endpoint || typeof request !== 'function') return idle;
       const context = {...snapshot(details), stage: 'starting', timeline: []};

@@ -1635,6 +1635,18 @@ fieldset {
 .sheet-body .section-label {
   padding: 14px 4px 8px;
 }
+.feedback-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+}
+.feedback-body .segmented {
+  display: flex;
+}
+.feedback-body .segmented button {
+  flex: 1;
+}
 .group {
   padding: 2px 0;
 }

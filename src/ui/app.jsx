@@ -3,6 +3,7 @@ import {Icon} from './icon.jsx';
 import {Library} from './library.jsx';
 import {Editor} from './editor.jsx';
 import {Settings} from './settings.jsx';
+import {FeedbackSheet} from './feedback.jsx';
 import {dismissToast} from '../app/store.js';
 
 const EDGES = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'];
@@ -47,7 +48,7 @@ function Mini({store}) {
   return <extras.ui.MiniMarks marks={extras.marks} onExpand={extras.expand} />;
 }
 
-function Header({store, actions, loggedOut}) {
+function Header({store, actions, loggedOut, feedback}) {
   const page = store.page.value,
     record = store.record.value,
     version = store.version.value;
@@ -107,6 +108,17 @@ function Header({store, actions, loggedOut}) {
           >
             {version.label}
           </a>
+          {feedback && (
+            <button
+              type="button"
+              class="icon"
+              aria-label="反馈"
+              title="反馈"
+              onClick={() => (store.feedbackOpen.value = true)}
+            >
+              <Icon name="message" />
+            </button>
+          )}
           <button
             type="button"
             class="icon"
@@ -221,7 +233,7 @@ function LoginGate({studioUrl, hidden}) {
   );
 }
 
-function Panel({store, actions, preview, members, studioUrl}) {
+function Panel({store, actions, preview, members, studioUrl, feedback}) {
   const loggedOut = preview && !store.identity.value;
   return (
     <section
@@ -230,7 +242,7 @@ function Panel({store, actions, preview, members, studioUrl}) {
       aria-label="贝报切片助手"
       data-logged-out={loggedOut ? '' : undefined}
     >
-      <Header store={store} actions={actions} loggedOut={loggedOut} />
+      <Header store={store} actions={actions} loggedOut={loggedOut} feedback={feedback} />
       <div id="body">
         {preview && <LoginGate studioUrl={studioUrl} hidden={!loggedOut} />}
         <div class="pages" hidden={loggedOut}>
@@ -241,6 +253,7 @@ function Panel({store, actions, preview, members, studioUrl}) {
         </div>
       </div>
       <Settings store={store} actions={actions} preview={preview} />
+      {feedback && <FeedbackSheet store={store} actions={actions} />}
       {EDGES.map(edge => (
         <span key={edge} class="resize" data-edge={edge} />
       ))}

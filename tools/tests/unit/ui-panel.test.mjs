@@ -35,7 +35,7 @@ before(async () => {
   rmSync(dir, {recursive: true});
 });
 
-function mount({preview = false, state = {}} = {}) {
+function mount({preview = false, state = {}, feedback = false, overrides = {}} = {}) {
   const store = ui.createStore({member: ui.MEMBERS[0], exportMode: 'copy'});
   const calls = [];
   const actions = new Proxy(
@@ -43,15 +43,17 @@ function mount({preview = false, state = {}} = {}) {
     {
       get:
         (_, name) =>
-        (...args) =>
-          calls.push([name, ...args]),
+        (...args) => {
+          calls.push([name, ...args]);
+          return overrides[name]?.(...args);
+        },
     },
   );
   if (preview) store.identity.value = {name: '成员'};
   for (const [key, value] of Object.entries(state)) store[key].value = value;
   const root = document.createElement('div');
   document.body.append(root);
-  ui.mountApp(root, {store, actions, preview, members: ui.MEMBERS, studioUrl: 'https://studio.example'});
+  ui.mountApp(root, {store, actions, preview, feedback, members: ui.MEMBERS, studioUrl: 'https://studio.example'});
   return {
     store,
     calls,
@@ -280,4 +282,51 @@ test('launcher toggles through its action and the panel visibility follows store
   assert.equal(f.$('panel').hidden, false);
   f.$('close').click();
   assert.equal(f.calls.at(-1)[0], 'close');
+});
+
+test('feedback sits beside settings only when logs are configured, and sends the chosen kind', async () => {
+  assert.equal(mount().root.querySelector('[aria-label="反馈"]'), null, 'builds without a log endpoint hide it');
+  const results = ['failed', 'rate_limited', 'sent'];
+  const f = mount({feedback: true, overrides: {sendFeedback: async () => results.shift()}});
+  const button = f.root.querySelector('button[aria-label="反馈"]');
+  assert.equal(button.nextElementSibling.getAttribute('aria-label'), '设置');
+  const sheet = f.root.querySelector('form.sheet').parentElement;
+  assert.equal(sheet.hidden, true);
+  button.click();
+  assert.equal(sheet.hidden, false);
+  const submit = sheet.querySelector('button[type="submit"]'),
+    text = f.$('feedbackText');
+  const kinds = [...sheet.querySelectorAll('[aria-label="反馈类型"] button')];
+  assert.deepEqual(
+    kinds.map(item => [item.textContent, item.getAttribute('aria-pressed')]),
+    [
+      ['问题反馈', 'true'],
+      ['功能建议', 'false'],
+    ],
+  );
+  assert.equal(submit.disabled, true, 'empty text cannot be sent');
+  text.value = '   ';
+  text.dispatchEvent(new window.Event('input', {bubbles: true}));
+  assert.equal(submit.disabled, true, 'whitespace only cannot be sent');
+  kinds[1].click();
+  assert.equal(kinds[1].getAttribute('aria-pressed'), 'true');
+  assert.match(submit.textContent, /发送功能建议/);
+  text.value = '想要批量导出';
+  text.dispatchEvent(new window.Event('input', {bubbles: true}));
+  const settle = () => new Promise(resolve => setTimeout(resolve));
+  submit.click();
+  await settle();
+  assert.deepEqual(f.calls.at(-1), ['sendFeedback', 'suggestion', '想要批量导出']);
+  assert.match(sheet.querySelector('[role="alert"]').textContent, /没有发送成功/);
+  assert.equal(text.value, '想要批量导出', 'a failed send keeps the draft');
+  submit.click();
+  await settle();
+  assert.match(sheet.querySelector('[role="alert"]').textContent, /太频繁/);
+  text.dispatchEvent(new window.Event('input', {bubbles: true}));
+  assert.equal(sheet.querySelector('[role="alert"]'), null, 'editing clears a stale error');
+  submit.click();
+  await settle();
+  assert.equal(sheet.hidden, true);
+  assert.equal(text.value, '');
+  assert.match(f.root.querySelector('.toast').textContent, /功能建议已发送/);
 });

@@ -355,3 +355,92 @@ test('timeline retains stage changes and heartbeat metrics, downsamples to 60 an
   );
   assert.equal(logs[0].context.timeline.length, 1, 'published snapshots do not mutate');
 });
+
+test('问题反馈与功能建议立即发送，带页面上下文，可被日志服务接受，并如实返回结果', async () => {
+  const {reporter, requests} = setup();
+  assert.equal(reporter.canFeedback, true);
+  const record = {kind: 'submission', key: 'BV1234567890:2', bvid: 'BV1234567890', cid: 12, part: 2};
+  assert.equal(
+    await reporter.feedback('issue', '  导出卡住了\n第二行 token=never https://x.example/a?sign=never  ', {
+      pageUrl: 'https://www.bilibili.com/video/BV1234567890?p=2&spm=never',
+      mode: 'precise',
+      record,
+      selection: {start: 3, end: 9},
+      user: '成员',
+    }),
+    'sent',
+  );
+  assert.equal(await reporter.feedback('suggestion', '想要批量导出', {pageUrl: 'https://live.bilibili.com/1'}), 'sent');
+  const [issue, suggestion] = requests.map(item => JSON.parse(item.data));
+  assert.equal(issue.event, 'feedback_issue');
+  assert.equal(issue.level, 'info');
+  assert.equal(issue.version, '1.2.3');
+  assert.ok(issue.message.startsWith('导出卡住了\n第二行'));
+  assert.ok(!requests[0].data.includes('never'));
+  assert.equal(issue.context.page, 'https://www.bilibili.com/video/BV1234567890?p=2');
+  assert.equal(issue.context.record.bvid, 'BV1234567890');
+  assert.deepEqual(issue.context.selection, {start: 3, end: 9});
+  assert.equal(issue.context.user, '成员');
+  assert.equal(issue.context.browser, 'Test/1');
+  assert.equal(suggestion.event, 'feedback_suggestion');
+  assert.equal(suggestion.context.record, undefined, 'no open record means no made-up record kind');
+  for (const options of requests) {
+    let inserted;
+    const response = await worker.fetch(
+      new Request(endpoint, {method: 'POST', headers: options.headers, body: options.data}),
+      {
+        LOGS_DB: {
+          prepare(sql) {
+            return {
+              bind(...values) {
+                return {
+                  async first() {
+                    return sql.includes('COUNT(*)') ? {count: 0} : undefined;
+                  },
+                  async run() {
+                    if (sql.includes('INSERT')) inserted = values;
+                    return {success: true, meta: {changes: 1}};
+                  },
+                };
+              },
+            };
+          },
+        },
+      },
+    );
+    assert.equal(response.status, 201);
+    assert.equal(inserted[4], JSON.parse(options.data).event);
+  }
+});
+
+test('反馈结果：限流、拒绝、断网分别返回；未配置或未知类型不发请求', async () => {
+  for (const [respond, expected] of [
+    [options => options.onload({status: 429}), 'rate_limited'],
+    [options => options.onload({status: 400}), 'failed'],
+    [options => options.onload({status: 503}), 'failed'],
+    [options => options.onerror(), 'failed'],
+    [options => options.ontimeout(), 'failed'],
+    [
+      () => {
+        throw new Error('transport');
+      },
+      'failed',
+    ],
+  ]) {
+    const requests = [];
+    const {reporter} = setup({
+      request: options => {
+        requests.push(options);
+        respond(options);
+      },
+    });
+    assert.equal(await reporter.feedback('issue', '问题'), expected);
+    assert.ok(requests.length <= 1, 'feedback is not silently retried');
+  }
+  const unconfigured = createDiagnosticReporter();
+  assert.equal(unconfigured.canFeedback, false);
+  assert.equal(await unconfigured.feedback('issue', '问题'), 'failed');
+  const {reporter, requests} = setup();
+  assert.equal(await reporter.feedback('other', '问题'), 'failed');
+  assert.equal(requests.length, 0);
+});

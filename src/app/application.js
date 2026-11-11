@@ -175,8 +175,16 @@ export function createApp({
     versionClick: event => versionControl.click(event),
     versionKey: event => versionControl.key(event),
     logout: () => studio.logout(),
+    sendFeedback: (kind, message) =>
+      diagnostics.feedback(kind, message, {
+        pageUrl: readPageUrl(),
+        mode: record ? exportMode() : undefined,
+        record,
+        selection: record ? timeline.getSelection() : undefined,
+        user: store.identity.value?.name,
+      }),
   };
-  mountApp(root, {store, actions, preview, members: MEMBERS, studioUrl: STUDIO});
+  mountApp(root, {store, actions, preview, members: MEMBERS, studioUrl: STUDIO, feedback: diagnostics.canFeedback});
   const $ = id => root.getElementById(id),
     video = $('fullVideo');
   const modeKind = () => (isSubmission() ? 'submission' : 'live'),
@@ -784,6 +792,7 @@ export function createApp({
     batch(() => {
       store.open.value = false;
       store.settingsOpen.value = false;
+      store.feedbackOpen.value = false;
     });
     scheduleController?.abort();
     if (playerKind === 'submission') {

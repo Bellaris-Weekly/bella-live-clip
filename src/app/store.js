@@ -5,6 +5,7 @@ export function createStore({member, exportMode}) {
   return {
     open: signal(false),
     settingsOpen: signal(false),
+    feedbackOpen: signal(false),
     page: signal('library'),
     busy: signal(false),
     stopping: signal(false),
