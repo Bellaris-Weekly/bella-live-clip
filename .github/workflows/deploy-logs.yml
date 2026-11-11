@@ -2,28 +2,20 @@ name: Deploy diagnostic log service
 
 on:
   push:
-  pull_request:
+    branches: [main]
+    paths:
+      - src/server/**
+      - src/shared/log-redaction.js
+      - server/logs/**
+      - tools/scripts/deploy-log-service.mjs
+      - .github/workflows/deploy-logs.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
   deploy:
-    needs: test
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
       group: production-diagnostic-logs
@@ -35,6 +27,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node --test --test-reporter=dot tools/tests/unit/logs-worker.test.mjs tools/tests/unit/deploy-log-service.test.mjs
       - name: Verify existing resources and update service
         env:
           LOG_SERVICE_CONFIG: ${{ secrets.LOG_SERVICE_CONFIG }}

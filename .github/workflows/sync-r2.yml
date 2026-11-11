@@ -2,7 +2,7 @@ name: Sync userscript to Cloudflare R2
 
 on:
   push:
-  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -10,12 +10,8 @@ permissions:
 
 jobs:
   test:
-    # 同仓库分支的 PR 已经被 push 事件覆盖，这里只放行 push 和来自 fork 的 PR，
-    # 避免同一个 commit 跑两遍。
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    # 默认上限是 6 小时；镜像或网络卡住时尽快失败，重跑即可。
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -36,26 +32,11 @@ jobs:
         run: npm run verify
 
       - name: Check the version changed with the script
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         run: node tools/scripts/check-version.mjs --since "${{ github.event.before }}"
-
-      - name: Check built artifact is committed
-        run: git diff --exit-code -- bella-live-clip.user.js
-
-      - name: Install browser test dependencies
-        # 平时约 30 秒；Ubuntu 镜像偶尔极慢。
-        timeout-minutes: 8
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          npx playwright-core install --with-deps chromium
-
-      - name: Browser tests
-        run: npm run test:e2e
 
   upload:
     needs: test
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

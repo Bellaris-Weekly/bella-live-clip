@@ -15,4 +15,5 @@ AGENTS.md
 *.ts
 
 .DS_Store
+bella-live-clip.user.js
 bella-live-clip.preview.user.js
