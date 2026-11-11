@@ -202,7 +202,9 @@ test('studio network/storage grants and feature strings exist only in preview bu
       '/submissions',
       '/covers',
       '确认投稿',
-      'cover-wide.jpg',
+      'cover43_id',
+      '设为封面',
+      '改投新选段',
     ])
       assert.equal(script.includes(text), preview, text);
     assert.ok(!script.includes('season_add'));

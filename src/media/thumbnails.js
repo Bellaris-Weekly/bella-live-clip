@@ -12,7 +12,7 @@ export function thumbnailSamples(record, streams, view, count = 6) {
 }
 
 // A separate, muted decoder keeps thumbnail seeks away from the user's player.
-export async function readThumbnail(request, sample, signal, {nativeSize = false} = {}) {
+export async function readThumbnail(request, sample, signal) {
   if (sample.stream.kind === 'submission') {
     const {readSubmissionThumbnail} = await import('./submission-thumbnail.js');
     return readSubmissionThumbnail(request, sample.stream, sample.local, signal);
@@ -39,8 +39,8 @@ export async function readThumbnail(request, sample, signal, {nativeSize = false
       const ready = () => {
         if (video.readyState < 2 || video.seeking || Math.abs(video.currentTime - sample.local) > 0.15) return;
         const canvas = document.createElement('canvas');
-        canvas.width = nativeSize ? video.videoWidth : 160;
-        canvas.height = nativeSize ? video.videoHeight : 90;
+        canvas.width = 160;
+        canvas.height = 90;
         try {
           const context = canvas.getContext('2d');
           drawFitted(

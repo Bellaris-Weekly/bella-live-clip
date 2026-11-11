@@ -143,6 +143,35 @@ export function createPlayer({
     failed = false,
     renewal = null;
   const offset = () => (streams[index] ? streams[index].start_time - record.start : 0);
+  // The presented frame's own timestamp, from requestVideoFrameCallback. currentTime only says
+  // where the media clock is; stepping and covers need the frame actually on screen.
+  let shown = null,
+    presented = false,
+    frameDuration = null,
+    frameWatch = null;
+  function watchFrames() {
+    frameWatch = video.requestVideoFrameCallback?.((_, meta) => {
+      // Playback teaches the frame duration: the smallest gap between presented frames.
+      const delta = meta.mediaTime - shown;
+      if (!video.paused && shown !== null && delta > 1 / 130 && delta < (frameDuration ?? Infinity) - 0.0005)
+        frameDuration = delta;
+      shown = meta.mediaTime;
+      presented = true;
+      watchFrames();
+    });
+  }
+  watchFrames();
+  // Seeked and decoded, then a little longer for the frame itself to be presented: a seek
+  // that lands on the frame already shown may not present a new one.
+  async function settled(timeout = 10000) {
+    const until = performance.now() + timeout;
+    const wait = () => new Promise(resolve => setTimeout(resolve, 40));
+    while (!hls || scrubTime !== null || settle !== null || target !== null || video.seeking || video.readyState < 2) {
+      if (performance.now() > until || failed) throw new Error('画面还没有加载好，请稍后再试');
+      await wait();
+    }
+    for (const presentBy = performance.now() + 300; !presented && performance.now() < presentBy;) await wait();
+  }
   function showStill(url) {
     if (!still || !url) return false;
     if (still.getAttribute('src') !== url) still.setAttribute('src', url);
@@ -209,6 +238,8 @@ export function createPlayer({
     video.removeAttribute('src');
     video.load();
     index = part;
+    shown = null;
+    presented = false;
     fragments = [];
     reloads = new Map();
     target = time;
@@ -254,6 +285,7 @@ export function createPlayer({
   }
   function seek(time) {
     video.pause();
+    presented = false;
     lastSeek = performance.now();
     reloads.clear();
     recoveries = 0;
@@ -362,6 +394,7 @@ export function createPlayer({
   }
   function destroy() {
     clear();
+    if (frameWatch !== null) video.cancelVideoFrameCallback?.(frameWatch);
     for (const event of ['seeked', 'loadeddata', 'canplay']) video.removeEventListener(event, ready);
     video.removeEventListener('play', bufferAhead);
     video.removeEventListener('pause', bufferOne);
@@ -438,5 +471,34 @@ export function createPlayer({
     },
     pause: () => video.pause(),
     position: () => scrubTime ?? offset() + video.currentTime,
+    // One frame back or forward. The frame duration is learned from playback; until then a
+    // step grows by 1/60 s until another frame shows, which also learns it (24–60 fps).
+    async stepFrame(direction) {
+      video.pause();
+      await settled();
+      const base = shown ?? video.currentTime;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        seek(offset() + Math.max(0, base + direction * (frameDuration ?? attempt / 60) + 0.001));
+        await settled();
+        const moved = Math.abs((shown ?? video.currentTime) - base);
+        if (moved > 0.001) {
+          if (frameDuration === null || moved < frameDuration - 0.0005) frameDuration = moved;
+          break;
+        }
+        if (frameDuration !== null) break;
+      }
+      return offset() + (shown ?? video.currentTime);
+    },
+    // The frame on screen at the stream's own size, and the time it is shown at.
+    async captureFrame() {
+      video.pause();
+      await settled();
+      if (!video.videoWidth || !video.videoHeight) throw new Error('画面还没有加载好，请稍后再试');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d', {alpha: false}).drawImage(video, 0, 0, canvas.width, canvas.height);
+      return {image: canvas, time: offset() + (shown ?? video.currentTime)};
+    },
   };
 }

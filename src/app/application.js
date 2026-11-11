@@ -2,7 +2,7 @@ import {batch, effect} from '@preact/signals';
 import {createComposer} from '../preview/compose.js';
 import {createMarksSession} from '../preview/marks-session.js';
 import {MarkPins, MarksPanel, MiniMarks} from '../ui/marks.jsx';
-import {ComposeSheet} from '../ui/compose.jsx';
+import {ComposeSheet, CoverButton, CoverPin} from '../ui/compose.jsx';
 import {STUDIO} from '../preview/studio.js';
 import metadataText from '../header.txt';
 import {readScriptMetadata, createUpdateChecker} from '../services/updates.js';
@@ -35,7 +35,7 @@ import {sharePlaylists} from '../services/shared-playlists.js';
 import {estimateRecordingRate, estimateSelectionBytes} from '../media/recording-estimate.js';
 import {MEMBERS, roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
-import {formatDuration, formatTimeRange, formatDate, formatBytes} from '../shared/format.js';
+import {formatDuration, formatTimeRange, formatDate, formatBytes, formatTime} from '../shared/format.js';
 
 export function createApp({
   api,
@@ -171,6 +171,8 @@ export function createApp({
     playSelection: () => player.playSelection(),
     markStart: () => editorInput.markStart(),
     markEnd: () => editorInput.markEnd(),
+    stepFrame: direction => void stepFrame(direction),
+    setCover: () => void setCover(),
     typeTime: (edge, value) => editorInput.typeTime(edge, value),
     versionClick: event => versionControl.click(event),
     versionKey: event => versionControl.key(event),
@@ -222,6 +224,38 @@ export function createApp({
     timeline.setCurrent(t);
     updateClock(t);
   };
+  // Frame-exact tools work on recordings; the submission player has no frame clock.
+  const framesReady = () => ready && !controller && playerKind === 'live';
+  async function stepFrame(direction) {
+    if (!framesReady()) return;
+    try {
+      const time = await player.stepFrame(direction);
+      timeline.setCurrent(time);
+      updateClock(time);
+    } catch (error) {
+      status(error.message, true);
+    }
+  }
+  // The frame on screen; with a clip given, one inside it (its start if the playhead is outside).
+  async function captureCover(selection = null) {
+    if (!framesReady()) throw new Error('录像还没有加载好');
+    const position = player.position();
+    if (selection && (position < selection.start || position > selection.end)) seekTo(selection.start);
+    const frame = await player.captureFrame();
+    timeline.setCurrent(frame.time);
+    updateClock(frame.time);
+    return {...frame, key: record.key};
+  }
+  async function setCover() {
+    if (!preview || !framesReady()) return;
+    try {
+      const frame = await captureCover();
+      composer.setFrame(frame);
+      toast(store, `已设为封面：${formatTime(frame.time, true)}`);
+    } catch (error) {
+      toast(store, error.message, {error: true});
+    }
+  }
   const playback = createPlayback(video, status, {
     getRange: () => (ready ? timeline.getSelection() : null),
     position: () => player?.position() ?? 0,
@@ -260,6 +294,11 @@ export function createApp({
     playhead: $('playhead'),
     ticks: $('ticks'),
     onRange: range => editorInput?.renderRange(range),
+    onFrameStep: direction => {
+      if (playerKind !== 'live') return false;
+      void stepFrame(direction);
+      return true;
+    },
     onPreview: t => {
       if (playerKind === 'live') player.scrub(t);
       else player?.seek(t);
@@ -838,8 +877,10 @@ export function createApp({
     status,
     getPlayer: () => player,
     togglePlayback: () => activePlayback()?.toggle(),
-    isActive: () => ready && !controller && isOpen(),
+    // While submitting, the editor underneath takes no keys.
+    isActive: () => ready && !controller && isOpen() && !composer?.view.value.open,
     isWhole: () => store.whole.value,
+    keys: preview ? {c: () => void setCover()} : {},
   });
   bindShortcut({
     root,
@@ -887,18 +928,19 @@ export function createApp({
   $('launcher').addEventListener('focusin', preload);
   if (preview) {
     // The compose sheet renders the hosts its form and cover editor are built into.
-    const ui = {MarkPins, MarksPanel, MiniMarks, ComposeSheet};
+    const ui = {MarkPins, MarksPanel, MiniMarks, ComposeSheet, CoverButton, CoverPin};
     store.extras.value = {ui};
     composer = createComposer({
       root,
       client: studio,
       gmRequest: options => GM_xmlhttpRequest(options),
       mediaApi,
-      mediaRequest,
       storage,
       schedules,
       session: {
         ready: () => allowed() && ready && !controller && !isSubmission(),
+        pause: () => player?.pause(),
+        captureFrame: selection => captureCover(selection),
         isSubmission,
         whole: () => store.whole.value,
         snapshot: () => ({

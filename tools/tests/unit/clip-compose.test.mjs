@@ -40,12 +40,6 @@ const code = (
       options.onProgress({progress: 1});
     }`,
           }));
-          build.onLoad({filter: /src\/media\/thumbnails.js$/}, () => ({
-            contents: `export async function readThumbnail(request, sample, signal, options) {
-      window.frames.push({sample, options});
-      const canvas = document.createElement('canvas'); canvas.width = 1920; canvas.height = 1080; return canvas;
-    }`,
-          }));
         },
       },
     ],
@@ -100,16 +94,28 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
     FormData,
     structuredClone,
     exports: [],
-    frames: [],
+    ResizeObserver: class {
+      observe() {}
+      disconnect() {}
+    },
     destinations: [],
     exportWait: gate.promise,
   });
   w.HTMLElement.prototype.scrollIntoView = () => {};
-  w.HTMLCanvasElement.prototype.getContext = () => ({drawImage() {}, strokeRect() {}, strokeText() {}, fillText() {}});
+  // Any 2D call works; pixels read back as mid-grey so frames never count as black.
+  const context = new Proxy(
+    {
+      measureText: text => ({width: text.length * 10}),
+      getImageData: (x, y, width, height) => ({data: new Uint8ClampedArray(width * height * 4).fill(128)}),
+    },
+    {get: (target, key) => target[key] ?? (() => {}), set: () => true},
+  );
+  w.HTMLCanvasElement.prototype.getContext = () => context;
   w.HTMLCanvasElement.prototype.toBlob = callback => callback(new Blob(['jpeg'], {type: 'image/jpeg'}));
   w.eval(code);
   w.fixture.show(root, null);
   const calls = [],
+    captured = [],
     removed = [],
     files = new Map();
   const directory = {
@@ -136,7 +142,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
         if (path === '/upload-options') return {cos_enabled: true, max_file_bytes: 100};
         if (path === '/uploads')
           return {id: 'u', url: 'https://upos-test.bilivideo.com/file', auth: 'auth', biz_id: 42, chunk_size: 4};
-        if (path === '/covers') return {id: 'cover-id'};
+        if (path === '/covers') return {id: `cover-${calls.filter(([p]) => p === '/covers').length}`};
         if (path === '/submissions') return {id: 's', bvid: 'BV1234567890', status: 'submitted'};
       },
     },
@@ -155,7 +161,6 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
         data: '#EXTM3U\n#EXTINF:10,\nseg.m4s\n#EXT-X-ENDLIST',
       }),
     },
-    mediaRequest: async () => {},
     storage: {getDirectory: async () => directory},
     schedules: {
       calendar: async month => {
@@ -176,10 +181,18 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
     },
     session: {
       ready: () => true,
+      pause() {},
+      captureFrame: async clip => {
+        captured.push(clip);
+        const image = w.document.createElement('canvas');
+        image.width = 1920;
+        image.height = 1080;
+        return {image, time: clip.start, key: 'record'};
+      },
       isSubmission: () => false,
       whole: () => false,
       snapshot: () => ({
-        record: {title: '直播标题', room: 7, start: 100000},
+        record: {key: 'record', title: '直播标题', room: 7, start: 100000},
         selection: {...selection},
         mode: 'danmaku',
         streams: [{start_time: 100000, end_time: 100020, stream: 'https://media.test/list.m3u8'}],
@@ -197,6 +210,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
     api,
     field,
     calls,
+    captured,
     files,
     removed,
     select: value => {
@@ -205,7 +219,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
   };
 }
 
-test('composer exports to OPFS while form is open, captures midpoint at native size, persists while hidden, then submits and cleans', async t => {
+test('composer exports to OPFS while form is open, takes a cover frame inside the clip, persists while hidden, then submits both covers and cleans', async t => {
   const f = fixture();
   t.after(() => {
     f.api.dispose();
@@ -217,8 +231,8 @@ test('composer exports to OPFS while form is open, captures midpoint at native s
   assert.equal(f.w.exports[0].precise, true);
   assert.equal(f.w.exports[0].danmaku.adjustment, 0);
   assert.equal(f.files.size, 1);
-  assert.equal(f.w.frames[0].sample.local, 5);
-  assert.equal(f.w.frames[0].options.nativeSize, true);
+  assert.deepEqual(f.captured, [{start: 2, end: 8}]);
+  await until(() => f.root.querySelector('[data-cover-source]').textContent.includes('00:00:02.000'));
   assert.match(f.field('mark').textContent, /备注/);
   assert.equal(f.field('template').value, 'shared:1');
   assert.equal(f.field('desc').value, '{live} 视频二创组——{clipper}');
@@ -238,7 +252,8 @@ test('composer exports to OPFS while form is open, captures midpoint at native s
   await until(() => f.field('state').textContent === '投稿完成');
   const submitted = f.calls.find(([path]) => path === '/submissions')[1].body;
   assert.equal(submitted.mark_id, 'mark');
-  assert.equal(submitted.cover_id, 'cover-id');
+  assert.equal(submitted.cover_id, 'cover-1');
+  assert.equal(submitted.cover43_id, 'cover-2');
   assert.deepEqual([...submitted.tags], ['自选']);
   assert.equal(submitted.tid, 8);
   assert.equal(submitted.copyright, 2);
@@ -253,7 +268,7 @@ test('composer exports to OPFS while form is open, captures midpoint at native s
   assert.equal(f.removed.length, 1);
 });
 
-test('selecting another mark cancels old export, updates linkage and selection, and keeps editable text', async t => {
+test('a changed clip is offered on return: exporting it cancels the old export, relinks the mark and keeps the text', async t => {
   const f = fixture();
   t.after(() => {
     f.api.dispose();
@@ -263,9 +278,15 @@ test('selecting another mark cancels old export, updates linkage and selection, 
   f.api.actions.start();
   await until(() => f.w.exports.length === 1 && !f.field('confirm').disabled);
   f.field('title').value = '保留标题';
+  f.api.actions.close();
   f.select({start: 10, end: 15});
   f.api.markSelected({id: 'two', at: 100001000, note: '第二条'});
+  f.api.actions.start();
+  assert.match(f.field('stale').textContent, /00:10–00:15/);
+  assert.equal(f.w.exports.length, 1, 'nothing restarts by itself');
+  f.field('restart').click();
   await until(() => f.w.exports.length === 2 && !f.field('confirm').disabled);
+  assert.equal(f.field('stale'), null);
   assert.equal(f.removed.length, 1);
   assert.equal(f.w.exports[1].selection.start, 10);
   assert.match(f.field('mark').textContent, /第二条/);

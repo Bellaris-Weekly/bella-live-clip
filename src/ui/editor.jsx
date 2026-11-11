@@ -36,7 +36,7 @@ const Track = () => (
       id="timeline"
       tabIndex={0}
       aria-label="剪辑时间轴"
-      title="方向键移动 5 秒，Shift＋方向键 1 秒，逗号和句号 0.1 秒；空格播放，I / O 设为开始和结束；双击查看完整时间轴"
+      title="方向键移动 5 秒，Shift＋方向键 1 秒，逗号和句号逐帧（视频为 0.1 秒）；空格播放，I / O 设为开始和结束；双击查看完整时间轴"
     >
       <div id="thumbnails" aria-hidden="true" />
       <div id="ticks" />
@@ -48,12 +48,13 @@ const Track = () => (
   </Frozen>
 );
 
-function Transport({store, actions, locked}) {
+function Transport({store, actions, locked, extras}) {
   const record = store.record.value,
     paused = store.paused.value,
     ready = store.ready.value,
     busy = store.busy.value;
   const submission = record?.kind === 'submission';
+  const stepping = !submission && !busy && ready;
   return (
     <div class="transport">
       <button
@@ -73,7 +74,32 @@ function Transport({store, actions, locked}) {
           播放选段
         </button>
       )}
+      {!submission && (
+        <div class="frame-step" role="group" aria-label="逐帧">
+          <button
+            type="button"
+            class="icon small"
+            aria-label="上一帧"
+            title="上一帧（,）"
+            disabled={!stepping}
+            onClick={() => actions.stepFrame(-1)}
+          >
+            <Icon name="prevFrame" />
+          </button>
+          <button
+            type="button"
+            class="icon small"
+            aria-label="下一帧"
+            title="下一帧（.）"
+            disabled={!stepping}
+            onClick={() => actions.stepFrame(1)}
+          >
+            <Icon name="nextFrame" />
+          </button>
+        </div>
+      )}
       <span class="spacer" />
+      {extras?.composer && !submission && <extras.ui.CoverButton disabled={!stepping} onClick={actions.setCover} />}
       <button type="button" class="ghost small" id="markStart" disabled={locked} onClick={actions.markStart}>
         <Icon name="toStart" />
         设为开始<span class="kbd">I</span>
@@ -139,6 +165,9 @@ function TimelineCard({store, actions, locked, extras}) {
         </span>
       </div>
       {extras?.marks && <extras.ui.MarkPins marks={extras.marks} view={store.view} />}
+      {extras?.composer && (
+        <extras.ui.CoverPin composer={extras.composer} view={store.view} record={store.record.value} />
+      )}
       <Track />
       <div class="timeline-footer">
         <div class="range" id="timelineLabels">
@@ -215,7 +244,7 @@ function Dock({store, actions, extras}) {
 
 function ComposeButton({composer}) {
   const view = composer.view.value;
-  // A hidden submission keeps running; the button brings it back.
+  // A submission keeps running while you cut; the button shows how far it is and brings it back.
   const running = !view.open && view.cancellable && view.selection && !view.bvid;
   return (
     <button
@@ -226,35 +255,36 @@ function ComposeButton({composer}) {
       onClick={composer.actions.start}
     >
       <Icon name="upload" />
-      {running ? '投稿进行中' : '投稿'}
+      {running ? `投稿中 · ${view.progress}` : '投稿'}
     </button>
   );
 }
 
 // Internal build only: its components arrive through `extras`, so the public build never bundles them.
 function Side({extras}) {
-  const composing = extras.composer?.view.value.open;
-  const {MarksPanel, ComposeSheet} = extras.ui;
+  const {MarksPanel} = extras.ui;
   return (
-    <aside id="editorSide" class="card side" aria-label={composing ? '投稿' : '本场轴'}>
+    <aside id="editorSide" class="card side" aria-label="本场轴">
       {extras.marks && (
-        <div class="side-pane" hidden={composing}>
+        <div class="side-pane">
           <MarksPanel marks={extras.marks} onCompose={extras.composeMark} />
         </div>
       )}
-      <ComposeSheet composer={extras.composer} />
     </aside>
   );
 }
 
+// Two steps: cut (player, timeline, marks), then submit, which takes the whole area.
+// The editor stays mounted underneath so going back is instant.
 export function Editor({store, actions}) {
   const locked = store.busy.value || !store.ready.value || store.whole.value;
   const extras = store.extras.value;
   const props = {store, actions, locked, extras};
-  const composing = extras?.composer?.view.value.open;
+  const composing = Boolean(extras?.composer?.view.value.open);
+  const ComposeSheet = extras?.ui.ComposeSheet;
   return (
     <section id="editPage" tabIndex={-1} hidden={store.page.value !== 'edit'} aria-label="剪辑">
-      <div class={`editor${extras ? ' has-side' : ''}${composing ? ' is-composing' : ''}`}>
+      <div class={`editor${extras ? ' has-side' : ''}`} hidden={composing}>
         <div class="editor-main">
           <div class="stage">
             <Monitor />
@@ -266,6 +296,7 @@ export function Editor({store, actions}) {
         </div>
         {extras && <Side extras={extras} />}
       </div>
+      {ComposeSheet && <ComposeSheet composer={extras.composer} />}
     </section>
   );
 }

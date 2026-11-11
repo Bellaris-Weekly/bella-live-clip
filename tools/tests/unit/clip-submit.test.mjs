@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {uploadFile, createClipUpload, createUploadTransport, delay} from '../../../src/preview/upload.js';
 import {createSubmissionJob} from '../../../src/preview/submission.js';
-import {centerCrop, clampCrop, renderCover} from '../../../src/preview/cover.js';
+import {OUTPUTS, createCover, cropRect, drawCover, initialCover, layerOf} from '../../../src/preview/cover.js';
 import {createStudioClient} from '../../../src/preview/studio.js';
 import {deferred} from '../../../src/shared/deferred.js';
 
@@ -275,7 +275,6 @@ test('submits template fields exactly once in either order and ignores legacy co
       ...fields,
       request_id: 'request-1',
       account_mid: 7,
-      cover43_id: null,
       parts: [{upload_id: 'upload-id', title: 'title'}],
     });
     assert.equal(f.cleaned(), 1);
@@ -365,33 +364,60 @@ test('unresolved placeholders cannot be confirmed or sent', async () => {
   assert.deepEqual(f.calls, []);
 });
 
-test('cover crop stays inside landscape/portrait sources and renders 1920×1080 with optional text', () => {
+test('cover crops stay inside the source; 4:3 follows 16:9 until edited; finished covers get no text', () => {
   for (const [width, height] of [
     [1920, 1080],
     [1080, 1920],
     [800, 600],
-  ]) {
-    const crop = centerCrop(width, height);
-    assert.equal(crop.w / crop.h, 16 / 9);
-    const moved = clampCrop({...crop, x: 99999, y: -100, w: crop.w / 2}, width, height);
-    assert.ok(moved.x + moved.w <= width);
-    assert.ok(moved.y >= 0 && moved.y + moved.h <= height);
-  }
+  ])
+    for (const {ratio} of Object.values(OUTPUTS))
+      for (const crop of [null, {cx: 99999, cy: -100, zoom: 3}, {cx: 0, cy: 0, zoom: 99}]) {
+        const rect = cropRect({width, height}, ratio, crop);
+        assert.ok(Math.abs(rect.w / rect.h - ratio) < 1e-9);
+        assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= width + 1e-9 && rect.y + rect.h <= height + 1e-9);
+      }
+  const image = {width: 1920, height: 1080};
+  const cover = createCover();
+  cover.setFrame({image, time: 5, key: 'k'});
+  cover.zoom('wide', 2, {x: 0.25, y: 0.25});
+  const state = cover.state.value;
+  const wide = cropRect(image, OUTPUTS.wide.ratio, layerOf(state, 'wide').crop),
+    tall = cropRect(image, OUTPUTS.tall.ratio, layerOf(state, 'tall').crop);
+  assert.ok(Math.abs(wide.h - tall.h) < 1e-6, 'same height');
+  assert.ok(Math.abs(wide.y - tall.y) < 1e-6);
+  assert.ok(Math.abs(wide.x + wide.w / 2 - (tall.x + tall.w / 2)) < 1e-6, 'same center');
+  cover.moveText('tall', 0.505, 0.3);
+  assert.equal(cover.state.value.follow, false, 'editing 4:3 gives it its own layout');
+  assert.deepEqual(cover.state.value.tall.pos, {x: 0.5, y: 0.3}, 'snaps to the middle');
+  cover.follow();
+  assert.equal(cover.state.value.follow, true);
+  cover.setImage('wide', {width: 1600, height: 900});
+  assert.equal(cover.state.value.wide.showText, false);
+  assert.equal(layerOf(cover.state.value, 'tall').source, 'image', '4:3 follows the picked image');
+  cover.setImage('tall', {width: 1000, height: 1000});
+  assert.equal(cover.state.value.follow, false);
+  assert.equal(cover.state.value.tall.showText, true);
+
   const calls = [];
   const context = {
+    fillRect() {},
+    save() {},
+    restore() {},
+    measureText: text => ({width: text.length * 10}),
     drawImage: (...args) => calls.push(['image', ...args]),
     strokeText: (...args) => calls.push(['stroke', ...args]),
     fillText: (...args) => calls.push(['fill', ...args]),
   };
-  const canvas = {getContext: () => context},
-    source = {width: 800, height: 600},
-    crop = centerCrop(800, 600);
-  renderCover(canvas, source, crop, {value: 'hello', size: 90, fill: '#fff', stroke: '#000', width: 6, x: 960, y: 850});
-  assert.equal(canvas.width, 1920);
-  assert.equal(canvas.height, 1080);
-  assert.deepEqual(calls[0], ['image', source, crop.x, crop.y, crop.w, crop.h, 0, 0, 1920, 1080]);
-  assert.deepEqual(calls[1], ['stroke', 'hello', 960, 850, 1920]);
-  assert.equal(context.font, 'bold 90px sans-serif');
+  const drawn = initialCover({image, time: 0, key: 'k'});
+  drawn.text.value = 'hello';
+  const box = drawCover(context, drawn, 'tall');
+  assert.deepEqual(calls[0], ['image', image, 240, 0, 1440, 1080, 0, 0, 1440, 1080]);
+  assert.deepEqual(
+    calls.slice(1).map(call => call[0]),
+    ['stroke', 'fill'],
+  );
+  assert.equal(calls[2][2], 720);
+  assert.equal(box.w, 50);
 });
 
 test('studio client supports multipart Bearer cover upload, cancellation and verification details', async () => {

@@ -2,7 +2,7 @@ import {isEditing} from '../ui/shortcuts.js';
 import {formatTimeRange, parseTime} from '../shared/format.js';
 
 // Setting the selection by button, typed time or key.
-export function bindEditorInput({root, timeline, status, getPlayer, togglePlayback, isActive, isWhole}) {
+export function bindEditorInput({root, timeline, status, getPlayer, togglePlayback, isActive, isWhole, keys = {}}) {
   const $ = id => root.getElementById(id);
   function applySelection(next, handle) {
     try {
@@ -30,7 +30,7 @@ export function bindEditorInput({root, timeline, status, getPlayer, togglePlayba
     else applySelection({...timeline.getSelection(), [edge]: time});
     renderRange(timeline.getSelection());
   }
-  const editorKeys = {' ': () => togglePlayback(), i: markStart, o: markEnd};
+  const editorKeys = {' ': () => togglePlayback(), i: markStart, o: markEnd, ...keys};
   $('editPage').addEventListener(
     'keydown',
     e => {

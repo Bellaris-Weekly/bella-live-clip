@@ -21,6 +21,9 @@ const PATHS = {
   toEnd: 'M19 5v14M5 5l10 7-10 7z',
   expand: 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7',
   minus: 'M5 12h14',
+  plus: 'M12 5v14M5 12h14',
+  prevFrame: 'M6 5v14M18 6l-8 6 8 6z',
+  nextFrame: 'M18 5v14M6 6l8 6-8 6z',
   image: 'M4 5h16v14H4zM4 16l5-5 4 4 2-2 5 5M15 9.5h.01',
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5M12 7v5l3 2',
   scissors:

@@ -39,6 +39,7 @@ export function createTimeline({
   onPreview,
   onScrubStart,
   onScrubEnd,
+  onFrameStep,
   onSelection = () => {},
   onView = () => {},
 }) {
@@ -282,6 +283,8 @@ export function createTimeline({
     e.preventDefault();
     e.stopPropagation();
     const type = e.target.closest('[data-handle]')?.dataset.handle || 'playhead';
+    // Comma and period step the playhead by one frame where the player can.
+    if (type === 'playhead' && !e.key.startsWith('Arrow') && onFrameStep?.(STEP_KEYS[e.key])) return;
     const size = e.key.startsWith('Arrow') ? (e.shiftKey ? SHIFT_STEP : KEYBOARD_STEP) : FINE_STEP,
       delta = STEP_KEYS[e.key] * size;
     onScrubStart?.({type});

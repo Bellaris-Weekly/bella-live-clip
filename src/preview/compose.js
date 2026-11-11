@@ -3,36 +3,51 @@ import {createClipUpload, createUploadTransport, pickLine} from './upload.js';
 import {createSubmissionJob} from './submission.js';
 import {submissionSchedule} from './templates.js';
 import {createTemplateForm} from './template-form.js';
-import {createCoverEditor} from './cover.js';
+import {createCover, isDark, readImage} from './cover.js';
 import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
 import {createExportMetrics} from '../media/export-metrics.js';
 import {RecordingPlan} from '../media/recording-plan.js';
 import {estimateSelectionBytes} from '../media/recording-estimate.js';
-import {readThumbnail} from '../media/thumbnails.js';
-import {locateSegment} from '../media/playlist.js';
 import {fileName} from '../media/file-name.js';
 import {limitProgress} from '../ui/export-progress.js';
+import {formatTimeRange} from '../shared/format.js';
+import {isEditing} from '../ui/shortcuts.js';
 
-export function createComposer({root, client, gmRequest, mediaApi, mediaRequest, storage, schedules, session}) {
+export function createComposer({root, client, gmRequest, mediaApi, storage, schedules, session}) {
   const view = signal({open: false, canStart: false});
   const host = id => root.getElementById(id);
   const templateForm = createTemplateForm(host('composeForm'));
   const transport = createUploadTransport(gmRequest);
+  const cover = createCover();
   let current,
     selectedMark,
-    switching = false,
-    pendingMark = false;
+    pickedFrame = null,
+    switching = false;
   const active = () => current && !current.cancelled && !current.job?.state().done && !current.job?.state().cancelled;
   const MODES = {copy: '原画', precise: '精确', danmaku: '弹幕'};
-  // Everything the sheet shows, derived from the current submission and its job.
+  const seconds = selection => Math.round(selection.end - selection.start);
+  const describe = snapshot =>
+    `${formatTimeRange(snapshot.selection.start, snapshot.selection.end, '–')} · ${seconds(snapshot.selection)} 秒 · ${MODES[snapshot.mode]}`;
+  // What the export depends on: a different one means the running export is of another clip.
+  const clipKey = snapshot =>
+    [
+      snapshot.record.key,
+      snapshot.segmentIndex,
+      snapshot.selection.start.toFixed(3),
+      snapshot.selection.end.toFixed(3),
+      snapshot.mode,
+      snapshot.mark?.id,
+    ].join('|');
+  // Everything the page shows, derived from the current submission and its job.
   function render(own) {
     if (current !== own) return;
     const state = own.job?.state();
-    if (state?.done) own.cover?.dispose();
     view.value = {
       open: !own.closed,
       canStart: canStart(),
-      selection: `${own.record.title} · ${Math.round(own.selection.end - own.selection.start)} 秒 · ${MODES[own.mode]}`,
+      title: own.record.title,
+      selection: describe(own),
+      stale: own.stale && !state?.sent ? describe(own.stale) : '',
       mark: own.mark,
       markLocked: Boolean(state?.confirmed || state?.sent),
       locked: !own.ready || Boolean(state?.confirmed || state?.sent || state?.cancelled || own.confirming),
@@ -52,23 +67,47 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
               : own.stage,
       export: own.export || 0,
       upload: own.upload || 0,
+      progress: state?.uploaded
+        ? '待确认'
+        : own.upload
+          ? `上传 ${Math.round(own.upload * 100)}%`
+          : own.export
+            ? `导出 ${Math.round(own.export * 100)}%`
+            : '准备中',
       bvid: state?.result?.bvid || null,
       copied: Boolean(own.copied),
     };
   }
   async function stop(own) {
     own.setup.abort();
-    own.cover?.dispose();
     await own.job?.cancel();
     await own.uploader?.cancel();
     if (!own.job) own.cancelled = true;
     render(own);
+  }
+  // The frame picked in the editor, or else the one under the playhead (inside the clip).
+  async function captureDefault(own) {
+    try {
+      const frame = await session.captureFrame(own.selection);
+      if (current === own && !cover.state.value.frame) setFrame(frame);
+    } catch (error) {
+      if (current === own && !cover.state.value.frame)
+        cover.notice.value = `没能截取封面画面（${error.message}）。可以回到剪辑设为封面，或上传图片。`;
+    }
+  }
+  function setFrame(frame) {
+    pickedFrame = {...frame, dark: isDark(frame.image)};
+    cover.setFrame(pickedFrame);
   }
   async function start({preserve = false} = {}) {
     if (switching) return;
     if (!session.ready()) return;
     const prior = current;
     if (active() && !preserve) {
+      session.pause();
+      const next = {...session.snapshot(), mark: selectedMark};
+      const key = clipKey(next);
+      current.stale = key === clipKey(current) || key === current.kept ? null : next;
       current.closed = false;
       render(current);
       return;
@@ -79,7 +118,7 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
         if (prior.job?.state().sent) return;
         await stop(prior);
       }
-      prior?.cover?.dispose();
+      session.pause();
       const snapshot = session.snapshot();
       const own = (current = {
         ...snapshot,
@@ -88,7 +127,15 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
         stage: '正在读取投稿配置',
       });
       const {signal} = own.setup;
-      host('composeCover').replaceChildren();
+      // A restart keeps the cover being made; a new submission keeps only a frame picked for this clip.
+      if (!preserve) {
+        const kept =
+          pickedFrame?.key === own.record.key &&
+          pickedFrame.time >= own.selection.start &&
+          pickedFrame.time <= own.selection.end;
+        cover.reset(kept ? pickedFrame : null);
+      }
+      if (!cover.state.value.frame) void captureDefault(own);
       render(own);
       try {
         const [defaults, me, options, templates, schedule] = await Promise.all([
@@ -178,33 +225,6 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
             });
           },
         });
-        own.cover = createCoverEditor({
-          host: host('composeCover'),
-          selection: own.selection,
-          signal: own.job.signal,
-          // The keyframe opening the segment, decoded like the timeline's stills. Drawing a
-          // detached <video> instead comes out black on some hardware decoders (macOS Edge).
-          async readFrame(time, signal) {
-            const stream = own.streams.find(
-              part => time >= part.start_time - own.record.start && time < part.end_time - own.record.start,
-            );
-            if (!stream) throw new Error('该位置没有可用画面');
-            own.plan ??= new RecordingPlan(mediaApi, own.streams, own.job.signal);
-            const place = locateSegment(await own.plan.load(signal), own.record.start + time);
-            if (place) {
-              try {
-                const {readFragmentStill} = await import('../media/fragment-still.js');
-                return await readFragmentStill(mediaApi.request, place, {signal, nativeSize: true});
-              } catch (error) {
-                signal.throwIfAborted();
-                if (error.name === 'AbortError') throw error;
-              }
-            }
-            return readThumbnail(mediaRequest, {stream, local: time - (stream.start_time - own.record.start)}, signal, {
-              nativeSize: true,
-            });
-          },
-        });
         void own.job.start();
         signal.throwIfAborted();
         own.ready = true;
@@ -215,10 +235,6 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     } finally {
       switching = false;
       refresh();
-      if (pendingMark) {
-        pendingMark = false;
-        if (active() && !current.job?.state().sent) void start({preserve: true});
-      }
     }
   }
   async function confirm() {
@@ -232,11 +248,15 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       };
       own.confirming = true;
       render(own);
-      const body = new FormData();
-      body.append('file', await own.cover.file());
-      const {id} = await client.request('/covers', {method: 'POST', body, signal: own.job.signal});
+      const files = await cover.files();
+      const send = async file => {
+        const body = new FormData();
+        body.append('file', file);
+        return (await client.request('/covers', {method: 'POST', body, signal: own.job.signal})).id;
+      };
+      const [wide, tall] = await Promise.all([send(files.wide), send(files.tall)]);
       own.job.signal.throwIfAborted();
-      void own.job.confirm({...fields, cover_id: id});
+      void own.job.confirm({...fields, cover_id: wide, cover43_id: tall});
     } catch (error) {
       if (!own.job.signal.aborted) own.formError = error;
     } finally {
@@ -272,8 +292,22 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     }
   };
   window.addEventListener('beforeunload', beforeUnload);
+  // A pasted image becomes the cover being edited, unless it is going into a text field.
+  const paste = async event => {
+    if (!view.value.open || view.value.locked || isEditing(event)) return;
+    const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith('image/'));
+    if (!file) return;
+    event.preventDefault();
+    try {
+      cover.setImage(cover.active.value, await readImage(file));
+    } catch (error) {
+      cover.notice.value = error.message;
+    }
+  };
+  window.addEventListener('paste', paste);
   return {
     view,
+    cover,
     actions: {
       start: () => void start(),
       confirm: () => void confirm(),
@@ -285,6 +319,14 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
         render(current);
       },
       retry: () => (current.setupError ? void start({preserve: true}) : void current.job.retry()),
+      // The editor changed since this export began: export the new clip, or keep the old one.
+      restart: () => void start({preserve: true}),
+      keep() {
+        if (!current?.stale) return;
+        current.kept = clipKey(current.stale);
+        current.stale = null;
+        render(current);
+      },
       unlinkMark() {
         if (!current || view.value.markLocked) return;
         current.mark = null;
@@ -302,13 +344,9 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
       },
     },
     refresh,
+    setFrame,
     markSelected(mark) {
       selectedMark = mark;
-      if (switching) {
-        pendingMark = true;
-        return;
-      }
-      if (active() && !current.job?.state().sent) void start({preserve: true});
     },
     clearMark() {
       selectedMark = null;
@@ -318,8 +356,8 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
     },
     dispose() {
       window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('paste', paste);
       this.logout();
-      current?.cover?.dispose();
     },
   };
 }

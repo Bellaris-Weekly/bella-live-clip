@@ -44,7 +44,6 @@ export function createSubmissionJob({
         ...fields,
         request_id: requestId,
         account_mid: defaults.account_mid,
-        cover43_id: null,
         parts: [{upload_id: uploadId, title: fields.title}],
       };
       sent = true;

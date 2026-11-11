@@ -1561,9 +1561,6 @@ fieldset {
   .editor.has-side {
     grid-template-columns: minmax(0, 1fr) 340px;
   }
-  .editor.has-side.is-composing {
-    grid-template-columns: minmax(0, 1fr) 400px;
-  }
 }
 .side {
   display: flex;
@@ -2209,14 +2206,116 @@ dialog.history::backdrop {
 .compose {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 12px;
   flex: 1;
+  min-height: 0;
+}
+.compose-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.compose-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.compose-title h2 {
+  flex: none;
+  font-size: 16px;
+  font-weight: 800;
+}
+.compose-title .hint {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.compose-record {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+.compose-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 14px;
+  border-radius: var(--r-md);
+  background: hsl(var(--warning-container));
+  color: hsl(var(--warning-foreground));
+  font-size: 13px;
+}
+.compose-stale p {
+  flex: 1;
+  min-width: 220px;
+}
+.compose-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.compose-cover,
+.compose-side {
+  min-width: 0;
+  border-radius: var(--r-lg);
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-raised);
+}
+.compose-cover {
+  padding: 14px;
+}
+.compose-side {
+  display: flex;
+  flex-direction: column;
 }
 .compose-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 0 16px 14px;
+  padding: 14px 16px;
+}
+/* Narrow: one scrolling column, the actions stay in reach. Wide: each column scrolls itself. */
+.compose-side .compose-foot {
+  position: sticky;
+  bottom: 0;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  background: hsl(var(--card));
+}
+@container (min-width: 900px) {
+  .compose-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+    align-content: stretch;
+    overflow: hidden;
+  }
+  .compose-cover,
+  .compose-side {
+    min-height: 0;
+  }
+  .compose-cover {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .compose-side {
+    overflow: hidden;
+  }
+  .compose-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
 }
 .compose-fields,
 .form-fields {
@@ -2244,6 +2343,242 @@ dialog.history::backdrop {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+}
+
+/* Cover editor: one big canvas worked on directly, both ratios side by side below. */
+.cover-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cover-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: repeating-conic-gradient(hsl(var(--muted)) 0 25%, hsl(var(--card)) 0 50%) 0 0 / 16px 16px;
+}
+.cover-stage canvas {
+  display: block;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+.cover-stage.is-dropping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px dashed hsl(var(--primary));
+  border-radius: inherit;
+  background: hsl(var(--primary) / 0.12);
+  pointer-events: none;
+}
+.cover-empty,
+.cover-drop {
+  position: absolute;
+  inset: auto 16px 50%;
+  transform: translateY(50%);
+  text-align: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+.cover-drop {
+  z-index: 1;
+  color: hsl(var(--primary-container-foreground));
+  text-shadow: none;
+}
+.cover-notice {
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: hsl(var(--warning-container));
+  color: hsl(var(--warning-foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+.cover-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cover-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: hsl(var(--input));
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cover-source .icon-svg {
+  width: 15px;
+  height: 15px;
+}
+.cover-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: hsl(var(--input));
+}
+.cover-zoom .mono {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.cover-lower {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@container (min-width: 1100px) {
+  .cover-lower {
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+.cover-ratios {
+  display: grid;
+  grid-template-columns: 16fr 12fr;
+  gap: 8px;
+  max-width: 300px;
+}
+.cover-ratio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.cover-ratio > button[role='tab'] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  min-height: 0;
+  padding: 4px;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px hsl(var(--border));
+  font-weight: 400;
+  text-align: left;
+}
+.cover-ratio.is-selected > button[role='tab'] {
+  box-shadow: inset 0 0 0 2px hsl(var(--primary));
+  background: hsl(var(--primary-container) / 0.5);
+}
+.cover-ratio canvas {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+}
+.cover-ratio span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 4px 2px;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.cover-ratio b {
+  font-size: 12px;
+  color: hsl(var(--foreground));
+}
+.cover-text {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cover-text textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.cover-style {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.swatch {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px hsl(0 0% 0% / 0.15),
+    0 0 0 0 hsl(var(--primary));
+  cursor: pointer;
+}
+.swatch[aria-pressed='true'] {
+  box-shadow:
+    inset 0 0 0 1px hsl(0 0% 0% / 0.15),
+    0 0 0 2px hsl(var(--card)),
+    0 0 0 4px hsl(var(--primary));
+}
+.swatch.is-custom {
+  overflow: hidden;
+  background: conic-gradient(#f55, #fd5, #5d5, #5cf, #55f, #d5f, #f55);
+}
+.swatch.is-custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.cover-size {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+.cover-pins {
+  position: relative;
+  height: 0;
+}
+.cover-pin {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  border-radius: 6px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  pointer-events: none;
+}
+.cover-pin .icon-svg {
+  width: 13px;
+  height: 13px;
+}
+.frame-step {
+  display: inline-flex;
+  gap: 2px;
 }
 .desc-preview {
   margin: 0;
@@ -2304,52 +2639,6 @@ details.advanced[open] > summary::after {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
-}
-.cover-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cover-frame {
-  position: relative;
-  overflow: hidden;
-  border-radius: 12px;
-  background: #0b0b10;
-  aspect-ratio: 16 / 9;
-}
-.cover-frame canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  touch-action: none;
-  cursor: move;
-}
-.cover-status {
-  position: absolute;
-  inset: auto 10px 8px;
-  color: #fff;
-  font-size: 12px;
-  text-shadow: 0 1px 3px #000;
-}
-.cover-source {
-  display: block;
-  max-width: 100%;
-  max-height: 200px;
-  border-radius: 10px;
-  touch-action: none;
-  cursor: move;
-}
-.cover-colors {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-  font-weight: 600;
-  color: hsl(var(--muted-foreground));
-}
-.cover-colors label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .compose-foot {
   display: flex;
