@@ -840,7 +840,7 @@ fieldset {
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  max-width: 760px;
+  max-width: 1480px;
   width: 100%;
   margin: 0 auto;
 }
@@ -897,18 +897,18 @@ fieldset {
   color: hsl(var(--warning-foreground));
 }
 .records {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 8px;
 }
 .record {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   width: 100%;
   min-height: 0;
-  padding: 10px 12px 10px 10px;
+  padding: 8px 10px 8px 8px;
   border-radius: var(--r-md);
   background: hsl(var(--card));
   box-shadow: var(--shadow-raised);
@@ -934,8 +934,8 @@ fieldset {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 52px;
-  border-radius: 12px;
+  height: 44px;
+  border-radius: 10px;
   background: hsl(var(--input));
   line-height: 1.1;
 }
@@ -943,7 +943,7 @@ fieldset {
   background: hsl(var(--card) / 0.6);
 }
 .record-date b {
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--member, inherit);
@@ -963,13 +963,15 @@ fieldset {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 .record-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
   font-size: 12px;
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
@@ -977,14 +979,27 @@ fieldset {
 .record.is-live .record-meta {
   color: hsl(var(--primary-container-foreground) / 0.75);
 }
-.record-side {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: hsl(var(--muted-foreground));
+.record.is-placeholder {
+  box-shadow: none;
+  background: hsl(var(--card) / 0.6);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.record.is-placeholder .record-title,
+.record.is-placeholder .record-meta {
+  height: 12px;
+  border-radius: 6px;
+  background: hsl(var(--input));
+}
+.record.is-placeholder .record-title {
+  width: 70%;
+}
+.record.is-placeholder .record-meta {
+  width: 45%;
+  margin-top: 6px;
 }
 .people {
   display: flex;
+  margin-left: auto;
 }
 .person {
   position: relative;

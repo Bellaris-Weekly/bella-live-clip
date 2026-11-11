@@ -18,11 +18,13 @@ function waitFor(promise, signal) {
   });
 }
 
+// Replays reach back 14 days, so any list up to that age is still worth showing at once.
 const FRESH_FOR = 5 * 60 * 1000,
-  KEEP_FOR = 24 * 60 * 60 * 1000;
+  KEEP_FOR = 14 * 24 * 60 * 60 * 1000;
 
 // `store` shares finished lists between tabs: a recent one avoids the requests
 // entirely, and an older one is shown at once while the list refreshes behind it.
+// An old list drops its live entry: that stream has most likely ended since.
 export function createLibraryLoader({
   api,
   schedules,
@@ -41,12 +43,13 @@ export function createLibraryLoader({
       const saved = store?.read(id);
       const age = now() - saved?.time;
       if (Array.isArray(saved?.records) && age >= 0 && age < KEEP_FOR) {
+        const stale = age >= FRESH_FOR;
         cache.set(id, {
-          records: saved.records,
+          records: stale ? saved.records.filter(record => !record.live) : saved.records,
           failed: false,
           liveFailed: false,
-          ready: age < FRESH_FOR,
-          stale: age >= FRESH_FOR,
+          ready: !stale,
+          stale,
         });
       }
     }

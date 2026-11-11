@@ -355,7 +355,7 @@ test('a list saved by another tab within minutes needs no requests', async () =>
   assert.equal(calls, 0);
 });
 test('an older saved list shows at once and refreshes behind it', async () => {
-  const store = storeFixture({time: 1000, records: [{key: 'saved'}]}),
+  const store = storeFixture({time: 1000, records: [{key: 'saved'}, {key: 'ended', live: true}]}),
     updates = [];
   const loader = createLibraryLoader({
     ...ready,
@@ -364,7 +364,11 @@ test('an older saved list shows at once and refreshes behind it', async () => {
     store,
     now: () => 1000 + 3600000,
   });
-  assert.equal(loader.get(member).records[0].key, 'saved', 'visible before any request');
+  assert.deepEqual(
+    loader.get(member).records.map(record => record.key),
+    ['saved'],
+    'visible before any request, without the old live entry',
+  );
   await loader.load(member);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(loader.get(member).records[0].key, 'one');
@@ -372,9 +376,9 @@ test('an older saved list shows at once and refreshes behind it', async () => {
   assert.equal(store.writes.length, 1);
   assert.equal(store.writes[0].time, 1000 + 3600000);
 });
-test('day-old, malformed and partial lists are not trusted', async () => {
-  for (const saved of [{time: 1000, records: [{key: 'old'}]}, {time: 1000 + 86400000 * 2 - 1, records: 'x'}, null]) {
-    const loader = createLibraryLoader({...ready, store: storeFixture(saved), now: () => 1000 + 86400000 * 2});
+test('two-week-old, malformed and partial lists are not trusted', async () => {
+  for (const saved of [{time: 1000, records: [{key: 'old'}]}, {time: 1000 + 86400000 * 15 - 1, records: 'x'}, null]) {
+    const loader = createLibraryLoader({...ready, store: storeFixture(saved), now: () => 1000 + 86400000 * 15});
     assert.equal(loader.get(member), null);
   }
   const store = storeFixture(null);

@@ -46,44 +46,53 @@ function RecordRow({record, disabled, onOpen}) {
           </span>
           <span>{length}</span>
           {record.schedule?.type && <span class="badge">{record.schedule.type}</span>}
+          {people.length > 0 && (
+            <span class="people">
+              {people.map(person => (
+                <span
+                  key={person.name}
+                  class="person"
+                  title={person.name}
+                  role="img"
+                  aria-label={person.name}
+                  style={{'--member-color': person.color}}
+                >
+                  <Icon name="person" />
+                  {person.avatar && (
+                    <img
+                      src={person.avatar}
+                      alt=""
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={event => event.currentTarget.remove()}
+                    />
+                  )}
+                </span>
+              ))}
+            </span>
+          )}
         </span>
-      </span>
-      <span class="record-side">
-        {people.length > 0 && (
-          <span class="people">
-            {people.map(person => (
-              <span
-                key={person.name}
-                class="person"
-                title={person.name}
-                role="img"
-                aria-label={person.name}
-                style={{'--member-color': person.color}}
-              >
-                <Icon name="person" />
-                {person.avatar && (
-                  <img
-                    src={person.avatar}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={event => event.currentTarget.remove()}
-                  />
-                )}
-              </span>
-            ))}
-          </span>
-        )}
-        <Icon name="chevron" />
       </span>
     </button>
   );
 }
 
+// Shown only on a first load, before any list (fresh or saved) exists.
+const PLACEHOLDERS = Array.from({length: 8}, (_, index) => (
+  <div key={index} class="record is-placeholder" aria-hidden="true">
+    <span class="record-date" />
+    <span class="record-main">
+      <span class="record-title" />
+      <span class="record-meta" />
+    </span>
+  </div>
+));
+
 export function Library({store, actions, members}) {
   const busy = store.busy.value,
     current = store.member.value,
-    records = store.records.value;
+    records = store.records.value,
+    loaded = store.libraryLoaded.value;
   return (
     <section id="library" class="library" hidden={store.page.value !== 'library'}>
       <div class="library-tools">
@@ -129,12 +138,13 @@ export function Library({store, actions, members}) {
           {store.libraryNote.value}
         </p>
       )}
-      <div class="records">
+      <div class="records" aria-busy={loaded ? undefined : 'true'}>
         {records.map(record => (
           <RecordRow key={record.key} record={record} disabled={busy} onOpen={() => actions.openRecord(record)} />
         ))}
+        {!loaded && !records.length && PLACEHOLDERS}
       </div>
-      {store.libraryLoaded.value && !records.length && <p class="empty">近 14 天暂无可用回放</p>}
+      {loaded && !records.length && <p class="empty">近 14 天暂无可用回放</p>}
     </section>
   );
 }

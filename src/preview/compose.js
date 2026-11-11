@@ -9,6 +9,7 @@ import {createExportMetrics} from '../media/export-metrics.js';
 import {RecordingPlan} from '../media/recording-plan.js';
 import {estimateSelectionBytes} from '../media/recording-estimate.js';
 import {readThumbnail} from '../media/thumbnails.js';
+import {locateSegment} from '../media/playlist.js';
 import {fileName} from '../media/file-name.js';
 import {limitProgress} from '../ui/export-progress.js';
 
@@ -181,11 +182,24 @@ export function createComposer({root, client, gmRequest, mediaApi, mediaRequest,
           host: host('composeCover'),
           selection: own.selection,
           signal: own.job.signal,
-          readFrame(time, signal) {
+          // The keyframe opening the segment, decoded like the timeline's stills. Drawing a
+          // detached <video> instead comes out black on some hardware decoders (macOS Edge).
+          async readFrame(time, signal) {
             const stream = own.streams.find(
               part => time >= part.start_time - own.record.start && time < part.end_time - own.record.start,
             );
             if (!stream) throw new Error('该位置没有可用画面');
+            own.plan ??= new RecordingPlan(mediaApi, own.streams, own.job.signal);
+            const place = locateSegment(await own.plan.load(signal), own.record.start + time);
+            if (place) {
+              try {
+                const {readFragmentStill} = await import('../media/fragment-still.js');
+                return await readFragmentStill(mediaApi.request, place, {signal, nativeSize: true});
+              } catch (error) {
+                signal.throwIfAborted();
+                if (error.name === 'AbortError') throw error;
+              }
+            }
             return readThumbnail(mediaRequest, {stream, local: time - (stream.start_time - own.record.start)}, signal, {
               nativeSize: true,
             });

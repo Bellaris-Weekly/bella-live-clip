@@ -74,7 +74,7 @@ function join(...parts) {
 export async function readFragmentStill(
   request,
   {segment, map},
-  {signal, makeCanvas = () => document.createElement('canvas')},
+  {signal, makeCanvas = () => document.createElement('canvas'), nativeSize = false},
 ) {
   signal.throwIfAborted();
   const head = await readBytes(request, segment, 0, OPENING_BYTES, signal);
@@ -101,16 +101,16 @@ export async function readFragmentStill(
     signal.throwIfAborted();
     if (!sample) throw new Error('分片没有可解码的画面。');
     const canvas = makeCanvas();
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
+    canvas.width = nativeSize ? sample.displayWidth : WIDTH;
+    canvas.height = nativeSize ? sample.displayHeight : HEIGHT;
     const context = canvas.getContext('2d');
     drawFitted(
       context,
       (x, y, width, height) => sample.draw(context, x, y, width, height),
       sample.displayWidth,
       sample.displayHeight,
-      WIDTH,
-      HEIGHT,
+      canvas.width,
+      canvas.height,
     );
     return canvas;
   } finally {
