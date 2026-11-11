@@ -2323,6 +2323,31 @@ dialog.history::backdrop {
   flex-direction: column;
   gap: 12px;
 }
+.compose-preview {
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: #0b0b10;
+}
+.compose-preview video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.compose-preview.is-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: hsl(var(--input) / 0.7);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+.compose-preview.is-waiting .icon-svg {
+  width: 16px;
+  height: 16px;
+}
 .linked {
   display: flex;
   align-items: center;

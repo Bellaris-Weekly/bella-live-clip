@@ -74,6 +74,7 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
           : own.export
             ? `导出 ${Math.round(own.export * 100)}%`
             : '准备中',
+      preview: own.preview || null,
       bvid: state?.result?.bvid || null,
       copied: Boolean(own.copied),
     };
@@ -151,10 +152,13 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
         own.uploader = createClipUpload({client, transport});
         let temporary;
         const clean = async () => {
+          if (own.preview) URL.revokeObjectURL(own.preview);
+          own.preview = null;
           if (!temporary) return;
           await temporary.remove();
           temporary = null;
           own.file = null;
+          render(own);
         };
         own.job = createSubmissionJob({
           client,
@@ -198,6 +202,9 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
                 signal.throwIfAborted();
                 own.file = await temporary.handle.getFile();
                 own.export = 1;
+                // The finished clip, playable on the page before it is sent.
+                own.preview = URL.createObjectURL(own.file);
+                render(own);
               } catch (error) {
                 await clean();
                 throw error;

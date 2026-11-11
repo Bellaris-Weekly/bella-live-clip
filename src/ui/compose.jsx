@@ -1,4 +1,5 @@
 import {Component} from 'preact';
+import {useLayoutEffect, useRef} from 'preact/hooks';
 import {Icon} from './icon.jsx';
 import {CoverEditor} from './cover.jsx';
 import {markTime} from '../preview/marks.js';
@@ -23,6 +24,27 @@ function Progress({label, value, name}) {
         <span style={{width: `${percent}%`}} />
       </div>
       <b class="mono">{percent}%</b>
+    </div>
+  );
+}
+
+// The exported file itself: what will be uploaded, danmaku and cut points included.
+function ClipPreview({url, open}) {
+  const video = useRef(null);
+  // The page hides rather than unmounts, so leaving it must stop the sound.
+  useLayoutEffect(() => {
+    if (!open) video.current?.pause();
+  }, [open]);
+  if (!url)
+    return (
+      <p class="compose-preview is-waiting" data-preview-waiting>
+        <Icon name="clock" />
+        导出完成后，可以在这里先看一遍成片
+      </p>
+    );
+  return (
+    <div class="compose-preview">
+      <video ref={video} src={url} controls playsInline preload="metadata" data-preview aria-label="成片预览" />
     </div>
   );
 }
@@ -76,6 +98,7 @@ export function ComposeSheet({composer}) {
         </section>
         <section class="compose-side">
           <div class="compose-body">
+            {!view.bvid && <ClipPreview url={view.preview} open={view.open} />}
             {view.mark && (
               <div class="linked" data-mark>
                 <span class="mono">{markTime(view.mark.at)}</span>

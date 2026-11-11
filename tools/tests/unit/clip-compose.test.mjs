@@ -102,6 +102,13 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
     exportWait: gate.promise,
   });
   w.HTMLElement.prototype.scrollIntoView = () => {};
+  const urls = {made: [], revoked: [], paused: 0};
+  w.URL.createObjectURL = file => {
+    urls.made.push(file.name);
+    return `blob:${file.name}`;
+  };
+  w.URL.revokeObjectURL = url => urls.revoked.push(url);
+  w.HTMLMediaElement.prototype.pause = () => urls.paused++;
   // Any 2D call works; pixels read back as mid-grey so frames never count as black.
   const context = new Proxy(
     {
@@ -211,6 +218,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
     field,
     calls,
     captured,
+    urls,
     files,
     removed,
     select: value => {
@@ -296,6 +304,26 @@ test('a changed clip is offered on return: exporting it cancels the old export, 
   f.field('cancel').click();
   await until(() => f.files.size === 0);
   assert.equal(f.calls.filter(([path]) => path === '/submissions').length, 0);
+});
+
+test('the exported clip plays on the page until it is cleaned up, and stops when the page is left', async t => {
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.dom.window.close();
+  });
+  f.api.actions.start();
+  await until(() => f.field('preview-waiting'));
+  f.gate.resolve();
+  await until(() => f.field('preview'));
+  const url = f.field('preview').getAttribute('src');
+  assert.match(url, /^blob:/);
+  f.api.actions.close();
+  assert.equal(f.urls.paused, 1);
+  f.api.actions.start();
+  f.field('cancel').click();
+  await until(() => f.field('preview') === null && f.files.size === 0);
+  assert.deepEqual(f.urls.revoked, [url]);
 });
 
 test('missing studio configuration prevents export and upload and explains the required admin setting', async t => {
