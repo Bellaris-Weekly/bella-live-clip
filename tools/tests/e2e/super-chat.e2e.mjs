@@ -29,6 +29,10 @@ test('SC sprites, preview/export opacity, avatars and streaming boundaries', asy
     assert.equal(result.fetches, 1);
     assert.equal(result.counters.spriteRasters, 2, 'one raster per placed item across sixty frames');
     assert.equal(result.maxDifference, 0, 'preview and exported samples use identical opacity');
+    const late = await page.evaluate(() => window.checkLateAvatar());
+    assert.ok(late.before[1] > 25, 'placeholder before the avatar arrives');
+    assert.ok(late.after[0] > 200 && late.after[1] < 25 && late.after[2] > 200, JSON.stringify(late));
+    assert.equal(late.widthAfter, late.widthBefore);
     const windows = await page.evaluate(() => window.checkSuperChatWindows());
     assert.equal(windows.maxDifference, 0);
     assert.deepEqual(windows.firstWindow, {start: -windows.preroll, end: 10});

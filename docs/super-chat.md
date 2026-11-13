@@ -26,13 +26,14 @@ separate receipts; overlapping archive partitions emit each receipt once. SC add
 The paid event becomes `kind: 'sc', mode: 1` at normalization. Missing required
 schema fields fail visibly rather than switching source formats.
 
-The B capsule has a dark header with white currency/amount, light body with dark
-text, a circular static avatar slot, and the same height as ordinary text.
-Backgrounds use message colors. Body text is single-line and limited to 40 Unicode
-grapheme clusters, plus an ellipsis. Amounts use a text font, avoiding colored
-emoji digits on hosts without the named CJK fonts. The platform `font_color` is
-preserved but belongs to its dark-card design, so B uses dark text on its light
-body. Geometry caps even pathological glyph widths at 48 body font sizes.
+The B capsule has a dark `header_color` head with white currency/amount, a light
+`bg_color` body with dark text, a circular static avatar with a white ring, and
+the same height as ordinary text. Body text is 0.8 of the ordinary font size,
+single-line and limited to 40 Unicode grapheme clusters, plus an ellipsis.
+Amounts use a text font, avoiding colored emoji digits on hosts without the named
+CJK fonts. The platform `font_color` belongs to its dark-card design, so B uses
+dark text on its light body. Geometry caps even pathological glyph widths at 48
+body font sizes.
 
 SC moves at `200 * width / 1920` pixels/second and uses 85% opacity. Ordinary
 comments retain their existing speed and combined-layer 65% opacity. SC has a
@@ -47,8 +48,9 @@ Avatars allow the observed `i*.hdslb.com/bfs/{face,garb,baselabs}/` paths, reque
 96px CDN thumbnails without credentials or a referrer, and decode one static
 bitmap. Each compositor has at most three concurrent downloads and 128 entries,
 a 2 MiB response cap, three-second request timeout, and 60-second failure cooldown.
-Only preparation prefetches; placement freezes the available avatar. A late or
-failed image never changes an active capsule's dimensions or stalls media.
+Only preparation prefetches. The avatar slot is always reserved; until the image
+arrives it shows a portrait placeholder, and a late image re-rasters only that
+capsule without changing its dimensions or stalling media.
 
 ## 4. Validation and errors
 
@@ -56,7 +58,7 @@ failed image never changes an active capsule's dimensions or stalls media.
 | --- | --- |
 | Missing receipt identity/order or required columns | Visible archive error |
 | Invalid/nonpositive amount or empty SC text | Skip invalid paid event |
-| Missing/failed/late avatar | Empty fixed slot; amount and text still render |
+| Missing/failed avatar | Placeholder in the fixed slot; late arrival fills it |
 | Duplicate-looking text, different receipt | Preserve both |
 | Same receipt in overlapping archive partitions | Emit once |
 | SC cannot fit by five seconds | Count a capacity drop |
@@ -66,7 +68,7 @@ failed image never changes an active capsule's dimensions or stalls media.
 
 Good: long and short SCs move together; a slow leading SC cannot be overtaken by
 ordinary text in its lane. Base: no SC uses the original ordinary rendering path.
-Bad: reset a long SC at the next ten-second window or change its face after entry.
+Bad: reset a long SC at the next ten-second window or resize it when its face arrives.
 
 ## 6. Verification
 

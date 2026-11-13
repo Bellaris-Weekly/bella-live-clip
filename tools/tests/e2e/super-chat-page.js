@@ -105,6 +105,30 @@ window.checkSuperChat = async () => {
   return result;
 };
 
+// A placed SC keeps its width; an avatar that arrives later fills its slot.
+window.checkLateAvatar = () => {
+  const face = new OffscreenCanvas(48, 48),
+    faceInk = face.getContext('2d');
+  faceInk.fillStyle = '#ff00ff';
+  faceInk.fillRect(0, 0, 48, 48);
+  let ready = false;
+  const avatars = {get: url => (ready && url ? face : null)};
+  const painter = createDanmakuPainter([make({face: 'late'})], {...resources(), avatars}, options());
+  painter.layout.advance(0);
+  painter.layout.x = () => 40;
+  const ink = new OffscreenCanvas(1920, 1080).getContext('2d');
+  const item = painter.layout.active[0],
+    width = item.width;
+  const sample = () => [...ink.getImageData(40 + 24, item.top + item.height / 2, 1, 1).data];
+  paintOverlay(painter, 0, ink);
+  const before = sample();
+  ready = true;
+  paintOverlay(painter, 1 / 60, ink);
+  const after = sample();
+  painter.close();
+  return {before, after, widthBefore: width, widthAfter: item.width};
+};
+
 window.checkSuperChatWindows = async () => {
   const events = [make({time: 0, text: '长'.repeat(40)}), make({time: 10, order: 1, text: '第二条'})];
   const windows = [];

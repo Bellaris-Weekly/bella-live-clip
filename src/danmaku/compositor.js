@@ -202,6 +202,14 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           }
           const x = layout.x(item, time);
           for (const part of item.parts) {
+            // Width is fixed at placement; a late avatar replaces only the
+            // placeholder inside its reserved slot.
+            const avatar = part.sc && !part.avatar && resources.avatars?.get(part.face);
+            if (avatar) {
+              part.avatar = avatar;
+              sprites.delete(item);
+              invalidated = true;
+            }
             const y = part.sc ? item.top : item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;
             commands.push({
               item,
