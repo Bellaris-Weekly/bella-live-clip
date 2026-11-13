@@ -178,7 +178,7 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
                   own.estimate ? estimateSelectionBytes(own.estimate, own.record.start, own.selection) * 2 : 0,
                 );
                 const plan = new RecordingPlan(mediaApi, own.streams, signal);
-                const groups = (await plan.load(signal)).filter(group => group.streamIndex === own.segmentIndex);
+                const groups = await plan.loadPart(own.segmentIndex, signal);
                 temporary = await createTemporaryMedia({storage, signal});
                 const {exportSelection} = await import('../media/export.js');
                 await exportSelection(mediaApi, own.record, groups, own.selection, {

@@ -632,3 +632,84 @@ test('预览失败携带编码、浏览器原因和是否支持该编码', () =>
     hlsDetails: 'fragLoadError',
   });
 });
+
+test('long recordings locate frames with a bounded search and reuse the current fragment', async () => {
+  const count = 50000,
+    part = {start_time: 1000, end_time: 1000 + count, stream: 'long'};
+  const f = playerFixture(async () => [part]);
+  let visited = 0;
+  const fragments = Array.from({length: count}, (_, index) => ({
+    get start() {
+      visited++;
+      return index;
+    },
+    duration: 1,
+    cc: 0,
+  }));
+  try {
+    await f.player.load({start: 1000, end: 1000 + count}, new AbortController().signal);
+    f.player.seek(count - 0.5);
+    const events = f.instances[0].events;
+    events.get('hlsManifestParsed')();
+    events.get('hlsLevelLoaded')(null, {details: {fragments}});
+    events.get('hlsInitPtsFound')(null, {frag: {cc: 0}, initPTS: 0, timescale: 1});
+    f.video.readyState = 2;
+    f.video.dispatchEvent(new Event('loadeddata'));
+    visited = 0;
+    f.video.currentTime = 12345.5;
+    assert.equal(f.player.danmakuFrame().time, 12345.5);
+    assert.ok(visited < 80, `visited ${visited} starts for one seek`);
+    visited = 0;
+    for (let i = 0; i < 100; i++) assert.equal(f.player.danmakuFrame().time, 12345.5);
+    assert.ok(visited < 600, `visited ${visited} starts while staying in one fragment`);
+  } finally {
+    f.player.destroy();
+  }
+});
+
+test('fragment lookup preserves gaps, overlap boundaries, backward seeks and updated HLS times', async () => {
+  const part = {start_time: 0, end_time: 10, stream: 'test'};
+  const f = playerFixture(async () => [part]);
+  try {
+    await f.player.load({start: 0, end: 10}, new AbortController().signal);
+    f.player.seek(0.5);
+    const events = f.instances[0].events;
+    events.get('hlsManifestParsed')();
+    const fragments = [
+      {start: 0, duration: 1, cc: 0},
+      {start: 2, duration: 2.5, cc: 0},
+      {start: 4, duration: 1, cc: 1},
+    ];
+    events.get('hlsLevelLoaded')(null, {details: {fragments}});
+    for (const [cc, offset] of [
+      [0, 10],
+      [1, 100],
+    ])
+      events.get('hlsInitPtsFound')(null, {frag: {cc}, initPTS: offset, timescale: 1});
+    f.video.readyState = 2;
+    f.video.dispatchEvent(new Event('loadeddata'));
+    for (const [time, expected] of [
+      [4.75, 104.75],
+      [4.25, 14.25],
+      [1.5, null],
+      [0.5, 10.5],
+      [4.5, 104.5],
+      [5, null],
+    ]) {
+      f.video.currentTime = time;
+      assert.equal(f.player.danmakuFrame()?.time ?? null, expected);
+    }
+    fragments[1].duration = 2;
+    f.video.currentTime = 4.25;
+    assert.equal(
+      f.player.danmakuFrame().time,
+      104.25,
+      'read hls.js timing refinements without rebuilding a stale index',
+    );
+    events.get('hlsLevelLoaded')(null, {details: {fragments: [{start: 0, duration: 10, cc: 1}]}});
+    f.video.currentTime = 0.5;
+    assert.equal(f.player.danmakuFrame().time, 100.5);
+  } finally {
+    f.player.destroy();
+  }
+});

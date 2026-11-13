@@ -47,7 +47,7 @@ export class DanmakuLayout {
         : [margin, ...peers.flatMap(item => [item.top, item.top + item.height + this.scale])];
     candidates.sort((a, b) => (mode === 4 ? b - a : a - b));
     for (const top of candidates) {
-      if (top < margin || top + content.height > (mode === 4 ? this.height - margin : this.height * 0.25)) continue;
+      if (top < margin || top + content.height > (mode === 4 ? this.height - margin : this.height * 0.23)) continue;
       if (
         !peers.some(
           item =>

@@ -202,6 +202,10 @@ export function createDiagnosticReporter({
         startedAt = clock(),
         stageTimes = {};
       const exporting = action === 'export' || action === 'recording_download';
+      // Keep full lifecycles for exports and the current danmaku startup
+      // investigation. Routine browsing/sync operations need failures only;
+      // their successful loads and user cancellations used to dominate logs.
+      const lifecycle = exporting || action === 'danmaku_preview' || action === 'danmaku_preview_resume';
       let finished = false,
         sequence = 0,
         timer,
@@ -239,6 +243,7 @@ export function createDiagnosticReporter({
         point(latestMetrics);
       }
       function publish(outcome, message, error, periodic = false) {
+        if (!lifecycle && outcome !== 'failed' && outcome !== 'partial') return;
         try {
           const time = now();
           const elapsedMs = Math.max(0, time - started);
@@ -325,9 +330,7 @@ export function createDiagnosticReporter({
         if (timer !== undefined) cancelTimer(timer);
         publish(outcome, message, error);
       }
-      // Preview errors can occur long after loading. Only jobs with a known end
-      // emit start/success events; preview's existing failure boundary stays live.
-      if (action !== 'preview') publish('started', exporting ? '导出开始' : '操作开始');
+      if (lifecycle) publish('started', exporting ? '导出开始' : '操作开始');
       if (exporting) {
         timer = every(() => {
           if (finished) return;

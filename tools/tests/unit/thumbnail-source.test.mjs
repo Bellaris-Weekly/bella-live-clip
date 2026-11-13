@@ -138,3 +138,113 @@ test('submission strips use the platform storyboard and keep decoding as a fallb
   f.source.dispose();
   assert.equal(disposed, true);
 });
+
+test('concurrent identical reads share decoding and cancel only their own wait', async t => {
+  let finish,
+    child,
+    reads = 0;
+  const f = fixture({
+    readFrame: (_, __, signal) => {
+      reads++;
+      child = signal;
+      return new Promise(resolve => {
+        finish = resolve;
+      });
+    },
+  });
+  t.after(f.restore);
+  const a = new AbortController(),
+    b = new AbortController();
+  const first = assert.rejects(f.source.read(sample(60), a.signal), {name: 'AbortError'});
+  const second = f.source.read(sample(60), b.signal);
+  assert.equal(reads, 1);
+  a.abort();
+  await first;
+  assert.equal(child.aborted, false);
+  finish(decoded());
+  const canvas = await second;
+  assert.notEqual(await f.source.read(sample(60), signal()), canvas);
+  assert.equal(reads, 1);
+  assert.equal(f.urls.length, 1);
+  f.source.dispose();
+  assert.equal(child.aborted, true);
+});
+
+test('the last canceled waiter aborts immediately, allows retry and cannot publish a late frame', async t => {
+  const pending = [];
+  const f = fixture({readFrame: (_, __, signal) => new Promise(resolve => pending.push({resolve, signal}))});
+  t.after(f.restore);
+  const a = new AbortController(),
+    b = new AbortController();
+  const first = assert.rejects(f.source.read(sample(60), a.signal), {name: 'AbortError'});
+  const second = assert.rejects(f.source.read(sample(60), b.signal), {name: 'AbortError'});
+  a.abort();
+  b.abort();
+  assert.equal(pending[0].signal.aborted, true);
+  const next = f.source.read(sample(60), signal());
+  assert.equal(pending.length, 2);
+  pending[0].resolve(decoded());
+  await Promise.all([first, second]);
+  assert.equal(f.urls.length, 0);
+  pending[1].resolve(decoded());
+  await next;
+  assert.equal(f.urls.length, 1);
+  f.source.dispose();
+});
+
+test('fragment-only drag reads do not wait on an unrelated slow fallback at the same time', async t => {
+  let finish;
+  const f = fixture({
+    readFrame: (_, item) =>
+      item.fragmentOnly
+        ? Promise.resolve(decoded())
+        : new Promise(resolve => {
+            finish = resolve;
+          }),
+  });
+  t.after(f.restore);
+  const controller = new AbortController();
+  const slow = assert.rejects(f.source.read(sample(60), controller.signal), {name: 'AbortError'});
+  await f.source.read({...sample(60), fragmentOnly: true}, signal());
+  assert.equal(f.urls.length, 1);
+  controller.abort();
+  finish(decoded());
+  await slow;
+  f.source.dispose();
+});
+
+test('JPEG URLs are LRU bounded and can be recreated from cached canvases without decoding again', async t => {
+  const f = fixture({maxStills: 2});
+  t.after(f.restore);
+  for (const time of [0, 10]) await f.source.read(sample(time), signal());
+  assert.equal(f.source.frameUrl(0), 'blob:0');
+  await f.source.read(sample(20), signal());
+  assert.deepEqual(f.revoked, ['blob:1']);
+  assert.equal(f.source.hasFrame(10), false);
+  await f.source.read(sample(10), signal());
+  assert.equal(f.source.hasFrame(10), true);
+  assert.deepEqual(f.reads, [0, 10, 20]);
+  assert.equal(f.source.frameUrl(10), 'blob:3');
+  f.source.dispose();
+  assert.equal(f.revoked.length, f.urls.length);
+  assert.equal(new Set(f.revoked).size, f.revoked.length);
+});
+
+test('JPEG cache also honors byte limits, and oversized or late blobs do not allocate URLs', async t => {
+  const callbacks = [];
+  const f = fixture({
+    maxStillBytes: 3,
+    readFrame: async () => ({...decoded(), toBlob: callback => callbacks.push(callback)}),
+  });
+  t.after(f.restore);
+  for (const time of [0, 10, 20, 30]) await f.source.read(sample(time), signal());
+  callbacks[0]({size: 2});
+  callbacks[1]({size: 2});
+  assert.deepEqual(f.revoked, ['blob:0']);
+  callbacks[2]({size: 4});
+  assert.equal(f.urls.length, 2);
+  f.source.dispose();
+  callbacks[3]({size: 2});
+  assert.equal(f.urls.length, 2);
+  assert.equal(f.revoked.length, 2);
+});

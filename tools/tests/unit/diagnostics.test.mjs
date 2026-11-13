@@ -444,3 +444,54 @@ test('反馈结果：限流、拒绝、断网分别返回；未配置或未知�
   assert.equal(await reporter.feedback('other', '问题'), 'failed');
   assert.equal(requests.length, 0);
 });
+
+for (const action of [
+  'library_load',
+  'room_load',
+  'record_load',
+  'record_refresh',
+  'video_load',
+  'load',
+  'preview',
+  'mark_sync',
+]) {
+  test(`${action} ignores normal browsing and cancellations but still reports a real failure once`, async () => {
+    const {reporter, requests} = setup();
+    reporter.begin(action).finish();
+    reporter.begin(action).finish({status: 'canceled'});
+    reporter.begin(action).fail(new DOMException('user canceled', 'AbortError'));
+    const controller = new AbortController();
+    controller.abort();
+    reporter.begin(action).fail(new Error('interrupted request'), controller.signal);
+    await settle();
+    assert.equal(requests.length, 0);
+    const operation = reporter.begin(action, {record: {key: 'record', room: 123}});
+    operation.stage('loading');
+    const error = Object.assign(new Error('请求失败（HTTP 503）'), {status: 503});
+    operation.fail(error);
+    operation.finish();
+    operation.fail(error);
+    await settle();
+    assert.equal(requests.length, 1);
+    const event = JSON.parse(requests[0].data);
+    assert.equal(event.event, `${action}_failed`);
+    assert.equal(event.level, 'error');
+    assert.equal(event.context.operation.sequence, 0);
+    assert.equal(event.context.record.key, 'record');
+    assert.equal(event.context.stage, 'loading');
+    assert.equal(event.context.error.status, 503);
+  });
+}
+
+for (const action of ['export', 'recording_download', 'danmaku_preview', 'danmaku_preview_resume']) {
+  test(`${action} retains success and cancellation diagnostics`, async () => {
+    const {reporter, requests} = setup();
+    reporter.begin(action).finish();
+    reporter.begin(action).fail(new DOMException('cancel', 'AbortError'));
+    await settle();
+    assert.deepEqual(
+      requests.map(item => JSON.parse(item.data).event),
+      [`${action}_started`, `${action}_completed`, `${action}_started`, `${action}_canceled`],
+    );
+  });
+}

@@ -159,7 +159,6 @@ test(
       result.realtime = result.duration / result.encodeSeconds;
       result.endToEndRealtime = result.duration / result.totalSeconds;
       if (real) await writeFile(path.join(artifacts, 'metrics.json'), JSON.stringify(result, null, 2));
-      console.log(JSON.stringify(result));
     } finally {
       await browser?.close();
       server?.close();

@@ -16,10 +16,16 @@ export function createThumbnailSource({
   makeCanvas = () => document.createElement('canvas'),
   timeout = 5000,
   onFrames = () => {},
+  maxStills = CACHE_LIMIT,
+  maxStillBytes = 8 * 1024 * 1024,
 }) {
   const cache = new Map(),
+    pending = new Map(),
     stills = [],
+    recentStills = new Map(),
+    publishing = new Set(),
     lifetime = new AbortController();
+  let stillBytes = 0;
   const storyboard =
     record.kind === 'submission'
       ? createStoryboard({submission: record, metadataRequest, mediaRequest: request})
@@ -77,37 +83,61 @@ export function createThumbnailSource({
     }
     return low;
   }
-  // Decoded stills also serve the large drag preview, which displays URLs. They
-  // are bounded by the recording's length and released with the source.
+  function touch(still) {
+    recentStills.delete(still.time);
+    recentStills.set(still.time, still);
+  }
+  function trimStills() {
+    while (recentStills.size > maxStills || stillBytes > maxStillBytes) {
+      const old = recentStills.values().next().value;
+      recentStills.delete(old.time);
+      stills.splice(firstAtOrAfter(old.time), 1);
+      stillBytes -= old.bytes;
+      URL.revokeObjectURL(old.url);
+    }
+  }
+  // JPEG URLs have a separate bounded LRU: retaining the canvas is not needed
+  // to show a drag still, and retaining its URL must not bypass the byte cap.
   function publish(time, canvas) {
     if (storyboard || !canvas?.toBlob) return;
-    canvas.toBlob(
-      blob => {
-        const index = firstAtOrAfter(time);
-        if (!blob || lifetime.signal.aborted || stills[index]?.time === time) return;
-        stills.splice(index, 0, {time, url: URL.createObjectURL(blob)});
-        onFrames();
-      },
-      'image/jpeg',
-      0.8,
-    );
+    const existing = recentStills.get(time);
+    if (existing) {
+      touch(existing);
+      return;
+    }
+    if (publishing.has(time) || maxStills <= 0) return;
+    publishing.add(time);
+    try {
+      canvas.toBlob(
+        blob => {
+          publishing.delete(time);
+          const index = firstAtOrAfter(time);
+          if (!blob || lifetime.signal.aborted || stills[index]?.time === time || blob.size > maxStillBytes) return;
+          const still = {time, url: URL.createObjectURL(blob), bytes: blob.size};
+          stills.splice(index, 0, still);
+          touch(still);
+          stillBytes += still.bytes;
+          trimStills();
+          onFrames();
+        },
+        'image/jpeg',
+        0.8,
+      );
+    } catch (error) {
+      publishing.delete(time);
+      throw error;
+    }
   }
   function frameUrl(time) {
     const index = firstAtOrAfter(time);
-    const nearest = [stills[index - 1], stills[index]]
-      .filter(Boolean)
-      .sort((a, b) => Math.abs(a.time - time) - Math.abs(b.time - time))[0];
-    return nearest && Math.abs(nearest.time - time) <= NEAREST_WITHIN ? nearest.url : null;
+    const before = stills[index - 1],
+      after = stills[index];
+    const nearest = !after || (before && time - before.time <= after.time - time) ? before : after;
+    if (!nearest || Math.abs(nearest.time - time) > NEAREST_WITHIN) return null;
+    touch(nearest);
+    return nearest.url;
   }
-  async function read(sample, signal) {
-    signal.throwIfAborted();
-    lifetime.signal.throwIfAborted();
-    const id = key(sample),
-      cached = cache.get(id);
-    if (cached) {
-      remember(id, cached);
-      return copy(cached);
-    }
+  async function load(sample, signal) {
     let canvas;
     try {
       if (!storyboard) throw new Error('录像没有平台预览图');
@@ -123,12 +153,65 @@ export function createThumbnailSource({
       signal.throwIfAborted();
       lifetime.signal.throwIfAborted();
       canvas = await readFrame(request, sample, signal);
-      publish(sample.time, canvas);
     }
     signal.throwIfAborted();
     lifetime.signal.throwIfAborted();
-    remember(id, canvas);
-    return copy(canvas);
+    remember(key(sample), canvas);
+    publish(sample.time, canvas);
+    return canvas;
+  }
+  async function read(sample, signal) {
+    signal.throwIfAborted();
+    lifetime.signal.throwIfAborted();
+    const id = key(sample),
+      cached = cache.get(id);
+    if (cached) {
+      remember(id, cached);
+      publish(sample.time, cached);
+      return copy(cached);
+    }
+    // Fragment-only drag reads must not inherit a slow player's fallback.
+    const requestKey = `${id}:${Boolean(sample.fragmentOnly)}`;
+    let own = pending.get(requestKey);
+    if (!own) {
+      const controller = new AbortController();
+      own = {controller, readers: 0};
+      own.promise = load(sample, AbortSignal.any([lifetime.signal, controller.signal])).finally(() => {
+        if (pending.get(requestKey) === own) pending.delete(requestKey);
+      });
+      void own.promise.catch(() => {});
+      pending.set(requestKey, own);
+    }
+    own.readers++;
+    const waiting = AbortSignal.any([signal, lifetime.signal]);
+    let abort,
+      detached = false;
+    const detach = () => {
+      if (detached) return;
+      detached = true;
+      if (--own.readers === 0 && pending.get(requestKey) === own) {
+        pending.delete(requestKey);
+        own.controller.abort();
+      }
+    };
+    try {
+      const canvas = await Promise.race([
+        own.promise,
+        new Promise((_, reject) => {
+          abort = () => {
+            detach();
+            reject(waiting.reason);
+          };
+          if (waiting.aborted) abort();
+          else waiting.addEventListener('abort', abort, {once: true});
+        }),
+      ]);
+      waiting.throwIfAborted();
+      return copy(canvas);
+    } finally {
+      waiting.removeEventListener('abort', abort);
+      detach();
+    }
   }
   return {
     read,
@@ -138,7 +221,11 @@ export function createThumbnailSource({
       lifetime.abort();
       storyboard?.dispose();
       cache.clear();
+      pending.clear();
       for (const {url} of stills.splice(0)) URL.revokeObjectURL(url);
+      recentStills.clear();
+      publishing.clear();
+      stillBytes = 0;
     },
   };
 }

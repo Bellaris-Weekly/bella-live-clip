@@ -53,12 +53,23 @@ test('sprite compositor preserves direct-text appearance at fractional positions
     ]) {
       const result = await page.evaluate(size => window.checkCompositor(size), {width, height});
       assert.equal(result.compared, 17);
-      console.log('compositor pixels', JSON.stringify({width, height, ...result}));
       assert.ok(result.meanDiff < 0.5, JSON.stringify(result));
       assert.ok(result.changedFraction < 0.04, JSON.stringify(result));
     }
+    const revisions = await page.evaluate(() => window.checkOverlayRevision());
+    assert.equal(revisions.results[0].revision, revisions.results[1].revision);
+    assert.ok(revisions.results[2].revision > revisions.results[1].revision);
+    assert.deepEqual(
+      revisions.results.map(item => item.pixel),
+      [
+        [255, 0, 0, 255],
+        [255, 0, 0, 255],
+        [0, 0, 255, 255],
+      ],
+    );
+    assert.deepEqual(revisions.cleared, [0, 0, 0, 0]);
+    assert.ok(revisions.finalRevision > revisions.results[2].revision);
     const isolated = await page.evaluate(() => window.inspectSpriteSampling());
-    console.log('isolated sprite sampling', JSON.stringify(isolated));
     for (const item of isolated) {
       if (item.scene !== 'moving' && item.scene !== 'overlap') assert.equal(item.maxDiff, 0, JSON.stringify(item));
       if (item.scene === 'overlap') assert.ok(item.maxDiff <= 2, JSON.stringify(item));
@@ -66,7 +77,6 @@ test('sprite compositor preserves direct-text appearance at fractional positions
       assert.ok(item.changedFraction < 0.04, JSON.stringify(item));
     }
     const failure = await page.evaluate(() => window.checkFailedEmoteSprites());
-    console.log('failed emote sprite lifecycle', JSON.stringify(failure));
     assert.deepEqual(failure.textParts, ['before', '[花]', 'after', '😀']);
     assert.equal(failure.initial.metrics.counters.spriteRasters, 3);
     assert.equal(failure.fallback.closed, 3, 'remeasured item releases every old text sprite');
@@ -80,9 +90,8 @@ test('sprite compositor preserves direct-text appearance at fractional positions
       assert.equal(failure[phase].maxDiff, 0, phase);
     const windowed = await page.evaluate(() => window.checkCompositor({width: 1920, height: 1080, streaming: true}));
     assert.equal(windowed.compared, 13);
-    console.log('compositor streaming pixels', JSON.stringify(windowed));
-    assert.ok(windowed.meanDiff < 0.5);
-    assert.ok(windowed.changedFraction < 0.04);
+    assert.ok(windowed.meanDiff < 0.5, JSON.stringify(windowed));
+    assert.ok(windowed.changedFraction < 0.04, JSON.stringify(windowed));
     const fixed = await page.evaluate(() => window.checkCompositor({width: 640, height: 360, fixed: true}));
     assert.ok(fixed.currentCalls < fixed.referenceCalls / 2, JSON.stringify(fixed));
     const liveWindows = await page.evaluate(() => window.checkLiveWindowPrefetch());
@@ -92,7 +101,6 @@ test('sprite compositor preserves direct-text appearance at fractional positions
     ]);
     assert.deepEqual(liveWindows.after, [...liveWindows.before, {start: 10, end: 20, prefetch: false}]);
     const overlap = await page.evaluate(() => window.checkEncodingOverlap());
-    console.log('encoding overlap snapshots', JSON.stringify(overlap));
     assert.ok(overlap.events.indexOf('render1') < overlap.events.indexOf('resolved0'));
     assert.ok(overlap.events.indexOf('resolved0') < overlap.events.indexOf('add1'));
     assert.equal(overlap.peak, 1);
@@ -135,9 +143,8 @@ test('sprite compositor preserves direct-text appearance at fractional positions
         encoded,
       );
       assert.equal(result.compared, 17);
-      console.log('compositor YUV pixels', JSON.stringify(result));
-      assert.ok(result.meanDiff < 0.5);
-      assert.ok(result.changedFraction < 0.04);
+      assert.ok(result.meanDiff < 0.5, JSON.stringify(result));
+      assert.ok(result.changedFraction < 0.04, JSON.stringify(result));
     } finally {
       await rm(directory, {recursive: true, force: true});
     }

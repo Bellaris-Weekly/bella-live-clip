@@ -162,3 +162,92 @@ test('等待结束即移除取消监听，已取消的调用不启动请求', as
   await assert.rejects(plan.load(own.signal), {name: 'AbortError'});
   assert.equal(calls, 1);
 });
+
+test('part demand bypasses queued background playlists, shares work and never exceeds three requests', async () => {
+  const parts = Array.from({length: 6}, (_, i) => ({
+    stream: `https://example.com/${i}`,
+    start_time: i * 10,
+    end_time: i * 10 + 8,
+  }));
+  const gates = parts.map(() => deferred());
+  const requested = [];
+  let active = 0,
+    peak = 0;
+  const plan = new RecordingPlan(
+    {
+      request: async url => {
+        const index = Number(url.split('/').at(-1));
+        requested.push(index);
+        active++;
+        peak = Math.max(peak, active);
+        await gates[index].promise;
+        active--;
+        return {data: manifest, url};
+      },
+    },
+    parts,
+  );
+  const all = plan.load();
+  const selected = plan.loadPart(5);
+  assert.deepEqual(requested, [0, 1, 2]);
+  gates[0].resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requested, [0, 1, 2, 5]);
+  gates[5].resolve();
+  assert.ok((await selected).every(group => group.streamIndex === 5));
+  assert.ok(!requested.includes(4), 'the current part is usable before unrelated playlists finish');
+  gates.forEach(gate => gate.resolve());
+  const groups = await all;
+  assert.deepEqual(
+    groups.map(group => group.streamIndex),
+    [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
+  );
+  assert.equal(new Set(requested).size, requested.length);
+  assert.equal(peak, 3);
+  assert.equal(await plan.loadPart(5), await plan.loadPart(5));
+});
+
+test('a failed unrelated playlist does not prevent loading the selected part and only failures are retried', async () => {
+  const calls = [0, 0];
+  const plan = new RecordingPlan(
+    {
+      request: async url => {
+        const index = url === streams[0].stream ? 0 : 1;
+        if (++calls[index] === 1 && index === 1) throw new Error('other part unavailable');
+        return {data: manifest, url};
+      },
+    },
+    streams,
+  );
+  const chosen = await plan.loadPart(0);
+  await assert.rejects(plan.load(), /other part unavailable/);
+  assert.equal(await plan.loadPart(0), chosen);
+  assert.equal((await plan.load()).length, 4);
+  assert.deepEqual(calls, [1, 2]);
+});
+
+test('canceling a part waiter preserves its shared request; leaving the recording stops queued work', async () => {
+  const own = new AbortController(),
+    caller = new AbortController();
+  let requests = 0;
+  const parts = Array.from({length: 6}, () => streams[0]);
+  const plan = new RecordingPlan(
+    {
+      request: async (_, {signal}) => {
+        requests++;
+        await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once: true}));
+      },
+    },
+    parts,
+    own.signal,
+  );
+  const all = assert.rejects(plan.load(), {name: 'AbortError'});
+  const selected = assert.rejects(plan.loadPart(5, caller.signal), {name: 'AbortError'});
+  caller.abort();
+  await selected;
+  assert.equal(own.signal.aborted, false);
+  own.abort();
+  await all;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 3);
+});

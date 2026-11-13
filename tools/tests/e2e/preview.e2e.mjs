@@ -711,3 +711,40 @@ test('paused cold preview shows available text while its first emote is still lo
     await page.close();
   }
 });
+
+test('unchanged overlays skip canvas copies while moving comments, seeks and context restoration repaint', async () => {
+  const {page} = await danmakuPage();
+  try {
+    await page.evaluate(() => {
+      const r = window.danmakuRig;
+      r.player.seek(25);
+      r.preview.setEnabled(true);
+    });
+    await page.waitForFunction(() => window.danmakuRig.diagnostics[0].status === 'completed');
+    await page.evaluate(() => {
+      const r = window.danmakuRig,
+        context = r.canvas.getContext('2d'),
+        original = context.drawImage.bind(context);
+      window.overlayCopies = 0;
+      context.drawImage = (...args) => {
+        window.overlayCopies++;
+        return original(...args);
+      };
+      window.copyStart = r.video.currentTime;
+      return r.video.play();
+    });
+    await page.waitForFunction(() => window.danmakuRig.video.currentTime > window.copyStart + 0.7);
+    await page.evaluate(() => window.danmakuRig.video.pause());
+    assert.equal(await page.evaluate(() => window.overlayCopies), 0);
+    await page.evaluate(() => window.danmakuRig.canvas.dispatchEvent(new Event('contextrestored')));
+    await page.waitForFunction(() => window.overlayCopies === 1);
+    await page.evaluate(() => window.danmakuRig.player.seek(3));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    const before = await page.evaluate(() => window.overlayCopies);
+    await page.evaluate(() => window.danmakuRig.video.play());
+    await page.waitForFunction(count => window.overlayCopies > count + 3, before);
+    assert.deepEqual(await page.evaluate(() => window.danmakuRig.errors), []);
+  } finally {
+    await page.close();
+  }
+});

@@ -128,13 +128,19 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
     }
     const layout = new DanmakuLayout(events, {width, height, measure, start: sourceTime(start) - PREROLL});
     let previous = [],
-      regions = [];
+      regions = [],
+      revision = 0,
+      invalidated = false;
     return {
       layout,
+      get overlayRevision() {
+        return revision;
+      },
       clearMeasurements() {
         cache.clear();
         sprites.clear();
         previous = [];
+        invalidated = true;
       },
       renderOverlay(timestamp, advance = true) {
         signal?.throwIfAborted();
@@ -178,6 +184,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         }
         // Fixed comments and unchanged animation frames reuse the existing ink.
         const changed =
+          invalidated ||
           commands.length !== previous.length ||
           commands.some((command, i) => {
             const old = previous[i];
@@ -215,6 +222,8 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               else regions.push(row);
             }
             previous = commands;
+            invalidated = false;
+            revision++;
           } finally {
             finishOverlay?.();
           }

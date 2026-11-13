@@ -139,6 +139,7 @@ export function createPlayer({
     lastSeek = 0;
   const clockOffsets = new Map();
   let fragments = [],
+    fragmentCursor = -1,
     reloads = new Map(),
     recoveries = 0,
     renewed = false,
@@ -187,8 +188,27 @@ export function createPlayer({
     loading.textContent = text;
     loading.hidden = false;
   }
+  function fragmentAt(time) {
+    const contains = index => {
+      const frag = fragments[index];
+      return frag && time >= frag.start && time < frag.start + frag.duration;
+    };
+    // HLS fragments are ordered on the playback timeline. Read live start/end
+    // values (hls.js refines them after decoding), not a stale copied index.
+    if (contains(fragmentCursor) && !contains(fragmentCursor - 1)) return fragments[fragmentCursor];
+    let low = 0,
+      high = fragments.length;
+    while (low < high) {
+      const middle = (low + high) >> 1,
+        frag = fragments[middle];
+      if (frag.start + frag.duration <= time) low = middle + 1;
+      else high = middle;
+    }
+    fragmentCursor = low;
+    return contains(low) ? fragments[low] : undefined;
+  }
   function clearBoundary(local) {
-    const frag = fragments.find(({start, duration}) => local >= start && local < start + duration);
+    const frag = fragmentAt(local);
     return frag && frag.start > 0 && local - frag.start < BOUNDARY_GAP
       ? frag.start + Math.min(BOUNDARY_GAP, frag.duration / 2)
       : local;
@@ -243,6 +263,7 @@ export function createPlayer({
     shown = null;
     presented = false;
     fragments = [];
+    fragmentCursor = -1;
     clockOffsets.clear();
     reloads = new Map();
     target = time;
@@ -270,6 +291,7 @@ export function createPlayer({
     hls.on(EVENT.LEVEL_LOADED, (_, {details}) => {
       if (token !== generation) return;
       fragments = details.fragments;
+      fragmentCursor = -1;
       const safe = Number.isFinite(target) ? clearBoundary(target) : target;
       if (safe !== target) {
         target = safe;
@@ -386,6 +408,9 @@ export function createPlayer({
     renewed = false;
     hls?.destroy();
     hls = null;
+    fragments = [];
+    fragmentCursor = -1;
+    clockOffsets.clear();
     video.pause();
     video.removeAttribute('src');
     video.load();
@@ -445,7 +470,7 @@ export function createPlayer({
       if (!hls || scrubbing || scrubTime !== null || target !== null || video.seeking || video.readyState < 2)
         return null;
       const time = presented ? shown : video.currentTime;
-      const fragment = fragments.find(frag => time >= frag.start && time < frag.start + frag.duration);
+      const fragment = fragmentAt(time);
       const sourceOffset = clockOffsets.get(fragment?.cc);
       if (!Number.isFinite(sourceOffset)) return null;
       return {part: streams[index], time: time + sourceOffset, generation};

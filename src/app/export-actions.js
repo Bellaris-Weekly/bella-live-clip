@@ -67,10 +67,10 @@ export function createExportActions({
     ((record.media.video.bandwidth + (record.media.audio?.bandwidth || 0)) * (selection.end - selection.start)) / 8;
   const showSaved = output => view.saved(`已保存 ${output.name} · ${formatBytes(output.bytes)}`);
 
-  async function loadPlan(signal, metrics) {
+  async function loadPlan(index, signal, metrics) {
     const finish = metrics?.start('playlistLoad');
     try {
-      return await session.plan().load(signal);
+      return await session.plan().loadPart(index, signal);
     } finally {
       finish?.();
     }
@@ -100,7 +100,7 @@ export function createExportActions({
     if (!danmaku)
       await ensureTemporarySpace(storage, estimate ? estimateSelectionBytes(estimate, record.start, selection) : 0);
     const segmentIndex = session.segmentIndex();
-    const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === segmentIndex);
+    const groups = await loadPlan(segmentIndex, signal, metrics);
     const {exportSelection} = await import('../media/export.js');
     return await exportSelection(mediaApi, record, groups, selection, {
       signal,
@@ -216,7 +216,7 @@ export function createExportActions({
             clearDownloads();
             status('正在导出整场…');
             diagnostic.stage('preparing');
-            const groups = (await loadPlan(signal, metrics)).filter(group => group.streamIndex === index);
+            const groups = await loadPlan(index, signal, metrics);
             signal.throwIfAborted();
             wholeStop = new AbortController();
             refreshControls();

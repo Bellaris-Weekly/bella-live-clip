@@ -444,3 +444,40 @@ window.checkLiveWindowPrefetch = async () => {
     await compositor.close();
   }
 };
+
+window.checkOverlayRevision = () => {
+  const frames = ['red', 'blue'].map(color => {
+    const canvas = new OffscreenCanvas(20, 20),
+      context = canvas.getContext('2d');
+    context.fillStyle = color;
+    context.fillRect(0, 0, 20, 20);
+    return canvas;
+  });
+  const painter = createDanmakuPainter(
+    [{time: 0, order: 0, mode: 5, text: '[花]', color: 0xffffff}],
+    {
+      assets: new Map([['[花]', {frames, ends: [0.1, 0.2], loops: Infinity, width: 20, height: 20}]]),
+      close() {},
+    },
+    {start: 0, sourceTime: t => t, width: 640, height: 360},
+  );
+  try {
+    const results = [];
+    for (const time of [0.05, 0.07, 0.15]) {
+      const overlay = painter.renderOverlay(time);
+      results.push({
+        revision: painter.overlayRevision,
+        pixel: [...overlay.getContext('2d').getImageData(315, 10, 1, 1).data],
+      });
+    }
+    painter.clearMeasurements();
+    const blank = painter.renderOverlay(6);
+    return {
+      results,
+      cleared: [...blank.getContext('2d').getImageData(315, 10, 1, 1).data],
+      finalRevision: painter.overlayRevision,
+    };
+  } finally {
+    painter.close();
+  }
+};

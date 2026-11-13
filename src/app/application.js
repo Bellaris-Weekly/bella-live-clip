@@ -304,8 +304,13 @@ export function createApp({
     request: mediaApi.request,
     metadataRequest: submissionRequest,
     createStoryboard: ({submission}) => storyboardFor(submission),
-    locate: async (time, signal) =>
-      recordingPlan ? locateSegment(await recordingPlan.load(signal), record.start + time) : null,
+    locate: async (time, signal) => {
+      const plan = recordingPlan;
+      if (!plan) return null;
+      const at = record.start + time;
+      const index = plan.streams.findIndex(part => at >= part.start_time && at < part.end_time);
+      return index < 0 ? null : locateSegment(await plan.loadPart(index, signal), at);
+    },
   });
   let scrubReturnTime = null;
   const timeline = createTimeline({
@@ -660,11 +665,18 @@ export function createApp({
     danmakuPreview.setSource({
       record,
       part: record.live ? streams.at(-1) : streams[0],
-      loadGroups: signal => recordingPlan.load(signal),
+      loadGroups: (signal, part) => {
+        const plan = recordingPlan;
+        return plan.loadPart(
+          plan.streams.findIndex(item => item.start_time === part.start_time),
+          signal,
+        );
+      },
       request: mediaApi.request,
     });
-    // Stills need the playlist as soon as the player does; they share one copy.
-    void recordingPlan.load().catch(() => {});
+    // Warm only the current part alongside the player. Full-recording work
+    // (such as size estimates) starts after the first video frame.
+    void recordingPlan.loadPart(record.live ? streams.length - 1 : 0).catch(() => {});
     recordStreams = streams;
     segments = segmentBounds(record, streams, total);
     thumbnails.load(record, streams, {defer: true, onFrames: () => player.refreshStill?.()});

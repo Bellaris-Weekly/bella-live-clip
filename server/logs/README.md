@@ -6,7 +6,7 @@ Worker 和 D1 由你创建，域名由你管理。工作流只核对现有 Worke
 
 在 GitHub Actions 中手动运行 **Deploy diagnostic log service**，选择 `main`；之后 main 推送也会自动更新。配置未填写时自动部署跳过，手动运行报错。部署凭证需要相应 Worker 与 D1 的编辑权限。
 
-部署成功只表示数据库迁移和 Worker 更新完成，不代表公开接口已验证。插件发布构建会静默上报正常运行、导出性能和错误；普通开发构建没有日志地址，不会上报。
+部署成功只表示数据库迁移和 Worker 更新完成，不代表公开接口已验证。插件发布构建会静默上报导出运行、弹幕首屏／恢复性能和操作错误；普通开发构建没有日志地址，不会上报。
 
 
 ## 页面和下载
@@ -30,7 +30,7 @@ Worker 和 D1 由你创建，域名由你管理。工作流只核对现有 Worke
 
 ## 运行事件和性能字段
 
-客户端通过 `context.operation.id` 关联一次操作，`operation.sequence` 是客户端序号；`received_at` 是最近一次更新的服务端收到时间，`context.operation.firstReceivedAt` 保留首次收到时间，`clientAt` 是客户端时间。导出事件包括 `export_started`、`export_progress`、`export_stalled`、`export_completed`、`export_canceled`、`export_failed`；整场使用 `recording_download_` 前缀，主动停止并保存使用 `stopped`。普通加载也记录开始和完成，预览保留独立失败事件。
+客户端通过 `context.operation.id` 关联一次操作，`operation.sequence` 是客户端序号；`received_at` 是最近一次更新的服务端收到时间，`context.operation.firstReceivedAt` 保留首次收到时间，`clientAt` 是客户端时间。导出事件包括 `export_started`、`export_progress`、`export_stalled`、`export_completed`、`export_canceled`、`export_failed`；整场使用 `recording_download_` 前缀，主动停止并保存使用 `stopped`。普通列表、进房、录像／投稿加载、刷新和记轴同步只上报真实失败，不再记录开始、成功和主动取消；播放器保留独立失败事件。正在排查的弹幕首屏和后台恢复继续保留完整事件及耗时，前缀分别为 `danmaku_preview_`、`danmaku_preview_resume_`。
 
 `context.metrics` 提供：
 

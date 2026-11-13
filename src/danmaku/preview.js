@@ -136,7 +136,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         const finishPlaylist = owner.metrics.start('playlistLoad');
         let groups;
         try {
-          groups = await owner.loadGroups(owner.controller.signal);
+          groups = await owner.loadGroups(owner.controller.signal, part);
         } finally {
           finishPlaylist();
         }
@@ -261,14 +261,19 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     }
   }
   function paint(own, overlay, time, complete = true) {
+    const revision = own.compositor.overlayRevision;
     if (canvas.width !== own.width || canvas.height !== own.height) {
       canvas.width = own.width;
       canvas.height = own.height;
+      own.copiedRevision = undefined;
     }
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('无法创建弹幕预览画布，可能内存不足。');
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(overlay, 0, 0);
+    if (own.copiedRevision !== revision) {
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('无法创建弹幕预览画布，可能内存不足。');
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(overlay, 0, 0);
+      own.copiedRevision = revision;
+    }
     if (complete) own.drawn = time;
     canvas.hidden = false;
     if (complete) reportReady(own.owner);
@@ -313,6 +318,13 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     resetSession();
     schedule();
   }
+  function restored() {
+    if (session) {
+      session.copiedRevision = undefined;
+      session.drawn = null;
+    }
+    schedule();
+  }
   function visibility() {
     if (document.hidden) {
       // Visibility is not ownership: keep bounded archives, clocks, decoders
@@ -335,6 +347,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
   video.addEventListener('seeking', seeking);
   video.addEventListener('emptied', seeking);
   document.addEventListener('visibilitychange', visibility);
+  canvas.addEventListener('contextrestored', restored);
   return {
     setSource(next) {
       release();
@@ -367,6 +380,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       video.removeEventListener('seeking', seeking);
       video.removeEventListener('emptied', seeking);
       document.removeEventListener('visibilitychange', visibility);
+      canvas.removeEventListener('contextrestored', restored);
     },
   };
 }

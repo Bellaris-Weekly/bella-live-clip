@@ -426,3 +426,29 @@ test('a position whose grid point falls outside the recording still gets a pictu
   assert.ok(read.includes(38), String(read));
   strip.clear();
 });
+
+test('a previously visited position can be requested again after its cached frame is evicted', async () => {
+  let reads = 0;
+  const strip = createThumbnails({
+    container: new Element(),
+    locate: async time => ({time}),
+    readStill: async () => {
+      reads++;
+      return 'frame';
+    },
+    readFrame: () => assert.fail('unexpected player fallback'),
+  });
+  strip.load(record, [{start_time: 1000, end_time: 5000, stream: 'long'}]);
+  try {
+    for (let i = 0; i <= 300; i++) {
+      strip.frameUrl(i * 10);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(reads, 301);
+    strip.frameUrl(0);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(reads, 302);
+  } finally {
+    strip.clear();
+  }
+});

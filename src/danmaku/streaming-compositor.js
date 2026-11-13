@@ -262,6 +262,9 @@ export async function createStreamingCompositor(
       renderOverlay(timestamp) {
         return painter.renderOverlay(timestamp);
       },
+      get overlayRevision() {
+        return painter.overlayRevision;
+      },
       // During a network/decode wait, keep already placed comments moving at
       // the current media time without advancing the deterministic layout.
       renderAvailableOverlay(timestamp) {

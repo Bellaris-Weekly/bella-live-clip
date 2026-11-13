@@ -127,7 +127,7 @@ export function createThumbnails({
     demands.abort();
     demands = new AbortController();
     wanted = null;
-    seen.clear();
+    pendingFrames = new Set();
     fragmentFailures = 0;
     source?.dispose();
     source = null;
@@ -189,23 +189,23 @@ export function createThumbnails({
   let wanted = null,
     demanding = 0,
     demands = new AbortController();
-  const seen = new Set();
+  let pendingFrames = new Set();
   function pump() {
     while (demanding < DEMAND_LIMIT && wanted !== null) {
       const time = wanted,
         reader = source,
+        frames = pendingFrames,
         {signal} = demands,
         sample = sampleAt(time);
       wanted = null;
-      if (seen.has(time) || !sample) continue;
-      seen.add(time);
+      if (frames.has(time) || !sample || reader.hasFrame(time)) continue;
+      frames.add(time);
       demanding++;
       void reader
         .read({...sample, fragmentOnly: true}, signal)
-        .catch(() => {
-          if (!signal.aborted) seen.delete(time);
-        })
+        .catch(() => {})
         .finally(() => {
+          frames.delete(time);
           demanding--;
           pump();
         });
@@ -228,6 +228,7 @@ export function createThumbnails({
   }
   async function sweep(center) {
     const reader = source,
+      frames = pendingFrames,
       {signal} = demands;
     const times = streams
       .flatMap(part => {
@@ -239,9 +240,12 @@ export function createThumbnails({
     for (const time of times) {
       if (signal.aborted || !fragmentsWork()) return;
       const sample = sampleAt(time);
-      if (!sample || seen.has(time)) continue;
-      seen.add(time);
-      await reader.read({...sample, fragmentOnly: true}, signal).catch(() => seen.delete(time));
+      if (!sample || frames.has(time) || reader.hasFrame(time)) continue;
+      frames.add(time);
+      await reader
+        .read({...sample, fragmentOnly: true}, signal)
+        .catch(() => {})
+        .finally(() => frames.delete(time));
     }
   }
   function snapped(sample, step) {

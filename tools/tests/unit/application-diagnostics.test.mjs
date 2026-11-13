@@ -33,7 +33,7 @@ const stubs = {
   'submission-export': 'export const exportSubmission=(request,record,selection,options)=>scenario.export(options);',
   export: 'export const exportSelection=(api,record,groups,selection,options)=>scenario.export(options,groups);',
   'recording-plan':
-    'export class RecordingPlan{constructor(api,streams,signal){this.streams=streams;this.signal=signal;scenario.plans.push(this);}async load(){return scenario.groups;}}',
+    'export class RecordingPlan{constructor(api,streams,signal){this.streams=streams;this.signal=signal;scenario.plans.push(this);}async load(){return scenario.groups;}async loadPart(index){return scenario.groups.filter(group=>group.streamIndex===index);}}',
   'recording-estimate':
     'export const estimateRecordingRate=async()=>{scenario.estimates++;return null;};export const estimateSelectionBytes=()=>0;',
   recording: 'export const saveRecording=(api,groups,handle,options)=>scenario.export(options,groups);',
@@ -992,4 +992,21 @@ test('弹幕首屏与后台恢复记录独立耗时，不混入弹幕内容', as
     assert.equal(event.context.mode, 'danmaku');
     assert.ok(!JSON.stringify(event).includes('不应上传'));
   }
+});
+
+test('正常浏览列表、打开场次和刷新录像不再发送历史排查用的成功日志', async () => {
+  const record = {key: 'live', room: 123, start: 0, end: 100};
+  const f = start({url: 'https://live.bilibili.com/123', current: async () => record});
+  await f.app.open();
+  f.scenario.actions.refreshEditor();
+  await settle();
+  f.scenario.actions.library();
+  await settle();
+  f.scenario.actions.openRecord(record);
+  await settle();
+  assert.equal(f.events.length, 0);
+  const video = start();
+  await video.app.open();
+  await settle();
+  assert.equal(video.events.length, 0);
 });
