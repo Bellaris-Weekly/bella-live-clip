@@ -81,6 +81,41 @@ function playerFixture(clips, options = {}) {
   return {player, video, loading, instances, shown};
 }
 
+test('danmaku maps the presented HLS clock to native media time and hides unsettled frames', async () => {
+  const part = {start_time: 1000, end_time: 1100, stream: 'first'};
+  const f = playerFixture(async () => [part]);
+  await f.player.load({start: 1000, end: 1100}, new AbortController().signal);
+  f.player.seek(21);
+  assert.equal(f.player.danmakuFrame(), null);
+  const events = f.instances[0].events;
+  events.get('hlsManifestParsed')();
+  events.get('hlsLevelLoaded')(null, {
+    details: {
+      fragments: [
+        {cc: 0, start: 0, duration: 50},
+        {cc: 1, start: 50, duration: 50},
+      ],
+    },
+  });
+  events.get('hlsInitPtsFound')(null, {frag: {cc: 0}, initPTS: 900000, timescale: 1000});
+  f.video.readyState = 2;
+  f.video.dispatchEvent(new Event('loadeddata'));
+  const frame = f.player.danmakuFrame();
+  assert.equal(frame.part, part);
+  assert.equal(frame.time, 921);
+  f.player.beginScrub();
+  assert.equal(f.player.danmakuFrame(), null);
+  f.player.endScrub();
+  assert.equal(f.player.danmakuFrame().time, 921);
+  f.video.currentTime = 55;
+  assert.equal(f.player.danmakuFrame(), null, 'each discontinuity needs its own native offset');
+  events.get('hlsInitPtsFound')(null, {frag: {cc: 1}, initPTS: 1200000, timescale: 1000});
+  assert.equal(f.player.danmakuFrame().time, 1255);
+  f.player.clear();
+  assert.equal(f.player.danmakuFrame(), null);
+  f.player.destroy();
+});
+
 test('initial preview starts only the selected segment at its requested position', async () => {
   const record = {start: 1000, end: 1300, live: false},
     parts = [

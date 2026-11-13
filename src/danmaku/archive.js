@@ -207,7 +207,17 @@ export function nextSnapshotDelay(schedule, previous, time) {
 // Only demanded windows refresh live files; consumed windows stay committed.
 export function createCommentReader(
   record,
-  {signal, fetcher = fetch, prepared, createTemporary, metrics, now = Date.now, wait = waitForRetry, onWait} = {},
+  {
+    signal,
+    fetcher = fetch,
+    prepared,
+    createTemporary,
+    metrics,
+    now = Date.now,
+    wait = waitForRetry,
+    onWait,
+    waitForCoverage = true,
+  } = {},
 ) {
   const controller = new AbortController();
   signal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -342,7 +352,7 @@ export function createCommentReader(
           }
           candidate = null;
         }
-        if (!initial.parts[index].snapshot || entry.coverage >= to || now() >= deadline) break;
+        if (!waitForCoverage || !initial.parts[index].snapshot || entry.coverage >= to || now() >= deadline) break;
         const delay = Math.min(nextSnapshotDelay(entry.schedule, seen, now()), deadline - now());
         seen = entry.schedule?.published;
         onWait?.({coverage: entry.coverage, needed: to, delay});

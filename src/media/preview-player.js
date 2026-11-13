@@ -6,6 +6,7 @@ const EVENT = {
   MANIFEST_PARSED: 'hlsManifestParsed',
   LEVEL_LOADED: 'hlsLevelLoaded',
   FRAG_LOADED: 'hlsFragLoaded',
+  INIT_PTS_FOUND: 'hlsInitPtsFound',
 };
 const NETWORK_ERROR = 'networkError';
 
@@ -136,6 +137,7 @@ export function createPlayer({
     scrubTime = null,
     settle = null,
     lastSeek = 0;
+  const clockOffsets = new Map();
   let fragments = [],
     reloads = new Map(),
     recoveries = 0,
@@ -241,6 +243,7 @@ export function createPlayer({
     shown = null;
     presented = false;
     fragments = [];
+    clockOffsets.clear();
     reloads = new Map();
     target = time;
     attachedEnd = streams[part].end_time;
@@ -273,6 +276,10 @@ export function createPlayer({
         video.currentTime = safe;
         hls.startLoad(safe);
       }
+    });
+    hls.on(EVENT.INIT_PTS_FOUND, (_, {frag, initPTS, timescale}) => {
+      if (token === generation && Number.isFinite(initPTS) && timescale > 0)
+        clockOffsets.set(frag.cc, initPTS / timescale);
     });
     hls.on(EVENT.FRAG_LOADED, (_, {frag}) => {
       if (token !== generation || typeof frag.sn !== 'number') return;
@@ -434,6 +441,15 @@ export function createPlayer({
   }
   return {
     getScreenshotVideo: () => video,
+    danmakuFrame() {
+      if (!hls || scrubbing || scrubTime !== null || target !== null || video.seeking || video.readyState < 2)
+        return null;
+      const time = presented ? shown : video.currentTime;
+      const fragment = fragments.find(frag => time >= frag.start && time < frag.start + frag.duration);
+      const sourceOffset = clockOffsets.get(fragment?.cc);
+      if (!Number.isFinite(sourceOffset)) return null;
+      return {part: streams[index], time: time + sourceOffset, generation};
+    },
     async load(nextRecord, signal) {
       clear();
       const token = generation;

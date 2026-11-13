@@ -37,11 +37,10 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
   const fontSize = danmakuFontSize(height);
   try {
-    const canvas = new OffscreenCanvas(width, height),
-      overlay = new OffscreenCanvas(width, height);
-    const context = canvas.getContext('2d', {alpha: false}),
-      ink = overlay.getContext('2d');
-    if (!context || !ink) {
+    const overlay = new OffscreenCanvas(width, height);
+    const ink = overlay.getContext('2d');
+    let canvas, context;
+    if (!ink) {
       resources.close();
       throw new Error('无法创建弹幕合成画布，可能内存不足。');
     }
@@ -136,7 +135,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         sprites.clear();
         previous = [];
       },
-      render(sample, timestamp) {
+      renderOverlay(timestamp) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
         const commands = [];
@@ -209,6 +208,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             finishOverlay?.();
           }
         } else metrics?.add('overlayReuses');
+        return overlay;
+      },
+      render(sample, timestamp) {
+        this.renderOverlay(timestamp);
+        canvas ??= new OffscreenCanvas(width, height);
+        context ??= canvas.getContext('2d', {alpha: false});
         // The export entry rejects rotation. Avoid the generic per-frame
         // save/translate/rotate path while keeping the same full-frame scaling.
         const finishVideo = metrics?.start('videoDraw');
@@ -245,8 +250,8 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         sprites.clear();
         cache.clear();
         previous = regions = [];
-        canvas.width = overlay.width = 1;
-        canvas.height = overlay.height = 1;
+        if (canvas) canvas.width = canvas.height = 1;
+        overlay.width = overlay.height = 1;
       },
     };
   } catch (error) {

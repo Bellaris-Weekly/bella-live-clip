@@ -29,6 +29,7 @@ import {createSubmissionPlayer} from '../media/submission-player.js';
 import {RecordingPlan} from '../media/recording-plan.js';
 import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
+import {createDanmakuPreview} from '../danmaku/preview.js';
 import {createPlayback, bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
 import {sharePlaylists} from '../services/shared-playlists.js';
@@ -277,6 +278,21 @@ export function createApp({
   }
   const playlists = sharePlaylists(mediaRequest);
   const mediaApi = {request: playlists.request};
+  const danmakuPreview = createDanmakuPreview({
+    video,
+    canvas: $('danmakuPreview'),
+    getFrame: () => (playerKind === 'live' ? player?.danmakuFrame() : null),
+    onError: error => toast(store, `弹幕预览暂不可用：${error.message}`, {error: true}),
+  });
+  effect(() => {
+    danmakuPreview.setEnabled(
+      store.open.value &&
+        store.page.value === 'edit' &&
+        store.record.value?.kind !== 'submission' &&
+        store.exportMode.value === 'danmaku' &&
+        !store.whole.value,
+    );
+  });
   const thumbnails = createThumbnails({
     container: $('thumbnails'),
     request: mediaApi.request,
@@ -305,6 +321,7 @@ export function createApp({
       updateClock(t);
     },
     onScrubStart: ({type}) => {
+      danmakuPreview.setScrubbing(true);
       scrubReturnTime = type === 'playhead' ? null : (player?.position() ?? null);
       activePlayback()?.begin();
       if (playerKind === 'live') player.beginScrub();
@@ -323,6 +340,7 @@ export function createApp({
         updateClock(time);
       }
       scrubReturnTime = null;
+      danmakuPreview.setScrubbing(false);
     },
     onSelection: selection => {
       if (preview) composer?.clearMark();
@@ -519,6 +537,7 @@ export function createApp({
   }
   const clearDownloads = () => (store.downloads.value = []);
   function leavePage() {
+    danmakuPreview.clear();
     updater.stop();
     scheduleController?.abort();
     scheduleController = null;
@@ -631,6 +650,7 @@ export function createApp({
     updateClock(0);
     recordingController = new AbortController();
     recordingPlan = new RecordingPlan(mediaApi, streams, recordingController.signal);
+    danmakuPreview.setSource({record, loadGroups: signal => recordingPlan.load(signal), request: mediaApi.request});
     // Stills need the playlist as soon as the player does; they share one copy.
     void recordingPlan.load().catch(() => {});
     recordStreams = streams;
@@ -914,6 +934,7 @@ export function createApp({
     libraries.abortAll();
     leavePage();
     player?.destroy();
+    danmakuPreview.destroy();
   });
   // Only prepare the list once someone reaches for the panel: this runs on every
   // Bilibili page, and account-bound requests there would add up across tabs.

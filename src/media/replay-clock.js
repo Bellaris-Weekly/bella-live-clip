@@ -6,6 +6,10 @@ export function partOrigin(part, firstDecodeTime) {
   return part.start_time - firstDecodeTime + ORIGIN_CORRECTION;
 }
 
+export async function readPartClock(request, group, signal) {
+  return (await import('./replay-probe.js')).readPartClock(request, group, signal);
+}
+
 function* boxes(view, start, end) {
   for (let offset = start; offset + 8 <= end;) {
     let size = view.getUint32(offset);

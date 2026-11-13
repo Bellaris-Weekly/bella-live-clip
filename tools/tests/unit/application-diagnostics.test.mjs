@@ -18,6 +18,15 @@ const stubs = {
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',
   'submission-player': 'export const createSubmissionPlayer=()=>scenario.player;',
   'preview-player': 'export const createPlayer=options=>{scenario.previewOptions=options;return scenario.player;};',
+  'danmaku-preview': `export const createDanmakuPreview=options=>{
+    scenario.danmakuOptions=options;
+    return scenario.danmakuPreview={
+      enabled:false,source:null,scrubbing:false,destroyed:false,
+      setSource(next){this.source=next;},setEnabled(next){this.enabled=next;},
+      setScrubbing(next){this.scrubbing=next;},clear(){this.source=null;},
+      destroy(){this.clear();this.destroyed=true;}
+    };
+  };`,
   playback: 'export const createPlayback=()=>scenario.playback;export const bindVideoControls=()=>{};',
   thumbnails:
     'export const readThumbnail=async()=>{};export const createThumbnails=()=>({clear(){},load(record,streams,options){scenario.thumbnailOptions=options;},setStreams(parts){scenario.thumbnailStreams=parts;},resume(){scenario.thumbnailResumes++;},sweep(){},update(){}});',
@@ -45,6 +54,7 @@ const {outputFiles} = await build({
       name: 'render-media-fixtures',
       setup(build) {
         build.onResolve({filter: /\.jsx?$/}, args => {
+          if (args.path === '../danmaku/preview.js') return {path: 'danmaku-preview', namespace: 'fixture'};
           const match = args.path.match(/\.\.\/(ui|services|media)\/([^/]+)\.jsx?$/);
           if (match && stubs[match[2]]) return {path: match[2], namespace: 'fixture'};
         });
@@ -867,6 +877,38 @@ test('三种导出方式互斥：弹幕按默认时间压制，切回原画或�
   f.scenario.actions.setWhole(false);
   await f.scenario.actions.download();
   assert.equal(outputs.at(-1).danmaku.adjustment, 0);
+});
+
+test('弹幕预览跟随模式与面板开关，拖动隐藏，整场和离开场次停止', async () => {
+  const f = start({
+    url: 'https://live.bilibili.com/123',
+    current: async () => ({key: 'live', room: 123, start: 0, end: 100}),
+  });
+  await f.app.open();
+  const {actions, danmakuPreview, timelineOptions} = f.scenario;
+  assert.equal(danmakuPreview.enabled, false);
+  assert.equal(danmakuPreview.source.record.key, 'live');
+  actions.setExportMode('danmaku');
+  assert.equal(danmakuPreview.enabled, true);
+  timelineOptions.onScrubStart({type: 'playhead'});
+  assert.equal(danmakuPreview.scrubbing, true);
+  timelineOptions.onScrubEnd();
+  assert.equal(danmakuPreview.scrubbing, false);
+  actions.setWhole(true);
+  assert.equal(danmakuPreview.enabled, false);
+  actions.setWhole(false);
+  assert.equal(danmakuPreview.enabled, true);
+  actions.close();
+  assert.equal(danmakuPreview.enabled, false);
+  await f.app.open();
+  assert.equal(danmakuPreview.enabled, true);
+  actions.setExportMode('precise');
+  assert.equal(danmakuPreview.enabled, false);
+  actions.setExportMode('danmaku');
+  actions.library();
+  await settle();
+  assert.equal(danmakuPreview.source, null);
+  assert.equal(danmakuPreview.enabled, false);
 });
 
 test('旧弹幕开关迁移为弹幕模式，投稿与直播分别记住选择', async () => {

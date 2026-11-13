@@ -365,7 +365,7 @@ const before = new Uint8Array(await readFile(new URL('../fixtures/live-before.pa
 const after = new Uint8Array(await readFile(new URL('../fixtures/live-after.parquet', import.meta.url))).buffer;
 const livePart = {live_key: 'growing', part: 1, started_ms: 95000, path: 'live-archive/live/growing.parquet', bytes: 1};
 
-function liveReader({files = [before, after], index, wait, onFile, time = 110000, onWait} = {}) {
+function liveReader({files = [before, after], index, wait, onFile, time = 110000, onWait, waitForCoverage} = {}) {
   const state = {indexes: 0, files: [], waits: [], temporary: []};
   const controller = new AbortController();
   const metrics = createExportMetrics();
@@ -375,6 +375,7 @@ function liveReader({files = [before, after], index, wait, onFile, time = 110000
       signal: controller.signal,
       metrics,
       onWait,
+      waitForCoverage,
       now: () => time,
       wait: async (ms, signal) => {
         state.waits.push(ms);
@@ -410,6 +411,22 @@ function liveReader({files = [before, after], index, wait, onFile, time = 110000
 
 const firstWindow = {origin: 0, start: 98, end: 108};
 const nextWindow = {origin: 0, start: 108, end: 118};
+
+test('preview refreshes live coverage once and returns available comments without polling', async () => {
+  const {reader, state} = liveReader({files: [before], waitForCoverage: false});
+  try {
+    const events = await reader.read(nextWindow);
+    assert.deepEqual(
+      events.map(event => event.text),
+      ['110000'],
+    );
+    assert.equal(state.indexes, 2, 'initial index plus one immediate refresh');
+    assert.equal(state.files.length, 2);
+    assert.deepEqual(state.waits, [], 'the video clock must not wait for a future snapshot');
+  } finally {
+    await reader.close();
+  }
+});
 
 test('growing snapshots supply later windows without duplicate boundary comments and retire old disk/cache generations', async () => {
   const {reader, state, metrics} = liveReader();

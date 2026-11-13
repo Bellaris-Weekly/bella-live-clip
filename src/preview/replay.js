@@ -1,4 +1,4 @@
-import {partOrigin, firstVideoDecodeTime, utcToReplay} from '../media/replay-clock.js';
+import {readPartClock, utcToReplay} from '../media/replay-clock.js';
 
 // Cache only the origin, not the growing end or signed playlist address.
 export function createReplayClock(request) {
@@ -10,27 +10,7 @@ export function createReplayClock(request) {
         .map(async group => {
           const key = group.part.start_time;
           if (!cache.has(key)) {
-            const pending = (async () => {
-              const read = async segment =>
-                new Uint8Array((await request(segment.url, {type: 'arraybuffer', range: segment.range, signal})).data);
-              const [{Input, BlobSource, MP4}, first, init] = await Promise.all([
-                import('mediabunny'),
-                read(group.firstSegment),
-                group.firstMap ? read(group.firstMap) : null,
-              ]);
-              const probe = new Input({
-                source: new BlobSource(new Blob(init ? [init, first] : [first])),
-                formats: [MP4],
-              });
-              try {
-                const track = await probe.getPrimaryVideoTrack();
-                if (!track) throw new Error('首分片没有视频轨');
-                const firstDecodeTime = firstVideoDecodeTime(first, track.id, await track.getTimeResolution());
-                return {firstDecodeTime, origin: partOrigin(group.part, firstDecodeTime)};
-              } finally {
-                probe.dispose();
-              }
-            })().catch(error => {
+            const pending = readPartClock(request, group, signal).catch(error => {
               cache.delete(key);
               throw error;
             });

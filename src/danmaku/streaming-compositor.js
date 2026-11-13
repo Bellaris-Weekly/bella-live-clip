@@ -228,6 +228,9 @@ export async function createStreamingCompositor(
           finishStall?.();
         }
       },
+      renderOverlay(timestamp) {
+        return painter.renderOverlay(timestamp);
+      },
       render(sample, timestamp) {
         metrics?.gauge('emoteDecodedBytes', budget.used);
         metrics?.gauge('emoteCompressedBytes', budget.compressed);

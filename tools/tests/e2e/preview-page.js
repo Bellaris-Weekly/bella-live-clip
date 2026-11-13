@@ -2,10 +2,12 @@
 import {createPlayer} from '../../../src/media/preview-player.js';
 import {readFragmentStill} from '../../../src/media/fragment-still.js';
 import {createPlayback} from '../../../src/media/playback.js';
+import {createDanmakuPreview} from '../../../src/danmaku/preview.js';
+import {RecordingPlan} from '../../../src/media/recording-plan.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function rig() {
+function rig({start = 1000} = {}) {
   const video = document.createElement('video');
   video.muted = true;
   document.body.append(video);
@@ -19,6 +21,13 @@ function rig() {
     const response = await fetch(url, {signal});
     return {data: type === 'arraybuffer' ? await response.arrayBuffer() : await response.text(), url: response.url};
   };
+  const record = {key: 'k', room: 1, start, end: start + 34, live: false};
+  const api = {
+    request,
+    clips: async () => [
+      {start_time: start, end_time: start + 34, clockComplete: true, stream: `${location.origin}/v.m3u8`},
+    ],
+  };
   const player = createPlayer({
     video,
     loading,
@@ -26,9 +35,9 @@ function rig() {
     frameUrl: time => `/still.svg?t=${Math.round(time)}`,
     status() {},
     onTime() {},
-    api: {request, clips: async () => [{start_time: 1000, end_time: 1034, stream: `${location.origin}/v.m3u8`}]},
+    api,
   });
-  return {video, loading, still, player, counts};
+  return {video, loading, still, player, counts, api, record};
 }
 
 async function settled({video, loading}, timeout) {
@@ -40,7 +49,38 @@ async function settled({video, loading}, timeout) {
   return null;
 }
 
-const load = r => r.player.load({key: 'k', start: 1000, end: 1034, live: false}, new AbortController().signal);
+const load = r => r.player.load(r.record, new AbortController().signal);
+
+window.setupDanmakuPreview = async () => {
+  const r = rig({start: 98});
+  const {streams} = await load(r);
+  const canvas = document.createElement('canvas');
+  canvas.hidden = true;
+  document.body.append(canvas);
+  const errors = [];
+  const preview = createDanmakuPreview({
+    video: r.video,
+    canvas,
+    getFrame: () => r.player.danmakuFrame(),
+    onError: error => errors.push(error.message),
+  });
+  const plan = new RecordingPlan(r.api, streams, new AbortController().signal);
+  preview.setSource({record: r.record, loadGroups: signal => plan.load(signal), request: r.api.request});
+  r.player.seek(3);
+  await settled(r, 4000);
+  window.danmakuRig = {...r, preview, canvas, errors};
+  window.overlayPixels = () => {
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0,
+      left = Infinity;
+    for (let i = 3; i < pixels.length; i += 4)
+      if (pixels[i]) {
+        count++;
+        left = Math.min(left, ((i - 3) / 4) % canvas.width);
+      }
+    return {count, left};
+  };
+};
 
 window.seekTo = async ({target, timeout}) => {
   const r = rig();

@@ -1124,6 +1124,15 @@ fieldset {
   height: 100%;
   object-fit: contain;
 }
+#danmakuPreview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  opacity: 0.65;
+}
 #videoStill {
   position: absolute;
   inset: 0;

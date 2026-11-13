@@ -22,6 +22,7 @@ const Monitor = () => (
     <div id="playerWrap">
       <video id="fullVideo" tabIndex={0} playsInline preload="metadata" />
       <canvas id="pageMirror" hidden tabIndex={0} role="button" aria-label="B 站同步画面，点击播放或暂停" />
+      <canvas id="danmakuPreview" hidden aria-hidden="true" />
       <img id="videoStill" hidden alt="" />
       <div id="videoLoading">正在加载…</div>
       <button type="button" id="previewScreenshot" aria-label="截图" title="截图">

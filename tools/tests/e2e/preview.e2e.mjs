@@ -212,3 +212,138 @@ test('a fragment opening mid-GOP is refused so the caller can fall back', async 
   const result = await inPage('fragmentStill', {segment: '/seg001.m4s'});
   assert.match(result.error, /关键帧/);
 });
+
+async function danmakuPage({missing = false, delay = 0} = {}) {
+  const page = await browser.newPage();
+  const requests = [];
+  const fixture = await readFile('tools/tests/fixtures/danmaku.parquet');
+  await page.route('https://data.bellaris.fans/**', async route => {
+    const url = route.request().url();
+    requests.push(url);
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    if (missing && url.includes('live-archive')) return route.fulfill({status: 404});
+    const body = url.includes('live-archive')
+      ? url.endsWith('index.json')
+        ? JSON.stringify({
+            schemaVersion: 1,
+            sessions: [{live_key: 'k', part: 1, path: 'live-archive/v1/1/k.parquet', bytes: fixture.length}],
+          })
+        : fixture
+      : url.endsWith('index.json')
+        ? JSON.stringify({catalog: 'catalog.json'})
+        : JSON.stringify({emotes: []});
+    await route.fulfill({body, headers: {'Access-Control-Allow-Origin': '*'}});
+  });
+  await page.goto(`${origin}/`);
+  await page.addScriptTag({url: '/page.js'});
+  await page.evaluate(() => window.setupDanmakuPreview());
+  return {page, requests};
+}
+
+test('real-time danmaku overlays playback, resets after scrubbing and releases on mode changes', async () => {
+  const {page, requests} = await danmakuPage();
+  try {
+    assert.equal(requests.length, 0, 'ordinary preview does not request comments');
+    await page.evaluate(() => {
+      window.danmakuRig.preview.setEnabled(true);
+      return window.danmakuRig.video.play();
+    });
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    const first = await page.evaluate(() => window.overlayPixels());
+    await page.waitForFunction(left => window.overlayPixels().left < left - 5, first.left);
+    await page.evaluate(() => window.danmakuRig.video.pause());
+    const paused = await page.evaluate(() => window.overlayPixels());
+    await page.waitForTimeout(150);
+    assert.deepEqual(await page.evaluate(() => window.overlayPixels()), paused, 'comments freeze with video');
+    const archiveReads = requests.filter(url => url.includes('live-archive')).length;
+    await page.evaluate(() => {
+      const r = window.danmakuRig;
+      r.preview.setScrubbing(true);
+      r.player.beginScrub();
+      r.player.scrub(20);
+    });
+    assert.equal(await page.evaluate(() => window.danmakuRig.canvas.hidden), true);
+    await page.waitForTimeout(200);
+    assert.equal(requests.filter(url => url.includes('live-archive')).length, archiveReads);
+    await page.evaluate(() => {
+      const r = window.danmakuRig;
+      r.player.endScrub();
+      r.preview.setScrubbing(false);
+    });
+    await page.waitForFunction(() => !window.danmakuRig.video.seeking && window.danmakuRig.loading.hidden);
+    await page.evaluate(() => window.danmakuRig.video.play());
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden);
+    assert.equal(await page.evaluate(() => window.overlayPixels().count), 0, 'old comments do not survive seek');
+    await page.evaluate(() => window.danmakuRig.player.seek(3));
+    await page.waitForFunction(() => !window.danmakuRig.video.seeking && window.danmakuRig.loading.hidden);
+    await page.evaluate(() => window.danmakuRig.video.play());
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    assert.equal(requests.filter(url => url.includes('live-archive')).length, archiveReads, 'seek reuses archive');
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(false));
+    assert.equal(await page.evaluate(() => window.danmakuRig.canvas.hidden), true);
+    const stopped = requests.length;
+    await page.waitForTimeout(150);
+    assert.equal(requests.length, stopped);
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    const result = await page.evaluate(() => {
+      const r = window.danmakuRig;
+      const result = {errors: r.errors, paused: r.video.paused, width: r.canvas.width, height: r.canvas.height};
+      r.preview.clear();
+      result.hidden = r.canvas.hidden;
+      r.preview.destroy();
+      r.player.destroy();
+      return result;
+    });
+    assert.deepEqual(result, {errors: [], paused: false, width: 320, height: 180, hidden: true});
+  } finally {
+    await page.close();
+  }
+});
+
+test('missing danmaku archive reports once while video keeps playing', async () => {
+  const {page} = await danmakuPage({missing: true});
+  try {
+    await page.evaluate(() => {
+      window.danmakuRig.preview.setEnabled(true);
+      return window.danmakuRig.video.play();
+    });
+    await page.waitForFunction(() => window.danmakuRig.errors.length > 0);
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => ({
+      errors: window.danmakuRig.errors,
+      paused: window.danmakuRig.video.paused,
+      time: window.danmakuRig.video.currentTime,
+      hidden: window.danmakuRig.canvas.hidden,
+    }));
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0], /没有弹幕归档/);
+    assert.equal(result.paused, false);
+    assert.ok(result.time > 3);
+    assert.equal(result.hidden, true);
+  } finally {
+    await page.close();
+  }
+});
+
+test('disabling danmaku during archive loading discards late results', async () => {
+  const {page, requests} = await danmakuPage({delay: 200});
+  try {
+    await page.evaluate(() => {
+      window.danmakuRig.preview.setEnabled(true);
+      return window.danmakuRig.video.play();
+    });
+    await page.waitForTimeout(100);
+    assert.ok(requests.length > 0);
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(false));
+    await page.waitForTimeout(500);
+    const result = await page.evaluate(() => ({
+      errors: window.danmakuRig.errors,
+      paused: window.danmakuRig.video.paused,
+      hidden: window.danmakuRig.canvas.hidden,
+    }));
+    assert.deepEqual(result, {errors: [], paused: false, hidden: true});
+  } finally {
+    await page.close();
+  }
+});
