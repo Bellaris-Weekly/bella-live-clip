@@ -61,8 +61,8 @@ before(async () => {
 });
 after(async () => browser?.close());
 
-async function fixture(t) {
-  const page = await browser.newPage({reducedMotion: 'reduce'});
+async function fixture(t, reducedMotion = 'reduce') {
+  const page = await browser.newPage({reducedMotion});
   t.after(() => page.close());
   await page.setContent('<!doctype html><body></body>');
   await page.addScriptTag({content: script});
@@ -78,6 +78,38 @@ async function fixture(t) {
   const box = await page.locator('#timeline').boundingBox();
   return {page, box};
 }
+
+test('animated refit keeps the displayed selection and playhead aligned with the current view', async t => {
+  const {page} = await fixture(t, 'no-preference');
+  const result = await page.evaluate(async () => {
+    const root = document.querySelector('div').shadowRoot;
+    const timeline = window.rig.timeline;
+    timeline.reset(7200, {start: 600, end: 620});
+    timeline.setCurrent(610);
+    timeline.setSelection({start: 600, end: 620}, true);
+    let frames = 0,
+      maxError = 0;
+    while (timeline.isInteracting()) {
+      await new Promise(requestAnimationFrame);
+      const view = timeline.getView();
+      const width = root.getElementById('timeline').getBoundingClientRect().width;
+      for (const [id, time] of [
+        ['startHandle', 600],
+        ['endHandle', 620],
+        ['selection', 600],
+        ['playhead', 610],
+      ]) {
+        const expected = Math.max(0, Math.min(1, (time - view.start) / (view.end - view.start))) * width;
+        const actual = parseFloat(getComputedStyle(root.getElementById(id)).left);
+        maxError = Math.max(maxError, Math.abs(actual - expected));
+      }
+      frames++;
+    }
+    return {frames, maxError};
+  });
+  assert.ok(result.frames > 2, JSON.stringify(result));
+  assert.ok(result.maxError < 1, `animation trails its timeline by ${result.maxError.toFixed(1)}px`);
+});
 
 for (const type of ['start', 'end']) {
   test(`real pointer click on ${type} handle commits its position without changing selection`, async t => {
@@ -133,6 +165,28 @@ test('real double click expands a zoomed selection; body drags preserve length a
     await page.evaluate(() => window.rig.timeline.getView()),
     fitSelection(resized.start, resized.end, 100),
   );
+});
+
+test('dragging either cut point previews its frame while leaving the playback marker in place', async t => {
+  const {page, box} = await fixture(t);
+  for (const type of ['start', 'end']) {
+    await page.evaluate(() => {
+      window.rig.timeline.reset(100, {start: 20, end: 80});
+      window.rig.timeline.setCurrent(50);
+    });
+    const handle = await page.locator(`#${type}Handle`).boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * (type === 'start' ? 0.3 : 0.7), box.y + box.height / 2, {steps: 5});
+    await page.waitForFunction(type => Math.abs(window.rig.previews.at(-1) - (type === 'start' ? 30 : 70)) < 0.2, type);
+    assert.equal(await page.locator('#playhead').evaluate(el => el.style.left), '50%');
+    await page.mouse.up();
+    const state = await page.evaluate(() => ({view: window.rig.timeline.getView(), end: window.rig.ends.at(-1)}));
+    assert.equal(state.end.commitPosition, false);
+    const marker = await page.locator('#playhead').evaluate(el => parseFloat(el.style.left));
+    // Browsers round percentages when serializing inline styles.
+    assert.ok(Math.abs(marker - ((50 - state.view.start) / (state.view.end - state.view.start)) * 100) < 0.001);
+  }
 });
 
 test('dragging inside a zoomed selection seeks; a second double click exits overview', async t => {

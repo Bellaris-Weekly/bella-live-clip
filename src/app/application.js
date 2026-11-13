@@ -361,7 +361,9 @@ export function createApp({
     },
     onView: (view, motion) => {
       batch(() => {
-        store.view.value = {start: view.start, end: view.end};
+        const previous = store.view.peek();
+        if (previous.start !== view.start || previous.end !== view.end)
+          store.view.value = {start: view.start, end: view.end};
         store.zoom.value = $('timeline').dataset.zoom;
       });
       if (!isSubmission() || submissionThumbnails) thumbnails.update(view, motion);

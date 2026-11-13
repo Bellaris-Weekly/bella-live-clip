@@ -57,7 +57,8 @@ export function createTimeline({
     zoomTarget = null,
     overview = false,
     lastPointerType = null,
-    tickTimes = [];
+    tickTimes = [],
+    renderedRange = null;
   const pct = t => clamp(((t - view.start) / (view.end - view.start)) * 100, 0, 100);
   const timeLabel = t => {
     const h = Math.floor(t / 3600),
@@ -75,34 +76,43 @@ export function createTimeline({
   function renderLock() {
     for (const el of [startHandle, endHandle]) el.disabled = locked || !loaded();
   }
-  function render() {
+  function render(trackWidth = track.getBoundingClientRect().width) {
     track.dataset.overview = overview;
     startHandle.style.left = `${pct(selection.start)}%`;
     endHandle.style.left = `${pct(selection.end)}%`;
     selectionElement.style.left = `${pct(selection.start)}%`;
     selectionElement.style.right = `${100 - pct(selection.end)}%`;
     // Short clips can become narrower than the handles in the full-recording view.
-    track.dataset.compact =
-      ((pct(selection.end) - pct(selection.start)) / 100) * track.getBoundingClientRect().width < 36;
-    for (const [el, value] of [
-      [startHandle, selection.start],
-      [endHandle, selection.end],
-    ]) {
-      el.setAttribute('aria-valuenow', value.toFixed(3));
-      el.setAttribute('aria-valuemin', min);
-      el.setAttribute('aria-valuemax', total);
+    track.dataset.compact = ((pct(selection.end) - pct(selection.start)) / 100) * trackWidth < 36;
+    if (
+      !renderedRange ||
+      renderedRange.start !== selection.start ||
+      renderedRange.end !== selection.end ||
+      renderedRange.min !== min ||
+      renderedRange.total !== total
+    ) {
+      for (const [el, value] of [
+        [startHandle, selection.start],
+        [endHandle, selection.end],
+      ]) {
+        el.setAttribute('aria-valuenow', value.toFixed(3));
+        el.setAttribute('aria-valuemin', min);
+        el.setAttribute('aria-valuemax', total);
+      }
+      onRange?.(selection);
+      renderedRange = {...selection, min, total};
     }
     if (!zooming) tickTimes = tickElements.map((_, i) => view.start + ((view.end - view.start) * i) / 4);
     tickElements.forEach((span, i) => {
       const position = ((tickTimes[i] - view.start) / (view.end - view.start)) * 100;
-      span.textContent = timeLabel(tickTimes[i]);
+      const label = timeLabel(tickTimes[i]);
+      if (span.textContent !== label) span.textContent = label;
       span.style.left = `${position}%`;
       span.style.transform = `translateX(-${clamp(position, 0, 100)}%)`;
     });
     track.dataset.zoom = `${((total - min) / (view.end - view.start)).toFixed(1)}×`;
     track.style.setProperty('--view-start', `${((view.start - min) / (total - min)) * 100}%`);
     track.style.setProperty('--view-width', `${((view.end - view.start) / (total - min)) * 100}%`);
-    onRange?.(selection);
     renderPlayhead();
     renderLock();
     onView({...view}, {animating: zooming, target: zoomTarget ?? view});
@@ -134,6 +144,7 @@ export function createTimeline({
       render();
       return;
     }
+    const trackWidth = track.getBoundingClientRect().width;
     const from = {...view},
       span = from.end - from.start,
       center = (from.start + from.end) / 2;
@@ -158,7 +169,9 @@ export function createTimeline({
         stopZoom();
         view = target;
       }
-      render();
+      // The track's width is fixed throughout this refit; avoid forcing layout
+      // between animation writes just to measure the same geometry again.
+      render(trackWidth);
       if (zooming) zoomFrame = requestAnimationFrame(step);
     }
     zoomFrame = requestAnimationFrame(step);
@@ -176,10 +189,13 @@ export function createTimeline({
       target = selection[drag.type === 'selection' ? 'start' : drag.type];
       view = {start: Math.min(view.start, selection.start), end: Math.max(view.end, selection.end)};
     }
-    current = target;
+    // Trimming previews the boundary without moving the saved playback marker.
+    // Scrubbing the playhead (or moving the whole selection) still seeks it.
+    drag.previewTime = target;
+    if (previewOnly || drag.type === 'selection') current = target;
     if (previewOnly) renderPlayhead();
     else {
-      render();
+      render(rect.width);
       onSelection({...selection});
     }
     onPreview(target);
@@ -242,11 +258,16 @@ export function createTimeline({
       render();
       if (drag.type !== 'playhead' && drag.moved) onSelection({...selection});
     } else flush();
-    const {type, moved, pointerId} = drag;
+    const {type, moved, pointerId, previewTime} = drag;
+    const time = canceled ? current : previewTime;
     drag = null;
     if (track.hasPointerCapture(pointerId)) track.releasePointerCapture(pointerId);
+    if (!canceled && !moved && (type === 'start' || type === 'end')) {
+      current = time;
+      renderPlayhead();
+    }
     if (!canceled && (type === 'start' || type === 'end') && moved) fitView();
-    onScrubEnd?.(current, {
+    onScrubEnd?.(time, {
       canceled,
       commitPosition: !canceled && (type === 'playhead' || type === 'selection' || !moved),
     });

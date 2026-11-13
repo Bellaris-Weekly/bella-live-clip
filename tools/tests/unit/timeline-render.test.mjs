@@ -185,6 +185,38 @@ test('拖动和键盘预览都区分播放进度与起止点，松手可恢复�
   }
 });
 
+test('拖动裁剪边界只移动预览，播放标记保留原时间且忽略播放器的预览回调', t => {
+  const f = fixture(t);
+  for (const type of ['start', 'end']) {
+    f.timeline.reset(100, {start: 20, end: 80});
+    f.timeline.setCurrent(50);
+    const x = type === 'start' ? 20 : 80;
+    f.track.handlers.pointerdown({
+      button: 0,
+      clientX: x,
+      pointerId: 1,
+      target: f[type + 'Handle'],
+      preventDefault() {},
+    });
+    assert.equal(f.previews.at(-1), x);
+    assert.equal(f.playhead.style.left, '50%');
+    for (const delta of [5, 10, 15]) {
+      f.track.handlers.pointermove({buttons: 1, clientX: x + delta, pointerId: 1});
+      f.advance(delta);
+      assert.equal(f.previews.at(-1), x + delta);
+      assert.equal(f.timeline.getSelection()[type], x + delta);
+      f.timeline.setCurrent(x + delta);
+      assert.equal(f.playhead.style.left, '50%');
+    }
+    f.track.handlers.pointerup({pointerId: 1});
+    assert.equal(f.playhead.style.left, '50%');
+    f.advance(0);
+    f.advance(420);
+    const view = f.timeline.getView();
+    assert.ok(Math.abs(parseFloat(f.playhead.style.left) - ((50 - view.start) / (view.end - view.start)) * 100) < 1e-8);
+  }
+});
+
 test('缩放和选区调整复用刻度节点，锁定只改变边界可用状态', t => {
   const f = fixture(t);
   f.timeline.reset(100);
@@ -257,7 +289,7 @@ test('左右边界松手后整条视野连续放大，刻度保留时间参照�
       );
       assert.ok(parseFloat(f.ticks.children[0].style.left) < 0);
       assert.equal(f.views.at(-1).motion.animating, true);
-      const expected = ((selected[type] - middle.start) / (middle.end - middle.start)) * 100;
+      const expected = ((duration * 0.5 - middle.start) / (middle.end - middle.start)) * 100;
       assert.ok(Math.abs(parseFloat(f.playhead.style.left) - expected) < 1e-8);
       f.advance(420);
       assert.deepEqual(f.timeline.getView(), target);
@@ -265,6 +297,32 @@ test('左右边界松手后整条视野连续放大，刻度保留时间参照�
       assert.equal(f.views.at(-1).motion.animating, false);
       assert.equal(f.frames.size, 0);
     }
+});
+
+test('缩放帧复用轨道宽度，不重写未变化的选区表单和滑块属性', t => {
+  const f = fixture(t);
+  let reads = 0,
+    attributes = 0;
+  f.track.getBoundingClientRect = () => {
+    reads++;
+    return {left: 0, width: 100};
+  };
+  for (const handle of [f.startHandle, f.endHandle]) {
+    const setAttribute = handle.setAttribute.bind(handle);
+    handle.setAttribute = (...args) => {
+      attributes++;
+      setAttribute(...args);
+    };
+  }
+  f.timeline.reset(7200);
+  f.timeline.setSelection({start: 600, end: 620}, true);
+  const before = {reads, attributes, labels: f.labels.writes};
+  for (const time of [0, 70, 140, 210, 280, 350, 420]) f.advance(time);
+  assert.deepEqual({reads, attributes, labels: f.labels.writes}, before);
+  assert.equal(f.labels.textContent, '10:00 — 10:20');
+  f.timeline.setSelection({start: 610, end: 620});
+  assert.equal(f.labels.textContent, '10:10 — 10:20');
+  assert.equal(f.startHandle.attributes['aria-valuenow'], '610.000');
 });
 
 test('动画被新交互、换场或锁定打断后没有旧帧回跳', t => {
