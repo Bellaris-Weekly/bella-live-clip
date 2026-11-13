@@ -213,20 +213,26 @@ test('a fragment opening mid-GOP is refused so the caller can fall back', async 
   assert.match(result.error, /关键帧/);
 });
 
-async function danmakuPage({missing = false, delay = 0} = {}) {
+async function danmakuPage({missing = false, delay = 0, parts = 1} = {}) {
   const page = await browser.newPage();
   const requests = [];
+  const state = {missing};
   const fixture = await readFile('tools/tests/fixtures/danmaku.parquet');
   await page.route('https://data.bellaris.fans/**', async route => {
     const url = route.request().url();
     requests.push(url);
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-    if (missing && url.includes('live-archive')) return route.fulfill({status: 404});
+    if (state.missing && url.includes('live-archive')) return route.fulfill({status: 404});
     const body = url.includes('live-archive')
       ? url.endsWith('index.json')
         ? JSON.stringify({
             schemaVersion: 1,
-            sessions: [{live_key: 'k', part: 1, path: 'live-archive/v1/1/k.parquet', bytes: fixture.length}],
+            sessions: Array.from({length: parts}, (_, part) => ({
+              live_key: 'k',
+              part,
+              path: `live-archive/v1/1/k${part}.parquet`,
+              bytes: fixture.length,
+            })),
           })
         : fixture
       : url.endsWith('index.json')
@@ -237,7 +243,7 @@ async function danmakuPage({missing = false, delay = 0} = {}) {
   await page.goto(`${origin}/`);
   await page.addScriptTag({url: '/page.js'});
   await page.evaluate(() => window.setupDanmakuPreview());
-  return {page, requests};
+  return {page, requests, state};
 }
 
 test('real-time danmaku overlays playback, resets after scrubbing and releases on mode changes', async () => {
@@ -301,8 +307,8 @@ test('real-time danmaku overlays playback, resets after scrubbing and releases o
   }
 });
 
-test('missing danmaku archive reports once while video keeps playing', async () => {
-  const {page} = await danmakuPage({missing: true});
+test('missing danmaku reports once across seeks and recovers when the archive becomes available', async () => {
+  const {page, state} = await danmakuPage({missing: true});
   try {
     await page.evaluate(() => {
       window.danmakuRig.preview.setEnabled(true);
@@ -321,6 +327,50 @@ test('missing danmaku archive reports once while video keeps playing', async () 
     assert.equal(result.paused, false);
     assert.ok(result.time > 3);
     assert.equal(result.hidden, true);
+    for (const time of [20, 3]) {
+      const retried = page.waitForResponse(
+        response => response.url().includes('live-archive') && response.status() === 404,
+      );
+      await page.evaluate(time => window.danmakuRig.player.seek(time), time);
+      await retried;
+      await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(() => window.danmakuRig.errors.length), 1);
+    }
+    state.missing = false;
+    await page.evaluate(() => window.danmakuRig.player.seek(4));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    assert.equal(await page.evaluate(() => window.danmakuRig.errors.length), 1);
+  } finally {
+    await page.close();
+  }
+});
+
+test('danmaku seeks reuse every archive partition until preview is disabled', async () => {
+  const {page, requests} = await danmakuPage({parts: 3});
+  const archives = () => requests.filter(url => url.includes('live-archive'));
+  try {
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    const initial = [...archives()];
+    assert.equal(initial.length, 4, 'one index and all three partitions');
+    for (const time of [20, 3]) {
+      await page.evaluate(time => {
+        const r = window.danmakuRig;
+        r.preview.setScrubbing(true);
+        r.player.seek(time);
+        r.preview.setScrubbing(false);
+      }, time);
+      await page.waitForFunction(() => !window.danmakuRig.canvas.hidden);
+      assert.equal(await page.evaluate(() => window.overlayPixels().count > 10), time === 3);
+      assert.deepEqual(archives(), initial);
+    }
+    await page.evaluate(() => {
+      window.danmakuRig.preview.setEnabled(false);
+      window.danmakuRig.preview.setEnabled(true);
+    });
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    assert.deepEqual(archives(), [...initial, ...initial], 'closing preview releases the source cache');
+    assert.deepEqual(await page.evaluate(() => window.danmakuRig.errors), []);
   } finally {
     await page.close();
   }

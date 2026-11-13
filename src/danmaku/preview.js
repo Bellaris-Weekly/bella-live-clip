@@ -22,13 +22,14 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     if (!own || own.closed) return;
     own.closed = true;
     own.controller.abort();
-    // Preparation may still own a reader or an emote decoder. Its completion
-    // closes them even if a newer seek has already started another session.
+    // The layout and emote decoders belong to this seek; archives belong to
+    // the source and remain reusable until preview is released.
     void own.promise.then(compositor => compositor.close()).catch(() => {});
   }
   function release() {
     resetSession();
     source?.controller.abort();
+    void source?.comments?.then(({reader}) => reader.close()).catch(() => {});
     source = null;
     if (animation !== null) cancelAnimationFrame(animation);
     animation = null;
@@ -42,59 +43,66 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         import('./parquet.js'),
         import('./streaming-compositor.js'),
       ]);
-      const record = configuration.record;
-      const prepared = modules.then(([{prepareComments}]) => {
-        controller.signal.throwIfAborted();
-        return prepareComments(record, {signal: controller.signal});
-      });
-      void prepared.catch(() => {});
-      source = {...configuration, controller, modules, prepared, clocks: new Map()};
+      source = {...configuration, controller, modules, comments: null, clocks: new Map(), notified: false};
     }
     return source;
   }
-  async function prepare(owner, frame, width, height, signal) {
-    let reader;
-    try {
-      const key = frame.part.start_time;
-      if (!owner.clocks.has(key)) {
-        const clock = (async () => {
-          const groups = await owner.loadGroups(owner.controller.signal);
-          const group = groups.find(group => group.part.start_time === key);
-          if (!group) throw new Error('无法读取弹幕预览对应的录像分段。');
-          return readPartClock(owner.request, group, owner.controller.signal);
-        })().catch(error => {
-          owner.clocks.delete(key);
-          throw error;
+  function commentsFor(owner) {
+    owner.comments ??= owner.modules
+      .then(async ([{prepareComments, createCommentReader}]) => {
+        const signal = owner.controller.signal;
+        signal.throwIfAborted();
+        const archive = await prepareComments(owner.record, {signal});
+        signal.throwIfAborted();
+        const reader = createCommentReader(owner.record, {
+          signal,
+          prepared: archive,
+          waitForCoverage: false,
+          maxArchiveBytes: 32 * 1024 * 1024,
         });
-        owner.clocks.set(key, clock);
-      }
-      const [archive, clock, [{createCommentReader}, {streamClock}, {createStreamingCompositor}]] = await Promise.all([
-        owner.prepared,
-        owner.clocks.get(key),
-        owner.modules,
-      ]);
-      signal.throwIfAborted();
-      const origin = streamOrigin(streamClock(archive.metadata), clock.origin) ?? clock.origin;
-      // Readers own mutable snapshot generations; the reusable initial footer
-      // and file stay with the recording until preview is disabled or closed.
-      reader = createCommentReader(owner.record, {
-        signal,
-        prepared: {...archive, parts: [...archive.parts]},
-        waitForCoverage: false,
+        return {archive, reader};
+      })
+      .catch(error => {
+        // A later seek retries preparation after a transient outage or an
+        // archive that has only just become available.
+        owner.comments = null;
+        throw error;
       });
-      return await createStreamingCompositor(owner.record, {
-        reader,
-        origin,
-        start: frame.time,
-        sourceTime: time => time,
-        width,
-        height,
-        signal,
+    return owner.comments;
+  }
+  async function prepare(owner, frame, width, height, signal) {
+    const key = frame.part.start_time;
+    if (!owner.clocks.has(key)) {
+      const clock = (async () => {
+        const groups = await owner.loadGroups(owner.controller.signal);
+        const group = groups.find(group => group.part.start_time === key);
+        if (!group) throw new Error('无法读取弹幕预览对应的录像分段。');
+        return readPartClock(owner.request, group, owner.controller.signal);
+      })().catch(error => {
+        owner.clocks.delete(key);
+        throw error;
       });
-    } catch (error) {
-      await reader?.close();
-      throw error;
+      owner.clocks.set(key, clock);
     }
+    const [{archive, reader}, clock, [, {streamClock}, {createStreamingCompositor}]] = await Promise.all([
+      commentsFor(owner),
+      owner.clocks.get(key),
+      owner.modules,
+    ]);
+    signal.throwIfAborted();
+    const origin = streamOrigin(streamClock(archive.metadata), clock.origin) ?? clock.origin;
+    return await createStreamingCompositor(owner.record, {
+      reader: {
+        read: window => reader.read({...window, signal}),
+        close() {}, // Only release() closes the source's shared reader.
+      },
+      origin,
+      start: frame.time,
+      sourceTime: time => time,
+      width,
+      height,
+      signal,
+    });
   }
   function startSession(frame) {
     resetSession();
@@ -107,6 +115,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     const width = Math.max(1, Math.round(video.videoWidth * scale)),
       height = Math.max(1, Math.round(video.videoHeight * scale));
     const own = {
+      owner,
       controller,
       signal,
       generation: frame.generation,
@@ -130,7 +139,10 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     own.failed = true;
     canvas.hidden = true;
     closeSession(own);
-    onError(error);
+    if (!own.owner.notified) {
+      own.owner.notified = true;
+      onError(error);
+    }
   }
   async function draw(own, frame) {
     own.busy = true;

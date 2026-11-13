@@ -203,7 +203,7 @@ export function nextSnapshotDelay(schedule, previous, time) {
   return Math.min(10000, Math.max(3000, expected - time));
 }
 
-// One export owns its snapshot generations, temporary files and row-group cache.
+// One export or preview source owns its snapshots, files and row-group cache.
 // Only demanded windows refresh live files; consumed windows stay committed.
 export function createCommentReader(
   record,
@@ -217,6 +217,7 @@ export function createCommentReader(
     wait = waitForRetry,
     onWait,
     waitForCoverage = true,
+    maxArchiveBytes = Infinity,
   } = {},
 ) {
   const controller = new AbortController();
@@ -232,15 +233,16 @@ export function createCommentReader(
     generation = 0,
     reading = Promise.resolve();
   async function open(part, entry, readOptions = options) {
+    const {signal} = readOptions;
     const finish = metrics?.start('archiveOpen');
     try {
       // Once received, even a live response belongs to this export. A metadata or
       // temporary-storage failure must not replace it with a newer snapshot.
       entry.file ??= await archiveFile(part, readOptions);
       let file = entry.file;
+      if (file.withSignal) file = file.withSignal(signal);
       const {readMetadata, danmakuBounds, snapshotCoverage, snapshotSchedule} = await import('./parquet.js');
       const metadata = (entry.metadata ??= await readMetadata(file));
-      if (file.withSignal) file = file.withSignal(signal);
       if (file instanceof ArrayBuffer && createTemporary) {
         const storage = await createTemporary({signal});
         temporary.push(storage);
@@ -274,17 +276,41 @@ export function createCommentReader(
       finish?.();
     }
   }
-  function openNeeded(index, part, initial) {
+  function trimFiles(initial) {
+    if (!Number.isFinite(maxArchiveBytes)) return;
+    let bytes = 0;
+    for (const entry of opened.values()) if (entry.file instanceof ArrayBuffer) bytes += entry.file.byteLength;
+    for (const [index, entry] of opened) {
+      if (bytes <= maxArchiveBytes) break;
+      if (!(entry.file instanceof ArrayBuffer)) continue;
+      bytes -= entry.file.byteLength;
+      entry.file = entry.promise = null;
+      if (index === 0) initial.file = null;
+      if (initial.parts[index].snapshot) {
+        clearGroups(entry);
+        entry.id = ++generation;
+        entry.metadata = entry.bounds = null;
+      }
+      // Keep metadata/time bounds and the independently bounded row cache.
+      // A sealed part outside the requested interval need not be reopened.
+    }
+  }
+  function openNeeded(index, part, initial, readOptions) {
     let entry = opened.get(index);
     if (!entry)
       opened.set(
         index,
         (entry = {id: ++generation, ...(index === 0 ? {file: initial.file, metadata: initial.metadata} : {})}),
       );
+    opened.delete(index);
+    opened.set(index, entry);
     if (!entry.promise) {
-      entry.promise = retryOpen(() => open(part, entry), signal)
+      entry.promise = retryOpen(() => open(part, entry, readOptions), readOptions.signal)
         .then(result => {
-          if (index === 0) initial.file = result.file;
+          if (index === 0) {
+            initial.file = result.file;
+            initial.metadata = result.metadata;
+          }
           return result;
         })
         .catch(error => {
@@ -300,13 +326,17 @@ export function createCommentReader(
       temporary.splice(temporary.indexOf(entry.storage), 1);
       entry.storage = null;
     }
+    clearGroups(entry);
+  }
+  function clearGroups(entry) {
     for (const [key, value] of cache) {
       if (!key.startsWith(`${entry.id}:`)) continue;
       cachedBytes -= value.size;
       cache.delete(key);
     }
   }
-  async function refresh(index, initial, entry, to) {
+  async function refresh(index, initial, entry, to, demandOptions) {
+    const {signal} = demandOptions;
     const finish = metrics?.start('archiveRefreshWait');
     // Poll no later than 30 s past the requested platform time, and never spend
     // more than 30 s on one demand (including network I/O). An old window still
@@ -314,7 +344,7 @@ export function createCommentReader(
     const deadline = Math.min(now() + 30000, to * 1000 + 30000);
     const budget = new AbortController();
     const timer = setTimeout(() => budget.abort(), deadline > now() ? deadline - now() : 30000);
-    const readOptions = {...options, signal: AbortSignal.any([signal, budget.signal])};
+    const readOptions = {...demandOptions, signal: AbortSignal.any([signal, budget.signal])};
     let candidate,
       seen = entry.schedule?.published;
     try {
@@ -421,12 +451,15 @@ export function createCommentReader(
     return entry.promise;
   }
 
-  async function read({origin, start, end, adjustment = 0, prefetch = false}) {
+  async function read({origin, start, end, adjustment = 0, prefetch = false, signal: callerSignal}) {
+    const readSignal = callerSignal ? AbortSignal.any([signal, callerSignal]) : signal;
+    const readOptions = {...options, signal: readSignal};
     const finish = metrics?.start('archiveRead');
+    let initial;
     try {
       if (closed) throw new Error('弹幕读取器已关闭。');
-      signal?.throwIfAborted();
-      const initial = await archive;
+      readSignal.throwIfAborted();
+      initial = await archive;
       if (closed) throw new Error('弹幕读取器已关闭。');
       const from = start + origin + PLAYBACK_LATENCY - adjustment;
       const to = end + origin + PLAYBACK_LATENCY - adjustment;
@@ -436,18 +469,23 @@ export function createCommentReader(
       // metadata barrier or speculative archive requests on the video path.
       for (const [index, part] of initial.parts.entries()) {
         if (closed) throw new Error('弹幕读取器已关闭。');
-        signal?.throwIfAborted();
-        let entry = await openNeeded(index, part, initial);
+        readSignal.throwIfAborted();
+        const known = opened.get(index);
+        if (!part.snapshot && known?.bounds && (known.bounds.to < from || known.bounds.from > to)) continue;
+        let entry = await openNeeded(index, part, initial, readOptions);
         if (part.snapshot && entry.coverage < to) {
           if (prefetch) return null;
-          entry = await refresh(index, initial, entry, to);
+          entry = await refresh(index, initial, entry, to, readOptions);
         }
         const {file, metadata, bounds} = entry;
-        if (bounds.to < from || bounds.from > to) continue;
-        const rows = await readDanmaku(file, {
+        if (bounds.to < from || bounds.from > to) {
+          trimFiles(initial);
+          continue;
+        }
+        const rows = await readDanmaku(file.withSignal ? file.withSignal(readSignal) : file, {
           from,
           to,
-          signal,
+          signal: readSignal,
           metadata,
           readGroup: (group, size, load) => readGroup(`${entry.id}:${group}`, size, load),
         });
@@ -459,9 +497,13 @@ export function createCommentReader(
             throw new Error('弹幕窗口超过内存预算，请缩短选区。');
           events.push({...row, time, order: events.length});
         }
+        trimFiles(initial);
       }
       return events.sort((a, b) => a.time - b.time || a.order - b.order);
     } finally {
+      // Also enforce the file budget for empty windows, canceled reads and
+      // partially successful opens. Reads are serialized, so none can race it.
+      if (initial) trimFiles(initial);
       finish?.();
     }
   }

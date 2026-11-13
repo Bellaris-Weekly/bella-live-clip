@@ -751,3 +751,139 @@ test('the wait message states how much danmaku is still missing', async () => {
     '等待直播弹幕：正在确认弹幕进度，约 10 秒后更新',
   );
 });
+
+test('canceling one preview read leaves shared archives usable by the next seek', async () => {
+  const started = deferred();
+  let requests = 0;
+  const reader = createCommentReader(
+    {},
+    {
+      prepared: {
+        file: fixture,
+        metadata,
+        parts: [0, 1].map(part => ({part, path: `live-archive/p${part}.parquet`, bytes: fixture.byteLength})),
+      },
+      fetcher: async (_, {signal}) => {
+        if (++requests === 1) {
+          started.resolve();
+          await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once: true}));
+        }
+        return new Response(fixture);
+      },
+    },
+  );
+  const oldSeek = new AbortController();
+  try {
+    const pending = reader.read({...range, signal: oldSeek.signal});
+    const rejected = assert.rejects(pending, {name: 'AbortError'});
+    await started.promise;
+    const next = reader.read(range);
+    oldSeek.abort();
+    await rejected;
+    assert.equal((await next).length, 4);
+    assert.equal((await reader.read(range)).length, 4);
+    assert.equal(requests, 2, 'only the canceled partition is requested again');
+  } finally {
+    await reader.close();
+  }
+});
+
+test('preview file budget evicts old partitions but retains bounds to skip unrelated seeks', async () => {
+  const initial = {
+    file: before,
+    metadata: await readMetadata(before),
+    parts: [0, 1].map(part => ({part, path: `live-archive/p${part}.parquet`, bytes: before.byteLength})),
+  };
+  const requests = [];
+  const reader = createCommentReader(
+    {},
+    {
+      prepared: initial,
+      maxArchiveBytes: before.byteLength,
+      fetcher: async url => {
+        requests.push(url.split('/').at(-1));
+        return new Response(before);
+      },
+    },
+  );
+  try {
+    assert.equal((await reader.read(range)).length, 4);
+    assert.deepEqual(requests, ['p1.parquet']);
+    assert.equal(initial.file, null, 'the first prepared buffer must not bypass eviction');
+    assert.deepEqual(await reader.read({...range, start: 200, end: 210}), []);
+    assert.deepEqual(requests, ['p1.parquet'], 'cached time bounds skip evicted files too');
+    assert.equal((await reader.read(range)).length, 4);
+    assert.deepEqual(requests, ['p1.parquet', 'p0.parquet', 'p1.parquet']);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('an evicted live snapshot reloads metadata and rows from the new generation', async () => {
+  const initial = {
+    file: before,
+    metadata: await readMetadata(before),
+    parts: [{...livePart, snapshot: true}],
+  };
+  let requests = 0;
+  const reader = createCommentReader(
+    {},
+    {
+      prepared: initial,
+      maxArchiveBytes: 0,
+      waitForCoverage: false,
+      fetcher: async () => {
+        requests++;
+        return new Response(after);
+      },
+    },
+  );
+  try {
+    assert.deepEqual(
+      (await reader.read(firstWindow)).map(row => row.text),
+      ['100000'],
+    );
+    assert.equal(initial.file, null);
+    assert.deepEqual(
+      (await reader.read({origin: 0, start: 98, end: 128})).map(row => row.text),
+      ['100000', '110000', '120000'],
+    );
+    assert.equal(requests, 1);
+    assert.equal(snapshotCoverage(initial.metadata), 130);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('Range-backed archives bind payload reads to the current seek after cancellation', async () => {
+  const network = sealedFetch(fixture);
+  const started = deferred();
+  let reading = false,
+    requests = 0;
+  const fetcher = async (url, options) => {
+    if (reading && ++requests === 1) {
+      started.resolve();
+      await new Promise((_, reject) =>
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), {once: true}),
+      );
+    }
+    return network.fetcher(url, options);
+  };
+  const initial = await prepareComments({room: 1, key: 'x'}, {fetcher});
+  const reader = createCommentReader({}, {prepared: initial, fetcher});
+  const oldSeek = new AbortController();
+  try {
+    reading = true;
+    const pending = reader.read({...range, signal: oldSeek.signal});
+    const rejected = assert.rejects(pending, {name: 'AbortError'});
+    await started.promise;
+    oldSeek.abort();
+    await rejected;
+    assert.equal((await reader.read(range)).length, 2);
+    const loaded = requests;
+    assert.equal((await reader.read(range)).length, 2);
+    assert.equal(requests, loaded, 'the completed row groups remain cached');
+  } finally {
+    await reader.close();
+  }
+});
