@@ -37,11 +37,11 @@ const Track = () => (
       id="timeline"
       tabIndex={0}
       aria-label="剪辑时间轴"
-      title="方向键移动 5 秒，Shift＋方向键 1 秒，逗号和句号逐帧（视频为 0.1 秒）；空格播放，I / O 设为开始和结束；双击查看完整时间轴"
+      title="方向键移动 5 秒，Shift＋方向键 1 秒，逗号和句号逐帧（视频为 0.1 秒）；空格播放，Esc 取消拖动，I / O 设为开始和结束；双击选区查看完整时间轴，再次双击缩放到选区"
     >
       <div id="thumbnails" aria-hidden="true" />
       <div id="ticks" />
-      <div id="selection" title="拖动平移选区，双击查看完整时间轴" />
+      <div id="selection" title="拖动调整播放进度；双击查看完整时间轴后可拖动平移选区，再次双击缩放到选区" />
       <div id="playhead" />
       <button type="button" id="startHandle" data-handle="start" role="slider" aria-label="选区起点" />
       <button type="button" id="endHandle" data-handle="end" role="slider" aria-label="选区终点" />
@@ -161,7 +161,7 @@ function TimelineCard({store, actions, locked, extras}) {
           </label>
         )}
         <span class="spacer" />
-        <span id="timelineZoom" aria-label="时间轴倍率" title="滚轮缩放，双击查看完整时间轴">
+        <span id="timelineZoom" aria-label="时间轴倍率" title="滚轮缩放，双击选区查看完整时间轴，再次双击缩放到选区">
           {store.zoom.value}
         </span>
       </div>

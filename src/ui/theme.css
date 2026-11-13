@@ -1326,9 +1326,12 @@ fieldset {
   border-radius: 10px;
   background: hsl(var(--primary) / 0.14);
   box-shadow: 0 0 0 1px hsl(var(--card));
+  cursor: inherit;
+}
+#timeline[data-overview='true'] #selection {
   cursor: grab;
 }
-#selection:active {
+#timeline[data-overview='true'] #selection:active {
   cursor: grabbing;
 }
 #playhead {
@@ -1396,7 +1399,7 @@ fieldset {
 }
 /* A selection too narrow to grab gets a grip in its middle, above the handles that flank it;
    the handles stay reachable above and below the grip. */
-#timeline[data-compact='true'] #selection::after {
+#timeline[data-overview='true'][data-compact='true'] #selection::after {
   content: '';
   position: absolute;
   z-index: 5;

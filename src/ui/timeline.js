@@ -76,6 +76,7 @@ export function createTimeline({
     for (const el of [startHandle, endHandle]) el.disabled = locked || !loaded();
   }
   function render() {
+    track.dataset.overview = overview;
     startHandle.style.left = `${pct(selection.start)}%`;
     endHandle.style.left = `${pct(selection.end)}%`;
     selectionElement.style.left = `${pct(selection.start)}%`;
@@ -120,13 +121,12 @@ export function createTimeline({
     selection = next;
     render();
     onSelection({...selection});
-    if (refit) {
-      overview = false;
-      fitView();
-    }
+    if (refit) fitView();
   }
   function fitView() {
     stopZoom();
+    overview = false;
+    track.dataset.overview = overview;
     const target = fitSelection(selection.start, selection.end, total, min);
     if (target.start === view.start && target.end === view.end) return;
     if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -199,14 +199,18 @@ export function createTimeline({
       stopZoom();
       render();
     }
-    const type =
+    const pointerType =
       e.target.closest('[data-handle]')?.dataset.handle || (e.target === selectionElement ? 'selection' : 'playhead');
-    lastPointerType = type;
+    lastPointerType = pointerType;
+    const type = pointerType === 'selection' && !overview ? 'playhead' : pointerType;
     (type === 'start' ? startHandle : type === 'end' ? endHandle : track).focus({preventScroll: true});
     drag = {
       type,
+      pointerId: e.pointerId,
       x: e.clientX,
       view: {...view},
+      selection: {...selection},
+      current,
       anchor: selection[type === 'selection' ? 'start' : type],
       length: selection.end - selection.start,
       moved: false,
@@ -227,14 +231,24 @@ export function createTimeline({
   });
   function finish(e) {
     if (!drag) return;
-    flush();
-    const {type, moved} = drag;
+    const canceled = e.type === 'pointercancel';
+    if (canceled) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      pending = undefined;
+      selection = drag.selection;
+      view = drag.view;
+      current = drag.current;
+      render();
+      if (drag.type !== 'playhead' && drag.moved) onSelection({...selection});
+    } else flush();
+    const {type, moved, pointerId} = drag;
     drag = null;
-    if (track.hasPointerCapture(e.pointerId)) track.releasePointerCapture(e.pointerId);
-    if ((type === 'start' || type === 'end') && moved && !overview) fitView();
+    if (track.hasPointerCapture(pointerId)) track.releasePointerCapture(pointerId);
+    if (!canceled && (type === 'start' || type === 'end') && moved) fitView();
     onScrubEnd?.(current, {
-      canceled: e.type === 'pointercancel',
-      commitPosition: type === 'playhead' || type === 'selection' || !moved,
+      canceled,
+      commitPosition: !canceled && (type === 'playhead' || type === 'selection' || !moved),
     });
   }
   track.addEventListener('pointerup', finish);
@@ -243,8 +257,14 @@ export function createTimeline({
   track.addEventListener('dblclick', e => {
     if (locked || !loaded() || drag) return;
     // Pointer capture can retarget the synthesized double click to the track.
-    if (e.target !== selectionElement && !(e.target === track && lastPointerType === 'selection')) return;
+    const type = e.target.closest('[data-handle]')?.dataset.handle || (e.target === track ? lastPointerType : null);
+    if (type === 'start' || type === 'end') return;
+    if (!overview && e.target !== selectionElement && !(e.target === track && type === 'selection')) return;
     e.preventDefault();
+    if (overview) {
+      fitView();
+      return;
+    }
     stopZoom();
     overview = true;
     view = {start: min, end: total};
@@ -267,6 +287,12 @@ export function createTimeline({
     {passive: false},
   );
   function handleKeyDown(e) {
+    if (drag && e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) {
+      e.preventDefault();
+      e.stopPropagation();
+      finish({type: 'pointercancel'});
+      return;
+    }
     if (
       e.defaultPrevented ||
       e.isComposing ||
@@ -297,7 +323,7 @@ export function createTimeline({
     } else {
       const next = moveBoundary(selection, type, selection[type] + delta, total, min);
       current = next[type];
-      setSelection(next, !overview);
+      setSelection(next, true);
     }
     onPreview(current);
     onScrubEnd?.(current);

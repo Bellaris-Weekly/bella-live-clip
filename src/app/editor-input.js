@@ -40,16 +40,18 @@ export function bindEditorInput({root, timeline, status, getPlayer, togglePlayba
       if (
         !action ||
         e.defaultPrevented ||
+        e.isComposing ||
         e.altKey ||
         e.ctrlKey ||
         e.metaKey ||
         isEditing(e) ||
-        isWhole() ||
-        (e.key === ' ' && e.target.closest?.('button'))
+        (isWhole() && e.key !== ' ') ||
+        (e.key === ' ' && e.target.closest?.('button:not([data-handle])'))
       )
         return;
       e.preventDefault();
       e.stopPropagation();
+      if (e.repeat) return;
       action();
     },
     {capture: true},

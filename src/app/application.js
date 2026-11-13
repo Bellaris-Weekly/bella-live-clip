@@ -330,7 +330,8 @@ export function createApp({
         thumbnails.update(timeline.getView());
       }
     },
-    onScrubEnd: (_, {canceled = false, commitPosition = false} = {}) => {
+    onScrubEnd: (time, {canceled = false, commitPosition = false} = {}) => {
+      if (canceled) scrubReturnTime ??= time;
       if (commitPosition && !canceled) scrubReturnTime = null;
       if (playerKind === 'live') player.endScrub(scrubReturnTime ?? undefined);
       activePlayback()?.end({commit: !canceled, time: scrubReturnTime ?? undefined});

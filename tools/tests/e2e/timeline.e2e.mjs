@@ -2,6 +2,7 @@ import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {chromium} from 'playwright-core';
+import {fitSelection} from '../../../src/ui/timeline.js';
 
 let browser, script;
 before(async () => {
@@ -12,6 +13,8 @@ before(async () => {
         import styles from './src/ui/theme.css';
         import {mountApp} from './src/ui/app.jsx';
         import {createStore} from './src/app/store.js';
+        import {bindEditorInput} from './src/app/editor-input.js';
+        import {formatTimeRange} from './src/shared/format.js';
         const host = document.createElement('div');
         document.body.append(host);
         const root = host.attachShadow({mode: 'open'});
@@ -22,17 +25,26 @@ before(async () => {
         const store = createStore({member: {id: 'bella', room: 1, color: '#c0392b'}, exportMode: 'copy'});
         store.open.value = true;
         store.page.value = 'edit';
+        store.ready.value = true;
         mountApp(root, {store, actions: {}, preview: false, members: [], studioUrl: ''});
         const $ = id => root.getElementById(id);
         const previews = [], ends = [];
         const timeline = createTimeline({
           track: $('timeline'), startHandle: $('startHandle'), endHandle: $('endHandle'),
           selectionElement: $('selection'), playhead: $('playhead'), ticks: $('ticks'),
+          onRange: ({start, end}) => {
+            const [from, to] = formatTimeRange(start, end).split(' — ');
+            $('selectionStart').value = from;
+            $('selectionEnd').value = to;
+          },
           onPreview: time => previews.push(time),
           onScrubEnd: (time, options) => ends.push({time, ...options}),
         });
         timeline.reset(100, {start: 20, end: 60});
-        window.rig = {timeline, previews, ends};
+        let toggles = 0;
+        bindEditorInput({root, timeline, status() {}, getPlayer: () => ({position: () => 40}),
+          togglePlayback: () => toggles++, isActive: () => true, isWhole: () => false});
+        window.rig = {timeline, previews, ends, get toggles() {return toggles;}};
       `,
       resolveDir: process.cwd(),
     },
@@ -117,7 +129,37 @@ test('real double click expands a zoomed selection; body drags preserve length a
   const resized = await page.evaluate(() => window.rig.timeline.getSelection());
   assert.ok(Math.abs(resized.start - 30) < 0.2);
   assert.equal(resized.end, moving.selection.end);
-  assert.deepEqual(await page.evaluate(() => window.rig.timeline.getView()), {start: 0, end: 100});
+  assert.deepEqual(
+    await page.evaluate(() => window.rig.timeline.getView()),
+    fitSelection(resized.start, resized.end, 100),
+  );
+});
+
+test('dragging inside a zoomed selection seeks; a second double click exits overview', async t => {
+  const {page, box} = await fixture(t);
+  await page.evaluate(() => window.rig.timeline.setSelection({start: 20, end: 60}, true));
+  const view = await page.evaluate(() => window.rig.timeline.getView());
+  const y = box.y + box.height / 2;
+  for (const exit of ['initial', 'selection', 'unselected']) {
+    if (exit !== 'initial') {
+      await page.locator('#selection').dblclick();
+      assert.deepEqual(await page.evaluate(() => window.rig.timeline.getView()), {start: 0, end: 100});
+      if (exit === 'selection') await page.locator('#selection').dblclick();
+      else await page.mouse.dblclick(box.x + box.width * 0.9, y);
+      assert.deepEqual(await page.evaluate(() => window.rig.timeline.getView()), view);
+    }
+    await page.mouse.move(box.x + box.width * 0.3, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.7, y, {steps: 5});
+    await page.mouse.up();
+    const state = await page.evaluate(() => ({
+      selection: window.rig.timeline.getSelection(),
+      end: window.rig.ends.at(-1),
+    }));
+    assert.deepEqual(state.selection, {start: 20, end: 60});
+    assert.ok(Math.abs(state.end.time - (view.start + (view.end - view.start) * 0.7)) < 0.2);
+    assert.equal(state.end.commitPosition, true);
+  }
 });
 
 test('double clicking a handle or unselected area does not reset zoom', async t => {
@@ -153,4 +195,32 @@ test('a twenty-second clip in a two-hour overview still has a draggable center a
     await page.locator(`#${type}Handle`).click({position: {x: 5, y: 5}});
     assert.equal(await page.evaluate(() => window.rig.ends.at(-1).time), moved[type]);
   }
+});
+
+test('space after focusing a cut point toggles once; Escape cancels an overview drag', async t => {
+  const {page, box} = await fixture(t);
+  await page.locator('#startHandle').click();
+  await page.keyboard.down('Space');
+  await page.keyboard.down('Space');
+  await page.keyboard.up('Space');
+  assert.equal(await page.evaluate(() => window.rig.toggles), 1);
+  await page.evaluate(() => window.rig.timeline.setCurrent(35));
+  await page.locator('#selection').dblclick();
+  await page.evaluate(() => window.rig.timeline.setCurrent(35));
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * 0.4, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.6, y, {steps: 5});
+  assert.ok((await page.evaluate(() => window.rig.timeline.getSelection())).start > 39);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  assert.deepEqual(await page.evaluate(() => window.rig.timeline.getSelection()), {start: 20, end: 60});
+  assert.deepEqual(await page.evaluate(() => window.rig.ends.at(-1)), {
+    time: 35,
+    canceled: true,
+    commitPosition: false,
+  });
+  assert.equal(await page.evaluate(() => window.rig.timeline.isInteracting()), false);
+  await page.mouse.move(box.x + box.width * 0.8, y);
+  assert.deepEqual(await page.evaluate(() => window.rig.timeline.getSelection()), {start: 20, end: 60});
 });
