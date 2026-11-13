@@ -116,7 +116,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             }
           }
         }
-        context.globalAlpha = 0.65;
+        context.globalAlpha = 0.75;
         context.drawImage(overlay, 0, 0);
         context.globalAlpha = 1;
         return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});

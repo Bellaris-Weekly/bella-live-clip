@@ -23,7 +23,7 @@ test('SC sprites, preview/export opacity, avatars and streaming boundaries', asy
     await page.addScriptTag({content: outputFiles[0].text});
     const result = await page.evaluate(() => window.checkSuperChat());
     assert.ok(Math.abs(result.alpha - 255 * 0.85) <= 1, JSON.stringify(result));
-    assert.ok(Math.abs(result.normalAlpha - 255 * 0.65) <= 1, JSON.stringify(result));
+    assert.ok(Math.abs(result.normalAlpha - 255 * 0.75) <= 1, JSON.stringify(result));
     assert.ok(result.avatarPixel[0] > 230 && result.avatarPixel[1] < 25 && result.avatarPixel[2] > 230);
     assert.equal(result.height, result.normalHeight);
     assert.equal(result.fetches, 1);

@@ -1156,7 +1156,8 @@ fieldset {
   height: 100%;
   object-fit: contain;
   pointer-events: none;
-  opacity: 0.65;
+  /* Normal comments and SC apply their own alpha when painted. */
+  opacity: 1;
 }
 #videoStill {
   position: absolute;

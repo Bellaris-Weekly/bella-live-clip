@@ -159,7 +159,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
     return {
       layout,
       get overlayOpacity() {
-        return 0.65;
+        return 0.75;
       },
       get superChatOverlay() {
         return scRegions.length ? scCanvas : null;
@@ -305,7 +305,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           const finishComposite = metrics?.start('overlayComposite');
           try {
             context.save();
-            context.globalAlpha = 0.65;
+            context.globalAlpha = 0.75;
             // One clipped layer preserves opacity across overlapping comments
             // and avoids uploading a separate canvas for each occupied strip.
             context.beginPath();

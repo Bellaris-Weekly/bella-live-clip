@@ -287,7 +287,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       if (!context) throw new Error('无法创建弹幕预览画布，可能内存不足。');
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.save();
-      context.globalAlpha = own.compositor.overlayOpacity ?? 0.65;
+      context.globalAlpha = own.compositor.overlayOpacity ?? 0.75;
       context.drawImage(overlay, 0, 0);
       if (own.compositor.superChatOverlay) {
         context.globalAlpha = own.compositor.superChatOpacity;

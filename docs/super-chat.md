@@ -36,7 +36,7 @@ stroke; the platform `font_color` belongs to its dark-card design. Geometry caps
 body font sizes.
 
 SC moves at `200 * width / 1920` pixels/second and uses 85% opacity. Ordinary
-comments retain their existing speed and combined-layer 65% opacity. SC has a
+comments retain their existing speed and combined-layer 75% opacity. SC has a
 five-second queue deadline and priority among ready events without preempting
 active comments or blocking the ordinary FIFO. `droppedSuperChats` diagnoses
 capacity timeouts. Seek lookback includes maximum SC width, traversal and waiting;
