@@ -137,6 +137,87 @@ async function inPage(action, argument) {
   }
 }
 
+for (const sparse of [false, true]) {
+  test(`playback marker advances before and after trimming with timeupdate ${sparse ? 'suppressed' : 'enabled'}`, async t => {
+    const page = await browser.newPage({reducedMotion: 'reduce'});
+    t.after(() => page.close());
+    await page.goto(`${origin}/`);
+    await page.addScriptTag({url: '/page.js'});
+    await page.evaluate(() => window.setupTimelinePlayback());
+    if (sparse)
+      await page.evaluate(() =>
+        window.timelinePlayback.video.addEventListener('timeupdate', event => event.stopImmediatePropagation(), true),
+      );
+    const markerTime = () =>
+      page.evaluate(() => {
+        const view = window.timelinePlayback.timeline.getView();
+        return (
+          view.start + (parseFloat(document.getElementById('playhead').style.left) / 100) * (view.end - view.start)
+        );
+      });
+    for (const type of ['start', 'end']) {
+      const before = await markerTime();
+      await page.waitForFunction(time => window.timelinePlayback.video.currentTime > time + 0.5, before);
+      const advanced = await markerTime();
+      assert.ok(
+        advanced > before + 0.2,
+        JSON.stringify({
+          before,
+          advanced,
+          state: await page.evaluate(() => {
+            const {video, timeline} = window.timelinePlayback;
+            return {
+              time: video.currentTime,
+              paused: video.paused,
+              seeking: video.seeking,
+              interacting: timeline.isInteracting(),
+              frames: video.getVideoPlaybackQuality().totalVideoFrames,
+            };
+          }),
+        }),
+      );
+      const handle = await page.locator(`#${type}Handle`).boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + 20);
+      await page.mouse.down();
+      const frozen = await markerTime();
+      await page.mouse.move(handle.x + (type === 'start' ? 40 : -40), handle.y + 20, {steps: 5});
+      assert.ok(Math.abs((await markerTime()) - frozen) < 0.001);
+      await page.mouse.up();
+      await page.waitForFunction(time => {
+        const {video} = window.timelinePlayback;
+        return !video.paused && !video.seeking && video.currentTime > time + 0.6;
+      }, frozen);
+      assert.ok((await markerTime()) > frozen + 0.2);
+    }
+  });
+}
+
+test('playback releases a stale trim after pointer release events are lost', async t => {
+  const page = await browser.newPage({reducedMotion: 'reduce'});
+  t.after(() => page.close());
+  await page.goto(`${origin}/`);
+  await page.addScriptTag({url: '/page.js'});
+  await page.evaluate(() => window.setupTimelinePlayback());
+  await page.locator('#timeline').evaluate(track => {
+    for (const name of ['pointerup', 'lostpointercapture'])
+      track.addEventListener(name, event => event.stopImmediatePropagation(), true);
+  });
+  const handle = await page.locator('#startHandle').boundingBox();
+  await page.mouse.move(handle.x + 6, handle.y + 20);
+  await page.mouse.down();
+  const frozen = await page.evaluate(() => window.timelinePlayback.player.position());
+  await page.mouse.move(handle.x + 40, handle.y + 20, {steps: 5});
+  await page.mouse.up();
+  await page.evaluate(() => window.timelinePlayback.video.play());
+  await page.waitForFunction(time => {
+    const {timeline, video} = window.timelinePlayback;
+    const view = timeline.getView();
+    const marker =
+      view.start + (parseFloat(document.getElementById('playhead').style.left) / 100) * (view.end - view.start);
+    return !video.paused && !timeline.isInteracting() && marker > time + 0.4;
+  }, frozen);
+});
+
 for (const action of ['seekTo', 'openAt']) {
   test(`${action} shows a picture at every fragment boundary and whole second`, async () => {
     const targets = [...new Set([...boundaries.slice(1, 25), ...Array.from({length: 24}, (_, i) => i + 1)])];
@@ -472,6 +553,60 @@ test('fullscreen includes danmaku and native media controls, with an explicit ex
     await page.evaluate(() => window.danmakuRig.exitButton.click());
     await page.waitForFunction(() => !document.fullscreenElement && !window.danmakuRig.video.controls);
     assert.equal(await page.evaluate(() => window.danmakuRig.video.controls), false);
+  } finally {
+    await page.close();
+  }
+});
+
+test('fullscreen danmaku redraws between 30 fps video frames without hiding the overlay', async t => {
+  const {page} = await danmakuPage();
+  try {
+    await page.addStyleTag({content: await readFile('src/ui/theme.css', 'utf8')});
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    await page.evaluate(() => window.danmakuRig.video.dispatchEvent(new MouseEvent('dblclick')));
+    await page.waitForFunction(() => document.fullscreenElement === window.danmakuRig.wrap);
+    await page.evaluate(() => window.danmakuRig.video.play());
+    const result = await page.evaluate(async () => {
+      const {video, canvas} = window.danmakuRig;
+      const context = canvas.getContext('2d'),
+        original = context.drawImage;
+      let copies = 0,
+        frames = 0,
+        ticks = 0,
+        hidden = 0,
+        watch;
+      context.drawImage = function (...args) {
+        copies++;
+        return original.apply(this, args);
+      };
+      const countFrame = () => {
+        frames++;
+        watch = video.requestVideoFrameCallback(countFrame);
+      };
+      watch = video.requestVideoFrameCallback(countFrame);
+      try {
+        await new Promise(resolve => {
+          function sample() {
+            if (canvas.hidden) hidden++;
+            if (++ticks === 90) resolve();
+            else requestAnimationFrame(sample);
+          }
+          requestAnimationFrame(sample);
+        });
+        return {copies, frames, ticks, hidden, errors: window.danmakuRig.errors};
+      } finally {
+        video.cancelVideoFrameCallback(watch);
+        context.drawImage = original;
+        video.pause();
+      }
+    });
+    t.diagnostic(JSON.stringify(result));
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.hidden, 0, JSON.stringify(result));
+    assert.ok(result.frames > 0, JSON.stringify(result));
+    assert.ok(result.copies > result.frames * 1.3, JSON.stringify(result));
+    assert.ok(result.copies > result.ticks * 0.8, JSON.stringify(result));
   } finally {
     await page.close();
   }

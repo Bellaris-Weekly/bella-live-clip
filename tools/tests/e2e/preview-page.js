@@ -4,10 +4,11 @@ import {readFragmentStill} from '../../../src/media/fragment-still.js';
 import {createPlayback, bindVideoControls} from '../../../src/media/playback.js';
 import {createDanmakuPreview} from '../../../src/danmaku/preview.js';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
+import {createTimeline} from '../../../src/ui/timeline.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-function rig({start = 1000} = {}) {
+function rig({start = 1000, onTime = () => {}} = {}) {
   const video = document.createElement('video');
   video.muted = true;
   const wrap = document.createElement('div'),
@@ -40,7 +41,7 @@ function rig({start = 1000} = {}) {
     still,
     frameUrl: time => `/still.svg?t=${Math.round(time)}`,
     status() {},
-    onTime() {},
+    onTime,
     api,
   });
   return {video, loading, still, player, counts, api, record, wrap, exitButton};
@@ -56,6 +57,55 @@ async function settled({video, loading}, timeout) {
 }
 
 const load = r => r.player.load(r.record, new AbortController().signal);
+
+window.setupTimelinePlayback = async () => {
+  let timeline, restoreTime;
+  const r = rig({onTime: time => timeline?.setCurrent(time)});
+  const track = document.createElement('div');
+  track.id = 'timeline';
+  track.style.cssText = 'position:relative;width:680px;height:52px;margin:20px;background:#ddd;touch-action:none';
+  const elements = {track};
+  for (const id of ['selectionElement', 'playhead', 'ticks', 'startHandle', 'endHandle']) {
+    const el = document.createElement(id.endsWith('Handle') ? 'button' : 'div');
+    el.id = id;
+    el.style.cssText = 'position:absolute;top:0;height:52px';
+    if (id.endsWith('Handle')) {
+      el.dataset.handle = id === 'startHandle' ? 'start' : 'end';
+      el.style.width = '12px';
+    }
+    track.append(el);
+    elements[id] = el;
+  }
+  document.body.append(track);
+  const playback = createPlayback(r.video, () => {}, {
+    getRange: () => timeline.getSelection(),
+    position: () => r.player.position(),
+    seek: time => r.player.seek(time),
+  });
+  timeline = createTimeline({
+    ...elements,
+    onPreview: time => r.player.scrub(time),
+    onScrubStart: ({type}) => {
+      restoreTime = type === 'playhead' ? null : r.player.position();
+      playback.begin();
+      r.player.beginScrub();
+    },
+    onScrubEnd: (time, {canceled, commitPosition}) => {
+      if (canceled) restoreTime ??= time;
+      if (commitPosition && !canceled) restoreTime = null;
+      r.player.endScrub(restoreTime ?? undefined);
+      playback.end();
+      if (restoreTime !== null) timeline.setCurrent(r.player.position());
+    },
+  });
+  await load(r);
+  timeline.reset(34, {start: 5, end: 30});
+  r.player.seek(12);
+  await settled(r, 4000);
+  timeline.setCurrent(r.player.position());
+  await r.video.play();
+  window.timelinePlayback = {...r, timeline};
+};
 
 window.setupDanmakuPreview = async () => {
   const r = rig({start: 98});

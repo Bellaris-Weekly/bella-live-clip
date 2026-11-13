@@ -217,6 +217,42 @@ test('拖动裁剪边界只移动预览，播放标记保留原时间且忽略�
   }
 });
 
+test('松手事件丢失后，失去指针捕获的拖动不能继续冻结播放进度', t => {
+  const f = fixture(t);
+  const ends = [];
+  const timeline = createTimeline({
+    ...f,
+    onPreview: time => timeline.setCurrent(time),
+    onScrubEnd: (...args) => ends.push(args),
+  });
+  for (const type of ['start', 'end', 'playhead']) {
+    timeline.reset(100, {start: 20, end: 80});
+    timeline.setCurrent(50);
+    f.track.handlers.pointerdown({
+      button: 0,
+      clientX: 50,
+      pointerId: 1,
+      target: type === 'playhead' ? f.track : f[type + 'Handle'],
+      preventDefault() {},
+    });
+    f.track.handlers.pointermove({buttons: 1, clientX: 55, pointerId: 1});
+    f.advance(0);
+    f.track.handlers.pointermove({buttons: 1, clientX: 60, pointerId: 1});
+    // The browser releases capture on leaving the page; the release event
+    // need not reach the userscript's track before playback continues.
+    f.track.captured = false;
+    const count = ends.length;
+    timeline.setCurrent(51);
+    f.advance(0);
+    f.advance(420);
+    timeline.setCurrent(52);
+    assert.equal(ends.length, count + 1);
+    assert.equal(timeline.isInteracting(), false);
+    const view = timeline.getView();
+    assert.ok(Math.abs(parseFloat(f.playhead.style.left) - ((52 - view.start) / (view.end - view.start)) * 100) < 1e-8);
+  }
+});
+
 test('缩放和选区调整复用刻度节点，锁定只改变边界可用状态', t => {
   const f = fixture(t);
   f.timeline.reset(100);

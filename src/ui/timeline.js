@@ -231,8 +231,8 @@ export function createTimeline({
       length: selection.end - selection.start,
       moved: false,
     };
-    onScrubStart?.({type});
     track.setPointerCapture(e.pointerId);
+    onScrubStart?.({type});
     apply(e.clientX);
   });
   // A release outside the page may never reach the track; end the drag as soon as the button is up.
@@ -246,7 +246,9 @@ export function createTimeline({
     if (!frame) frame = requestAnimationFrame(flush);
   });
   function finish(e) {
-    if (!drag) return;
+    if (!drag || drag.ending) return;
+    // Flushing a submission preview can synchronously report another time.
+    drag.ending = true;
     const canceled = e.type === 'pointercancel';
     if (canceled) {
       cancelAnimationFrame(frame);
@@ -380,10 +382,14 @@ export function createTimeline({
     getBounds: () => ({start: min, end: total}),
     getView: () => ({...view}),
     setCurrent(t) {
-      if (!drag) {
-        current = t;
-        renderPlayhead();
+      if (drag) {
+        // A release outside the page may not deliver pointerup/lostcapture to
+        // the track. Freeze only while this pointer is actually captured.
+        if (!drag.ending && !track.hasPointerCapture(drag.pointerId)) finish({type: 'lostpointercapture'});
+        return;
       }
+      current = t;
+      renderPlayhead();
     },
     lock(value) {
       locked = value;

@@ -31,6 +31,7 @@ test('整场播放器加载分片字节区间并返回计量', async () => {
 function playerFixture(clips, options = {}) {
   const instances = [],
     shown = [];
+  let frameCallback;
   class FakeHls {
     constructor(config) {
       this.config = config;
@@ -61,6 +62,11 @@ function playerFixture(clips, options = {}) {
     currentTime: 0,
     readyState: 0,
     seeking: false,
+    requestVideoFrameCallback(callback) {
+      frameCallback = callback;
+      return 1;
+    },
+    cancelVideoFrameCallback() {},
     pause() {},
     removeAttribute() {},
     load() {
@@ -76,12 +82,63 @@ function playerFixture(clips, options = {}) {
     onTime() {},
     onReady: owner => shown.push(owner),
     HlsClass: FakeHls,
+    requestFrame: () => 1,
+    cancelFrame() {},
     ...options,
   });
-  return {player, video, loading, instances, shown};
+  return {player, video, loading, instances, shown, presentFrame: time => frameCallback(0, {mediaTime: time})};
 }
 
-test('danmaku maps the presented HLS clock to native media time and hides unsettled frames', async () => {
+test('播放时钟持续推进进度，裁剪预览不覆盖原位，暂停和销毁停止更新', async () => {
+  const times = [],
+    frames = new Map();
+  let id = 0;
+  const f = playerFixture(async () => [{start_time: 1040, end_time: 1100, stream: 'part'}], {
+    onTime: time => times.push(time),
+    requestFrame: callback => {
+      frames.set(++id, callback);
+      return id;
+    },
+    cancelFrame: id => frames.delete(id),
+  });
+  const tick = time => {
+    f.video.currentTime = time;
+    const callbacks = [...frames.values()];
+    frames.clear();
+    callbacks.forEach(callback => callback());
+  };
+  await f.player.load({start: 1000, end: 1100}, new AbortController().signal);
+  f.player.seek(46);
+  f.instances[0].events.get('hlsManifestParsed')();
+  f.video.readyState = 2;
+  f.video.dispatchEvent(new Event('loadeddata'));
+  f.video.paused = false;
+  f.video.dispatchEvent(new Event('play'));
+  f.video.dispatchEvent(new Event('playing'));
+  assert.equal(frames.size, 1, '重复播放事件不创建第二条更新循环');
+  for (const time of [6, 6.033, 6.067]) tick(time);
+  assert.deepEqual(times, [46, 46.033, 46.067], '不依赖 timeupdate 或新的视频帧，保留分段偏移');
+  f.player.beginScrub();
+  tick(20);
+  assert.equal(times.length, 3);
+  f.player.endScrub(46);
+  f.video.dispatchEvent(new Event('seeked'));
+  tick(6.1);
+  assert.equal(times.at(-1), 46.1);
+  f.video.paused = true;
+  f.video.dispatchEvent(new Event('pause'));
+  assert.equal(frames.size, 0);
+  f.video.paused = false;
+  f.video.dispatchEvent(new Event('playing'));
+  tick(6.2);
+  assert.equal(times.at(-1), 46.2);
+  f.player.destroy();
+  assert.equal(frames.size, 0);
+  f.video.dispatchEvent(new Event('playing'));
+  assert.equal(frames.size, 0);
+});
+
+test('danmaku maps the HLS media clock to native media time and hides unsettled frames', async () => {
   const part = {start_time: 1000, end_time: 1100, stream: 'first'};
   const f = playerFixture(async () => [part]);
   await f.player.load({start: 1000, end: 1100}, new AbortController().signal);
@@ -103,6 +160,15 @@ test('danmaku maps the presented HLS clock to native media time and hides unsett
   const frame = f.player.danmakuFrame();
   assert.equal(frame.part, part);
   assert.equal(frame.time, 921);
+  f.presentFrame(21);
+  f.video.currentTime = 21 + 1 / 60;
+  assert.equal(f.player.danmakuFrame().time, 921 + 1 / 60, 'comments move between 30 fps video frames');
+  f.presentFrame(21);
+  assert.equal(f.player.danmakuFrame().time, 921 + 1 / 60, 'late frame callbacks cannot move comments backward');
+  f.video.paused = true;
+  assert.equal(f.player.danmakuFrame().time, 921 + 1 / 60, 'pausing does not snap back to the video frame');
+  assert.equal(f.player.danmakuFrame().time, 921 + 1 / 60, 'a stopped media clock freezes comments');
+  f.video.currentTime = 21;
   f.player.beginScrub();
   assert.equal(f.player.danmakuFrame(), null);
   f.player.endScrub();

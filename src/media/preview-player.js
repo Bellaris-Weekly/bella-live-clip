@@ -124,6 +124,8 @@ export function createPlayer({
   onReady = () => {},
   onStreams,
   HlsClass,
+  requestFrame = callback => requestAnimationFrame(callback),
+  cancelFrame = id => cancelAnimationFrame(id),
 }) {
   let hls,
     record,
@@ -164,6 +166,22 @@ export function createPlayer({
     });
   }
   watchFrames();
+  // The playhead follows the media clock, including gaps between decoded
+  // frames. Native timeupdate events alone are too sparse for this animation.
+  let progressFrame = null;
+  function stopProgress() {
+    if (progressFrame !== null) cancelFrame(progressFrame);
+    progressFrame = null;
+  }
+  function updateProgress() {
+    progressFrame = null;
+    if (!hls || video.paused || video.ended) return;
+    if (!scrubbing && scrubTime === null && !video.seeking) onTime(offset() + video.currentTime);
+    startProgress();
+  }
+  function startProgress() {
+    if (progressFrame === null && hls && !video.paused && !video.ended) progressFrame = requestFrame(updateProgress);
+  }
   // Seeked and decoded, then a little longer for the frame itself to be presented: a seek
   // that lands on the frame already shown may not present a new one.
   async function settled(timeout = 10000) {
@@ -392,6 +410,8 @@ export function createPlayer({
   video.addEventListener('canplay', ready);
   video.addEventListener('play', bufferAhead);
   video.addEventListener('pause', bufferOne);
+  for (const event of ['play', 'playing']) video.addEventListener(event, startProgress);
+  for (const event of ['pause', 'ended', 'emptied']) video.addEventListener(event, stopProgress);
   video.ontimeupdate = () => {
     ready();
     onTime(offset() + video.currentTime);
@@ -401,6 +421,7 @@ export function createPlayer({
     loading.hidden = true;
   };
   function clear() {
+    stopProgress();
     generation++;
     renewal?.abort();
     renewal = null;
@@ -427,6 +448,8 @@ export function createPlayer({
   function destroy() {
     clear();
     if (frameWatch !== null) video.cancelVideoFrameCallback?.(frameWatch);
+    for (const event of ['play', 'playing']) video.removeEventListener(event, startProgress);
+    for (const event of ['pause', 'ended', 'emptied']) video.removeEventListener(event, stopProgress);
     for (const event of ['seeked', 'loadeddata', 'canplay']) video.removeEventListener(event, ready);
     video.removeEventListener('play', bufferAhead);
     video.removeEventListener('pause', bufferOne);
@@ -469,7 +492,12 @@ export function createPlayer({
     danmakuFrame() {
       if (!hls || scrubbing || scrubTime !== null || target !== null || video.seeking || video.readyState < 2)
         return null;
-      const time = presented ? shown : video.currentTime;
+      // Comments move on the media clock at the display's refresh rate. The
+      // presented timestamp only changes at the video's frame rate (often 30
+      // fps), so using it here makes every other animation frame stand still.
+      // currentTime also stops naturally on pause/buffering and follows rate
+      // changes without an independent wall clock drifting ahead of playback.
+      const time = video.currentTime;
       const fragment = fragmentAt(time);
       const sourceOffset = clockOffsets.get(fragment?.cc);
       if (!Number.isFinite(sourceOffset)) return null;

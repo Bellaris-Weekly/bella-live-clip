@@ -248,8 +248,22 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       // A slow read must never put old comments over a newer frame. Keep its
       // layout progress and catch up on the next animation tick instead.
       const current = getFrame();
-      if (!current || current.generation !== own.generation || Math.abs(current.time - frame.time) > 0.1) return;
-      paint(own, compositor.renderOverlay(frame.time), frame.time);
+      if (
+        !current ||
+        current.generation !== own.generation ||
+        current.part.start_time !== own.part ||
+        current.time < frame.time ||
+        current.time - frame.time > 0.1
+      )
+        return;
+      // RAF may already have moved the available comments while prepare was
+      // waiting for an emote. Never repaint their older prepared position.
+      // Keep drawn at the prepared time so the next tick catches up layout too.
+      const overlay =
+        current.time === frame.time
+          ? compositor.renderOverlay(frame.time)
+          : compositor.renderAvailableOverlay(current.time);
+      paint(own, overlay, frame.time);
     } catch (error) {
       fail(own, error);
     } finally {
