@@ -13,6 +13,7 @@ import {createStore, toast} from './store.js';
 import {createScreenshotControls} from '../ui/live-screenshot.js';
 import {downloadScreenshot} from './live-screenshot.js';
 import {createTimeline} from '../ui/timeline.js';
+import {bindPreviewCorners} from '../ui/preview-corners.js';
 import {ScheduleService} from '../services/schedule.js';
 import {createDiagnosticReporter} from '../services/diagnostics.js';
 import {createLibraryLoader} from './library-loader.js';
@@ -190,6 +191,7 @@ export function createApp({
   mountApp(root, {store, actions, preview, members: MEMBERS, studioUrl: STUDIO, feedback: diagnostics.canFeedback});
   const $ = id => root.getElementById(id),
     video = $('fullVideo');
+  const unbindPreviewCorners = bindPreviewCorners($('playerWrap'));
   const modeKind = () => (isSubmission() ? 'submission' : 'live'),
     exportMode = () => exportModes[modeKind()];
   const schedules = new ScheduleService(api.request);
@@ -954,6 +956,7 @@ export function createApp({
       composer?.dispose();
     }
     unbindPageProgress();
+    unbindPreviewCorners();
     clearInterval(navigationTimer);
     window.removeEventListener('popstate', checkCurrentVideo);
     controller?.abort();

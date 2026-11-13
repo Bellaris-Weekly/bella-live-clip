@@ -1129,6 +1129,16 @@ fieldset {
   height: 100%;
   border-radius: 0;
 }
+#fullVideo,
+#pageMirror,
+#danmakuPreview,
+#videoStill {
+  clip-path: inset(var(--picture-inset, 0px) round 12px);
+}
+#playerWrap:fullscreen :is(#fullVideo, #pageMirror, #danmakuPreview, #videoStill),
+#fullVideo:fullscreen {
+  clip-path: none;
+}
 #exitVideoFullscreen {
   display: none;
   position: absolute;
@@ -1570,7 +1580,7 @@ fieldset {
 :host([data-theme='dark']) .stage {
   background: hsl(228 14% 5.5%);
 }
-.stage #playerWrap {
+.stage #playerWrap:not(:fullscreen) {
   border-radius: 12px;
 }
 .stage .timeline-card {
