@@ -30,6 +30,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     resetSession();
     source?.controller.abort();
     void source?.comments?.then(({reader}) => reader.close()).catch(() => {});
+    void source?.emotes?.then(cache => cache.close()).catch(() => {});
     source = null;
     if (animation !== null) cancelAnimationFrame(animation);
     animation = null;
@@ -42,8 +43,15 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         import('./archive.js'),
         import('./parquet.js'),
         import('./streaming-compositor.js'),
+        import('./preview-emotes.js'),
       ]);
       source = {...configuration, controller, modules, comments: null, clocks: new Map(), notified: false};
+      const owner = source;
+      owner.emotes = modules.then(([, , , {createPreviewEmoteCache}]) => {
+        controller.signal.throwIfAborted();
+        return createPreviewEmoteCache(owner.record.room, {signal: controller.signal});
+      });
+      void owner.emotes.catch(() => {});
     }
     return source;
   }
@@ -54,13 +62,21 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         signal.throwIfAborted();
         const archive = await prepareComments(owner.record, {signal});
         signal.throwIfAborted();
+        const initialMetadata = archive.metadata;
         const reader = createCommentReader(owner.record, {
           signal,
           prepared: archive,
           waitForCoverage: false,
           maxArchiveBytes: 32 * 1024 * 1024,
         });
-        return {archive, reader};
+        return {
+          reader,
+          // Index replacement briefly clears the footer; otherwise prefer the
+          // latest snapshot's measured stream clock when starting a new seek.
+          get metadata() {
+            return archive.metadata ?? initialMetadata;
+          },
+        };
       })
       .catch(error => {
         // A later seek retries preparation after a transient outage or an
@@ -84,13 +100,14 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       });
       owner.clocks.set(key, clock);
     }
-    const [{archive, reader}, clock, [, {streamClock}, {createStreamingCompositor}]] = await Promise.all([
+    const [{metadata, reader}, clock, [, {streamClock}, {createStreamingCompositor}], emoteCache] = await Promise.all([
       commentsFor(owner),
       owner.clocks.get(key),
       owner.modules,
+      owner.emotes,
     ]);
     signal.throwIfAborted();
-    const origin = streamOrigin(streamClock(archive.metadata), clock.origin) ?? clock.origin;
+    const origin = streamOrigin(streamClock(metadata), clock.origin) ?? clock.origin;
     return await createStreamingCompositor(owner.record, {
       reader: {
         read: window => reader.read({...window, signal}),
@@ -102,6 +119,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       width,
       height,
       signal,
+      emoteCache,
     });
   }
   function startSession(frame) {
@@ -147,7 +165,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
   async function draw(own, frame) {
     own.busy = true;
     try {
-      const compositor = await own.promise;
+      const compositor = (own.compositor = await own.promise);
       own.signal.throwIfAborted();
       await compositor.prepare(frame.time);
       own.signal.throwIfAborted();
@@ -155,16 +173,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       // layout progress and catch up on the next animation tick instead.
       const current = getFrame();
       if (!current || current.generation !== own.generation || Math.abs(current.time - frame.time) > 0.1) return;
-      const overlay = compositor.renderOverlay(frame.time);
-      if (canvas.width !== own.width || canvas.height !== own.height) {
-        canvas.width = own.width;
-        canvas.height = own.height;
-      }
-      const context = canvas.getContext('2d');
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(overlay, 0, 0);
-      own.drawn = frame.time;
-      canvas.hidden = false;
+      paint(own, compositor.renderOverlay(frame.time), frame.time);
     } catch (error) {
       fail(own, error);
     } finally {
@@ -174,6 +183,18 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         if (!video.paused || (current && current.time !== own.drawn)) schedule();
       }
     }
+  }
+  function paint(own, overlay, time, complete = true) {
+    if (canvas.width !== own.width || canvas.height !== own.height) {
+      canvas.width = own.width;
+      canvas.height = own.height;
+    }
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('无法创建弹幕预览画布，可能内存不足。');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(overlay, 0, 0);
+    if (complete) own.drawn = time;
+    canvas.hidden = false;
   }
   function tick() {
     animation = null;
@@ -194,6 +215,13 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       const own = session;
       own.time = frame.time;
       if (own.drawn !== null && Math.abs(frame.time - own.drawn) > 0.15) canvas.hidden = true;
+      if (own.busy && own.compositor && !own.failed && own.drawn !== frame.time) {
+        try {
+          paint(own, own.compositor.renderAvailableOverlay(frame.time), frame.time, false);
+        } catch (error) {
+          fail(own, error);
+        }
+      }
       if (!own.busy && !own.failed && own.drawn !== frame.time) void draw(own, frame);
     }
     if (!video.paused) schedule();

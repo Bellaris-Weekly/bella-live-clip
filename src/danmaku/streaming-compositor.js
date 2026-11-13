@@ -21,6 +21,7 @@ export async function createStreamingCompositor(
     endTime = () => Infinity,
     metrics,
     preparedEmoteCatalog,
+    emoteCache,
   },
 ) {
   const assets = new Map(),
@@ -55,7 +56,9 @@ export async function createStreamingCompositor(
   };
   const fetchCatalog = () => {
     const finish = metrics?.start('emoteCatalog');
-    return loadEmoteCatalog(record.room, {signal, fetcher}).finally(() => finish?.());
+    return (emoteCache ? emoteCache.catalog(signal) : loadEmoteCatalog(record.room, {signal, fetcher})).finally(() =>
+      finish?.(),
+    );
   };
   const getCatalog = async (speculative = false) => {
     catalog ??= fetchCatalog();
@@ -144,7 +147,16 @@ export async function createStreamingCompositor(
         missing.map(text => ({text})),
         record.room,
         danmakuFontSize(height),
-        {signal, fetcher, selected, lazy: true, budget, metrics},
+        {
+          signal,
+          fetcher,
+          selected,
+          lazy: true,
+          budget,
+          metrics,
+          readEmote: emoteCache?.read,
+          discardEmote: emoteCache?.discard,
+        },
       );
       for (const [name, asset] of loaded.assets) assets.set(name, asset);
       loaded.assets.clear(); // Ownership moves into this windowed store.
@@ -230,6 +242,11 @@ export async function createStreamingCompositor(
       },
       renderOverlay(timestamp) {
         return painter.renderOverlay(timestamp);
+      },
+      // During a network/decode wait, keep already placed comments moving at
+      // the current media time without advancing the deterministic layout.
+      renderAvailableOverlay(timestamp) {
+        return painter.renderOverlay(timestamp, false);
       },
       render(sample, timestamp) {
         metrics?.gauge('emoteDecodedBytes', budget.used);

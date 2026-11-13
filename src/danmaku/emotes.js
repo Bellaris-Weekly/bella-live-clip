@@ -50,7 +50,16 @@ export async function loadEmotes(
   events,
   room,
   fontSize,
-  {signal, fetcher = fetch, selected, lazy = false, budget = {used: 0, compressed: 0}, metrics} = {},
+  {
+    signal,
+    fetcher = fetch,
+    selected,
+    lazy = false,
+    budget = {used: 0, compressed: 0},
+    metrics,
+    readEmote,
+    discardEmote,
+  } = {},
 ) {
   const names = referencedEmotes(events);
   if (!names.size) return {assets: new Map(), close() {}};
@@ -123,10 +132,14 @@ export async function loadEmotes(
         async function fetchBytes() {
           const finish = metrics?.start('emoteFetch');
           try {
-            const result = await boundedFetch(
-              publicUrl(entry.file.split('/').map(encodeURIComponent).join('/'), 'emotes/'),
-              {signal: controller.signal, fetcher, limit: 2 * 1024 * 1024, operation: 'emoteFetch'},
-            );
+            const result = await (readEmote
+              ? readEmote(entry, controller.signal)
+              : boundedFetch(publicUrl(entry.file.split('/').map(encodeURIComponent).join('/'), 'emotes/'), {
+                  signal: controller.signal,
+                  fetcher,
+                  limit: 2 * 1024 * 1024,
+                  operation: 'emoteFetch',
+                }));
             controller.signal.throwIfAborted();
             if (lazy) {
               budget.makeRoom?.('compressed', result.bytes.byteLength);
@@ -249,6 +262,7 @@ export async function loadEmotes(
                   signal?.throwIfAborted();
                   if (closed || error?.name === 'AbortError') throw error;
                   reset();
+                  discardEmote?.(entry);
                   if (attempt === 1) {
                     asset.failed = true;
                     metrics?.add('emoteFailures');

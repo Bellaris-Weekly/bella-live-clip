@@ -204,7 +204,7 @@ test('a transient open failure retries once inside the first demanded window', a
   }
 });
 
-test('missing archives do not retry, and failed cleanup remains owned until close', async () => {
+test('a missing snapshot checks the index once, and failed cleanup remains owned until close', async () => {
   let requests = 0;
   const missing = createCommentReader(
     {},
@@ -219,7 +219,7 @@ test('missing archives do not retry, and failed cleanup remains owned until clos
   await new Promise(resolve => setTimeout(resolve, 0));
   await assert.rejects(missing.read(range), /没有弹幕归档/);
   await missing.close();
-  assert.equal(requests, 1);
+  assert.equal(requests, 2, 'one missing snapshot and one index lookup, neither retried');
   let removes = 0;
   const reader = createCommentReader(
     {},
@@ -883,6 +883,124 @@ test('Range-backed archives bind payload reads to the current seek after cancell
     const loaded = requests;
     assert.equal((await reader.read(range)).length, 2);
     assert.equal(requests, loaded, 'the completed row groups remain cached');
+  } finally {
+    await reader.close();
+  }
+});
+
+test('an evicted live object follows its sealed replacement instead of repeating 404', async () => {
+  const part = {...livePart, snapshot: true};
+  let sealed = false;
+  const urls = [];
+  const reader = createCommentReader(
+    {room: 1, key: 'growing'},
+    {
+      prepared: {file: before, metadata: await readMetadata(before), parts: [part]},
+      maxArchiveBytes: 0,
+      waitForCoverage: false,
+      fetcher: async url => {
+        urls.push(url.split('/').at(-1));
+        if (url.endsWith('index.json'))
+          return Response.json({
+            schemaVersion: 1,
+            sessions: [{...part, path: 'live-archive/sealed.parquet', bytes: after.byteLength}],
+          });
+        return new Response(url.endsWith('sealed.parquet') ? after : null, {
+          status: url.endsWith('sealed.parquet') || !sealed ? 200 : 404,
+        });
+      },
+    },
+  );
+  try {
+    await reader.read(firstWindow);
+    sealed = true;
+    assert.deepEqual(
+      (await reader.read(nextWindow)).map(row => row.text),
+      ['110000'],
+    );
+    assert.deepEqual(urls.slice(0, 3), ['growing.parquet', 'index.json', 'sealed.parquet']);
+    assert.equal((await reader.read(nextWindow)).length, 1);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('a live reader discovers successors after an index temporarily contains only sealed partitions', async () => {
+  let time = 110000,
+    successor = false,
+    indexes = 0;
+  const old = {...livePart, snapshot: true};
+  const reader = createCommentReader(
+    {room: 1, key: 'growing', live: true},
+    {
+      prepared: {file: before, metadata: await readMetadata(before), parts: [old]},
+      now: () => time,
+      waitForCoverage: false,
+      fetcher: async url => {
+        if (url.endsWith('index.json')) {
+          indexes++;
+          return Response.json({
+            schemaVersion: 1,
+            sessions: [{...old, path: 'live-archive/sealed.parquet', bytes: before.byteLength}],
+            live: successor ? [{...old, part: 2, path: 'live-archive/next.parquet'}] : [],
+          });
+        }
+        return new Response(url.endsWith('next.parquet') ? after : before);
+      },
+    },
+  );
+  try {
+    await reader.read({...firstWindow, end: 118});
+    assert.equal(indexes, 1);
+    successor = true;
+    const window = {origin: 0, start: 118, end: 128};
+    assert.deepEqual(await reader.read(window), []);
+    assert.equal(indexes, 1, 'seeks within the cooldown do not poll');
+    time += 10000;
+    assert.deepEqual(
+      (await reader.read(window)).map(row => row.text),
+      ['120000'],
+    );
+    assert.equal(indexes, 2);
+  } finally {
+    await reader.close();
+  }
+});
+
+test('under file pressure sealed archives become range-backed without evicting the live snapshot each window', async () => {
+  let liveReads = 0,
+    ranged = 0;
+  const parts = [
+    {part: 0, live_key: 'x', path: 'live-archive/sealed.parquet', bytes: before.byteLength},
+    {part: 1, live_key: 'x', path: 'live-archive/live.parquet', snapshot: true},
+  ];
+  const reader = createCommentReader(
+    {room: 1, key: 'x'},
+    {
+      prepared: {file: before, metadata: await readMetadata(before), parts},
+      maxArchiveBytes: before.byteLength,
+      waitForCoverage: false,
+      fetcher: async (url, options) => {
+        if (url.endsWith('live.parquet')) {
+          liveReads++;
+          return new Response(before);
+        }
+        const match = /^bytes=(\d+)-(\d+)$/.exec(options.headers?.Range ?? '');
+        if (!match) return new Response(before);
+        ranged++;
+        const a = Number(match[1]),
+          b = Number(match[2]);
+        return new Response(before.slice(a, b + 1), {
+          status: 206,
+          headers: {ETag: 'sealed', 'Content-Range': `bytes ${a}-${b}/${before.byteLength}`},
+        });
+      },
+    },
+  );
+  try {
+    for (let i = 0; i < 4; i++) assert.equal((await reader.read(firstWindow)).length, 2);
+    assert.equal(liveReads, 1);
+    assert.ok(ranged > 0);
   } finally {
     await reader.close();
   }

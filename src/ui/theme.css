@@ -1124,6 +1124,21 @@ fieldset {
   height: 100%;
   object-fit: contain;
 }
+#playerWrap:fullscreen {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+#exitVideoFullscreen {
+  display: none;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+}
+#playerWrap:fullscreen #exitVideoFullscreen {
+  display: block;
+}
 #danmakuPreview {
   position: absolute;
   inset: 0;

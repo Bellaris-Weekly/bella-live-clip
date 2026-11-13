@@ -116,7 +116,7 @@ async function archiveFile(part, options) {
   };
   if (
     part.snapshot ||
-    (Number.isInteger(part.bytes) && part.bytes > 8 && part.bytes <= Math.min(WHOLE_FILE_BYTES, MAX_FILE_BYTES))
+    (Number.isInteger(part.bytes) && part.bytes > 8 && part.bytes <= (options.wholeFileBytes ?? WHOLE_FILE_BYTES))
   ) {
     // Freeze live objects; small sealed files also avoid sequential Range round trips.
     const {bytes} = await boundedFetch(url, options);
@@ -231,14 +231,49 @@ export function createCommentReader(
   let cachedBytes = 0,
     closed = false,
     generation = 0,
+    indexChecked = now(),
     reading = Promise.resolve();
+  async function fetchParts(readOptions) {
+    const parts = archiveParts(
+      await retryOpen(
+        () => readJson(publicUrl(`live-archive/v1/${record.room}/index.json`), readOptions),
+        readOptions.signal,
+      ),
+      record.key,
+    );
+    indexChecked = now();
+    return parts;
+  }
+  async function updateIndex(initial, readOptions) {
+    for (const part of await fetchParts(readOptions)) {
+      const index = initial.parts.findIndex(old => old.part === part.part);
+      if (index < 0) {
+        initial.parts.push(part);
+        continue;
+      }
+      const old = initial.parts[index];
+      if (old.path !== part.path || old.snapshot !== part.snapshot) {
+        const entry = opened.get(index);
+        if (entry) await discard(entry);
+        opened.delete(index);
+        if (index === 0) initial.file = initial.metadata = null;
+      }
+      initial.parts[index] = part;
+    }
+  }
   async function open(part, entry, readOptions = options) {
     const {signal} = readOptions;
     const finish = metrics?.start('archiveOpen');
     try {
       // Once received, even a live response belongs to this export. A metadata or
       // temporary-storage failure must not replace it with a newer snapshot.
-      entry.file ??= await archiveFile(part, readOptions);
+      let retained = 0;
+      if (Number.isFinite(maxArchiveBytes))
+        for (const item of opened.values()) if (item.file instanceof ArrayBuffer) retained += item.file.byteLength;
+      // An evicted sealed file can stay range-backed instead of repeatedly
+      // displacing a large, indivisible live snapshot on every window/seek.
+      const wholeFileBytes = retained + (part.bytes ?? 0) > maxArchiveBytes ? 0 : WHOLE_FILE_BYTES;
+      entry.file ??= await archiveFile(part, {...readOptions, wholeFileBytes});
       let file = entry.file;
       if (file.withSignal) file = file.withSignal(signal);
       const {readMetadata, danmakuBounds, snapshotCoverage, snapshotSchedule} = await import('./parquet.js');
@@ -350,13 +385,7 @@ export function createCommentReader(
     try {
       for (;;) {
         signal.throwIfAborted();
-        const parts = archiveParts(
-          await retryOpen(
-            () => readJson(publicUrl(`live-archive/v1/${record.room}/index.json`), readOptions),
-            readOptions.signal,
-          ),
-          record.key,
-        );
+        const parts = await fetchParts(readOptions);
         const part = parts.find(part => part.part === initial.parts[index].part);
         for (const next of parts) if (!initial.parts.some(part => part.part === next.part)) initial.parts.push(next);
         if (part) {
@@ -461,18 +490,36 @@ export function createCommentReader(
       readSignal.throwIfAborted();
       initial = await archive;
       if (closed) throw new Error('弹幕读取器已关闭。');
+      // A live source can briefly have only sealed partitions during rollover.
+      // Demand/prefetch discovers successors without a background polling loop.
+      if (record.live && now() - indexChecked >= 10000) await updateIndex(initial, readOptions);
       const from = start + origin + PLAYBACK_LATENCY - adjustment;
       const to = end + origin + PLAYBACK_LATENCY - adjustment;
       const events = [];
       let bytes = 0;
       // Consume the current part before opening later ones. No batch-wide
       // metadata barrier or speculative archive requests on the video path.
-      for (const [index, part] of initial.parts.entries()) {
+      for (let index = 0; index < initial.parts.length; index++) {
+        let part = initial.parts[index];
         if (closed) throw new Error('弹幕读取器已关闭。');
         readSignal.throwIfAborted();
         const known = opened.get(index);
         if (!part.snapshot && known?.bounds && (known.bounds.to < from || known.bounds.from > to)) continue;
-        let entry = await openNeeded(index, part, initial, readOptions);
+        let entry;
+        try {
+          entry = await openNeeded(index, part, initial, readOptions);
+        } catch (error) {
+          readSignal.throwIfAborted();
+          if (!part.snapshot || error.status !== 404) throw error;
+          // An evicted live object may already have sealed at a new path.
+          // Re-resolve it before reporting a missing archive, even within the
+          // normal index refresh interval.
+          await updateIndex(initial, readOptions);
+          const next = initial.parts[index];
+          if (next.path === part.path && next.snapshot === part.snapshot) throw error;
+          part = next;
+          entry = await openNeeded(index, part, initial, readOptions);
+        }
         if (part.snapshot && entry.coverage < to) {
           if (prefetch) return null;
           entry = await refresh(index, initial, entry, to, readOptions);

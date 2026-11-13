@@ -25,6 +25,9 @@ const Monitor = () => (
       <canvas id="danmakuPreview" hidden aria-hidden="true" />
       <img id="videoStill" hidden alt="" />
       <div id="videoLoading">正在加载…</div>
+      <button type="button" id="exitVideoFullscreen">
+        退出全屏
+      </button>
       <button type="button" id="previewScreenshot" aria-label="截图" title="截图">
         <Icon name="camera" />
       </button>

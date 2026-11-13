@@ -78,6 +78,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       if (!(w > 0 && h > 0) || w > 16384 || bytes > maxBytes) return null;
       const surface = new OffscreenCanvas(w, h),
         target = surface.getContext('2d');
+      if (!target) return null;
       target.textBaseline = 'top';
       target.lineJoin = 'round';
       target.lineWidth = ink.lineWidth;
@@ -135,14 +136,20 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         sprites.clear();
         previous = [];
       },
-      renderOverlay(timestamp) {
+      renderOverlay(timestamp, advance = true) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
         const commands = [];
         const finishLayout = metrics?.start('layout');
         let active;
         try {
-          active = layout.advance(time);
+          active = advance
+            ? layout.advance(time)
+            : layout.active.filter(
+                item =>
+                  item.expires > time &&
+                  item.parts.every(part => !part.asset || part.asset.failed || part.asset.frames.length),
+              );
         } finally {
           finishLayout?.();
         }
@@ -161,7 +168,11 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               part,
               x: x + part.x,
               y,
-              frame: part.asset ? emoteFrame(part.asset, time - item.started) : null,
+              frame: part.asset
+                ? !advance && part.asset.needsPreparation?.(time - item.started)
+                  ? part.asset.frames.at(-1)
+                  : emoteFrame(part.asset, time - item.started)
+                : null,
             });
           }
         }
@@ -214,6 +225,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         this.renderOverlay(timestamp);
         canvas ??= new OffscreenCanvas(width, height);
         context ??= canvas.getContext('2d', {alpha: false});
+        if (!context) throw new Error('无法创建弹幕合成画布，可能内存不足。');
         // The export entry rejects rotation. Avoid the generic per-frame
         // save/translate/rotate path while keeping the same full-frame scaling.
         const finishVideo = metrics?.start('videoDraw');

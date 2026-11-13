@@ -263,7 +263,7 @@ export function createApp({
     seek: seekTo,
   });
   const activePlayback = () => (playerKind === 'submission' ? player : playback);
-  bindVideoControls(video, playback, status);
+  bindVideoControls(video, playback, status, {fullscreenTarget: $('playerWrap'), exitButton: $('exitVideoFullscreen')});
   // The player and the timeline strip read the same stills; one video needs one copy.
   let storyboard = null;
   function storyboardFor(submission) {

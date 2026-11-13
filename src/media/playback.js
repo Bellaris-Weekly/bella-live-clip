@@ -2,7 +2,10 @@
 // Seeks can land slightly short of a cut point (stream ends are clamped), so
 // positions within EDGE of a cut count as being on it.
 const EDGE = 0.05;
-const isVideoFullscreen = video => video.getRootNode?.().fullscreenElement === video;
+const isVideoFullscreen = video => {
+  const element = video.getRootNode?.().fullscreenElement;
+  return element === video || Boolean(element?.contains?.(video));
+};
 export function createPlayback(video, onError, {getRange, position, seek}) {
   let scrubbing = false,
     resume = false,
@@ -82,18 +85,23 @@ export function createPlayback(video, onError, {getRange, position, seek}) {
   };
 }
 
-// Leave fullscreen gestures and controls to the browser.
-export function bindVideoControls(video, playback, onError) {
+// Keep native media controls, but include the overlay in the fullscreen tree.
+export function bindVideoControls(video, playback, onError, {fullscreenTarget = video, exitButton} = {}) {
   const fullscreen = () => isVideoFullscreen(video);
   const sync = () => {
     video.controls = fullscreen();
+    // The native fullscreen button targets only <video>, excluding siblings.
+    if (fullscreenTarget !== video) video.controlsList?.add('nofullscreen');
   };
+  exitButton?.addEventListener('click', () => {
+    if (fullscreen()) void video.ownerDocument.exitFullscreen().catch(error => onError(error.message, true));
+  });
   video.ownerDocument.addEventListener('fullscreenchange', sync);
   video.addEventListener('click', event => {
     if (!fullscreen() && event.detail === 1) playback.toggle();
   });
   video.addEventListener('dblclick', () => {
-    if (!fullscreen()) void video.requestFullscreen().catch(error => onError(error.message, true));
+    if (!fullscreen()) void fullscreenTarget.requestFullscreen().catch(error => onError(error.message, true));
   });
   sync();
 }

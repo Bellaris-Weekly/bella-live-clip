@@ -397,3 +397,166 @@ test('disabling danmaku during archive loading discards late results', async () 
     await page.close();
   }
 });
+
+test('danmaku catalog and image bytes survive seeks, while closing preview releases them', async () => {
+  const {page} = await danmakuPage();
+  const bytes = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(8, 8);
+    canvas.getContext('2d').fillRect(0, 0, 8, 8);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob({type: 'image/png'})).arrayBuffer()));
+  });
+  const requests = [];
+  await page.route('https://data.bellaris.fans/emotes/**', async route => {
+    const name = route.request().url().split('/').at(-1);
+    requests.push(name);
+    const body =
+      name === 'index.json'
+        ? JSON.stringify({catalog: 'catalog.json'})
+        : name === 'catalog.json'
+          ? JSON.stringify({emotes: [{name: '花', kind: 'emoji', file: 'flower.png', width: 128, height: 128}]})
+          : Buffer.from(bytes);
+    await route.fulfill({
+      body,
+      contentType: name.endsWith('.png') ? 'image/png' : 'application/json',
+      headers: {'Access-Control-Allow-Origin': '*'},
+    });
+  });
+  try {
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    for (const time of [4.5, 5, 3]) {
+      await page.evaluate(time => {
+        const r = window.danmakuRig;
+        r.preview.setScrubbing(true);
+        r.player.seek(time);
+        r.preview.setScrubbing(false);
+      }, time);
+      await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    }
+    assert.deepEqual(requests, ['index.json', 'catalog.json', 'flower.png']);
+    await page.evaluate(() => {
+      window.danmakuRig.preview.setEnabled(false);
+      window.danmakuRig.preview.setEnabled(true);
+    });
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    assert.equal(requests.filter(name => name === 'flower.png').length, 2);
+    assert.deepEqual(await page.evaluate(() => window.danmakuRig.errors), []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('fullscreen includes danmaku and native media controls, with an explicit exit button', async () => {
+  const {page} = await danmakuPage();
+  try {
+    await page.addStyleTag({content: await readFile('src/ui/theme.css', 'utf8')});
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    await page.evaluate(() => window.danmakuRig.video.dispatchEvent(new MouseEvent('dblclick')));
+    await page.waitForFunction(() => document.fullscreenElement === window.danmakuRig.wrap);
+    const result = await page.evaluate(() => {
+      const r = window.danmakuRig;
+      return {
+        included: document.fullscreenElement.contains(r.canvas),
+        controls: r.video.controls,
+        noVideoOnlyFullscreen: r.video.controlsList.contains('nofullscreen'),
+        exit: getComputedStyle(r.exitButton).display,
+        width: r.canvas.getBoundingClientRect().width,
+      };
+    });
+    assert.equal(result.included, true);
+    assert.equal(result.controls, true);
+    assert.equal(result.noVideoOnlyFullscreen, true);
+    assert.notEqual(result.exit, 'none');
+    assert.ok(result.width > 320);
+    await page.evaluate(() => window.danmakuRig.exitButton.click());
+    await page.waitForFunction(() => !document.fullscreenElement && !window.danmakuRig.video.controls);
+    assert.equal(await page.evaluate(() => window.danmakuRig.video.controls), false);
+  } finally {
+    await page.close();
+  }
+});
+
+test('container fullscreen in a shadow root plays outside the selection and constrains again on exit', async () => {
+  const result = await inPage('fullscreenPlayback', {container: true});
+  assert.equal(result.retargeted, true);
+  assert.deepEqual(result.errors, []);
+  for (const position of result.positions) {
+    assert.notEqual(position.framedAt, null);
+    assert.equal(position.paused, false);
+    assert.ok(Math.abs(position.time - position.target) < 1);
+  }
+  assert.equal(result.exitPaused, true);
+  assert.ok(Math.abs(result.exitTime - 15) < 0.2);
+});
+
+test('slow live windows keep existing danmaku moving, including a pause during the pending read', async () => {
+  const {page} = await danmakuPage();
+  const before = await readFile('tools/tests/fixtures/live-before.parquet'),
+    after = await readFile('tools/tests/fixtures/live-after.parquet');
+  let reads = 0,
+    demandStarted,
+    release;
+  const demand = new Promise(resolve => {
+    demandStarted = resolve;
+  });
+  const blocked = new Promise(resolve => {
+    release = resolve;
+  });
+  await page.route('https://data.bellaris.fans/live-archive/**', async route => {
+    let body;
+    if (route.request().url().endsWith('index.json'))
+      body = JSON.stringify({schemaVersion: 1, live: [{live_key: 'k', part: 1, path: 'live-archive/live.parquet'}]});
+    else {
+      if (++reads === 3) {
+        demandStarted();
+        await blocked;
+      }
+      body = reads < 3 ? before : after;
+    }
+    await route.fulfill({body, headers: {'Access-Control-Allow-Origin': '*'}});
+  });
+  try {
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    await page.evaluate(() => {
+      window.danmakuRig.video.playbackRate = 2;
+      return window.danmakuRig.video.play();
+    });
+    await demand;
+    await page.waitForTimeout(200);
+    const first = await page.evaluate(() => ({
+      hidden: window.danmakuRig.canvas.hidden,
+      pixels: window.overlayPixels(),
+    }));
+    assert.equal(first.hidden, false);
+    assert.ok(first.pixels.count > 10);
+    await page.waitForFunction(left => window.overlayPixels().left < left, first.pixels.left);
+    await page.evaluate(() => window.danmakuRig.video.pause());
+    await page.waitForTimeout(100);
+    const paused = await page.evaluate(() => window.overlayPixels());
+    await page.waitForTimeout(100);
+    assert.deepEqual(await page.evaluate(() => window.overlayPixels()), paused);
+    release();
+    await page.waitForTimeout(200);
+    assert.equal(await page.evaluate(() => window.danmakuRig.canvas.hidden), false);
+    assert.deepEqual(await page.evaluate(() => window.danmakuRig.errors), []);
+  } finally {
+    release();
+    await page.close();
+  }
+});
+
+test('preview context allocation failure reports an actionable error', async () => {
+  const {page} = await danmakuPage();
+  try {
+    await page.evaluate(() => {
+      window.danmakuRig.canvas.getContext = () => null;
+      window.danmakuRig.preview.setEnabled(true);
+    });
+    await page.waitForFunction(() => window.danmakuRig.errors.length > 0);
+    assert.match(await page.evaluate(() => window.danmakuRig.errors[0]), /无法创建弹幕预览画布/);
+  } finally {
+    await page.close();
+  }
+});

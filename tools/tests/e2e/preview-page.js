@@ -1,7 +1,7 @@
 // Runs inside Chromium against the real player and hls.js.
 import {createPlayer} from '../../../src/media/preview-player.js';
 import {readFragmentStill} from '../../../src/media/fragment-still.js';
-import {createPlayback} from '../../../src/media/playback.js';
+import {createPlayback, bindVideoControls} from '../../../src/media/playback.js';
 import {createDanmakuPreview} from '../../../src/danmaku/preview.js';
 import {RecordingPlan} from '../../../src/media/recording-plan.js';
 
@@ -10,11 +10,17 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 function rig({start = 1000} = {}) {
   const video = document.createElement('video');
   video.muted = true;
-  document.body.append(video);
+  const wrap = document.createElement('div'),
+    exitButton = document.createElement('button');
+  wrap.id = 'playerWrap';
+  exitButton.id = 'exitVideoFullscreen';
+  exitButton.textContent = '退出全屏';
+  wrap.append(video, exitButton);
+  document.body.append(wrap);
   const loading = document.createElement('div'),
     still = document.createElement('img');
   still.hidden = true;
-  document.body.append(still);
+  wrap.append(still);
   const counts = new Map();
   const request = async (url, {type, signal} = {}) => {
     counts.set(url, (counts.get(url) ?? 0) + 1);
@@ -37,7 +43,7 @@ function rig({start = 1000} = {}) {
     onTime() {},
     api,
   });
-  return {video, loading, still, player, counts, api, record};
+  return {video, loading, still, player, counts, api, record, wrap, exitButton};
 }
 
 async function settled({video, loading}, timeout) {
@@ -55,8 +61,15 @@ window.setupDanmakuPreview = async () => {
   const r = rig({start: 98});
   const {streams} = await load(r);
   const canvas = document.createElement('canvas');
+  canvas.id = 'danmakuPreview';
   canvas.hidden = true;
-  document.body.append(canvas);
+  r.wrap.append(canvas);
+  const playback = createPlayback(r.video, () => {}, {
+    getRange: () => null,
+    position: () => r.player.position(),
+    seek: time => r.player.seek(time),
+  });
+  bindVideoControls(r.video, playback, () => {}, {fullscreenTarget: r.wrap, exitButton: r.exitButton});
   const errors = [];
   const preview = createDanmakuPreview({
     video: r.video,
@@ -128,6 +141,10 @@ function controlledRig(range) {
     position: () => r.player.position(),
     seek: time => r.player.seek(time),
   });
+  bindVideoControls(r.video, playback, message => errors.push(message), {
+    fullscreenTarget: r.wrap,
+    exitButton: r.exitButton,
+  });
   return {...r, playback, errors};
 }
 
@@ -169,18 +186,19 @@ window.restoreAfterTrim = async ({timeout, paused, settledPreview}) => {
   };
 };
 
-window.fullscreenPlayback = async ({timeout}) => {
+window.fullscreenPlayback = async ({timeout, container = false}) => {
   const r = controlledRig({start: 10, end: 15}),
     host = document.createElement('div');
   document.body.append(host);
   const root = host.attachShadow({mode: 'open'});
-  root.append(r.video);
+  root.append(container ? r.wrap : r.video);
   await load(r);
   r.player.seek(12.7);
   const initialFrame = await settled(r, timeout);
   await r.video.play();
-  await r.video.requestFullscreen();
-  const retargeted = document.fullscreenElement === host && root.fullscreenElement === r.video,
+  const target = container ? r.wrap : r.video;
+  await target.requestFullscreen();
+  const retargeted = document.fullscreenElement === host && root.fullscreenElement === target,
     positions = [];
   for (const target of [3.4, 25.3]) {
     r.video.currentTime = target;
