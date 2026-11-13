@@ -966,3 +966,30 @@ test('successful exports include normal lifecycle logs and live performance aggr
   assert.equal(events[1].context.result.writtenBytes, 4096);
   assert.equal(f.failures.length, 0);
 });
+
+test('弹幕首屏与后台恢复记录独立耗时，不混入弹幕内容', async () => {
+  const record = {key: 'live', room: 123, start: 0, end: 100};
+  const f = start({url: 'https://live.bilibili.com/123', current: async () => record});
+  await f.app.open();
+  for (const resumed of [false, true]) {
+    const diagnostic = f.scenario.danmakuOptions.onDiagnostic(record, resumed);
+    diagnostic.observe({
+      snapshot: () => ({
+        elapsedMs: 500,
+        firstFrameMs: 400,
+        stages: {archiveSetup: {count: 1, totalMs: 200, maxMs: 200}},
+        counters: {commentText: '不应上传'},
+      }),
+    });
+    diagnostic.finish();
+  }
+  await settle();
+  for (const action of ['danmaku_preview', 'danmaku_preview_resume']) {
+    const event = f.events.find(event => event.event === `${action}_completed`);
+    assert.equal(event.context.metrics.firstFrameMs, 400);
+    assert.equal(event.context.metrics.stages.archiveSetup.totalMs, 200);
+    assert.equal(event.context.record.key, 'live');
+    assert.equal(event.context.mode, 'danmaku');
+    assert.ok(!JSON.stringify(event).includes('不应上传'));
+  }
+});

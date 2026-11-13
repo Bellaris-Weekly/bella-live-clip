@@ -463,3 +463,15 @@ test(
     }
   },
 );
+
+test('preview first-frame emotes bypass expired preroll and future prefetch', async () => {
+  const page = await open();
+  try {
+    const result = await page.evaluate(() => window.checkPreviewEmotePriority());
+    assert.deepEqual(result.before, []);
+    assert.equal(result.requests[0], 'current.png');
+    assert.ok(!result.requests.includes('old.png'));
+  } finally {
+    await page.close();
+  }
+});

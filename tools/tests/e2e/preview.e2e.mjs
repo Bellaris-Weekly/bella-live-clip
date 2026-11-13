@@ -560,3 +560,154 @@ test('preview context allocation failure reports an actionable error', async () 
     await page.close();
   }
 });
+
+test('danmaku cold preparation starts catalog, archive and clock before the video frame is ready', async () => {
+  const {page} = await danmakuPage();
+  let release, started;
+  const blocked = new Promise(resolve => {
+    release = resolve;
+  });
+  const archiveStarted = new Promise(resolve => {
+    started = resolve;
+  });
+  await page.route('https://data.bellaris.fans/live-archive/**', async route => {
+    if (route.request().url().endsWith('index.json')) {
+      started();
+      await blocked;
+    }
+    await route.fallback();
+  });
+  try {
+    const catalogLoaded = page.waitForResponse(response => response.url().endsWith('/emotes/catalog.json'));
+    await page.evaluate(() => {
+      const r = window.danmakuRig;
+      r.framesBlocked = true;
+      r.preview.setEnabled(true);
+    });
+    await Promise.all([archiveStarted, catalogLoaded]);
+    await page.waitForFunction(
+      () => window.danmakuRig.diagnostics[0].provider.snapshot().stages.originProbe?.count === 1,
+    );
+    assert.equal(await page.evaluate(() => window.danmakuRig.canvas.hidden), true);
+    release();
+    await page.evaluate(() => {
+      const r = window.danmakuRig;
+      r.framesBlocked = false;
+      r.video.dispatchEvent(new Event('loadeddata'));
+    });
+    await page.waitForFunction(() => window.danmakuRig.diagnostics[0].status === 'completed');
+    const metrics = await page.evaluate(() => window.danmakuRig.diagnostics[0].metrics);
+    assert.ok(metrics.firstFrameMs >= 0);
+    for (const stage of ['archiveSetup', 'originProbe', 'emoteCatalog', 'compositorInit'])
+      assert.ok(metrics.stages[stage].count >= 1);
+  } finally {
+    release();
+    await page.close();
+  }
+});
+
+test('returning from another application retains danmaku caches and the short-gap playback session', async () => {
+  const {page, requests} = await danmakuPage();
+  try {
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await page.waitForFunction(() => window.danmakuRig.diagnostics[0].status === 'completed');
+    const initial = [...requests];
+    for (const playing of [false, true]) {
+      if (playing) await page.evaluate(() => window.danmakuRig.video.play());
+      await page.evaluate(() => window.setPreviewVisibility(true));
+      await page.waitForTimeout(300);
+      await page.evaluate(() => window.setPreviewVisibility(false));
+      await page.waitForFunction(() => window.danmakuRig.diagnostics.at(-1).status === 'completed');
+      const result = await page.evaluate(() => ({
+        hidden: window.danmakuRig.canvas.hidden,
+        resumed: window.danmakuRig.diagnostics.at(-1).resumed,
+        builds: window.danmakuRig.diagnostics[0].provider.snapshot().stages.compositorInit.count,
+        errors: window.danmakuRig.errors,
+      }));
+      assert.deepEqual(result, {hidden: false, resumed: true, builds: 1, errors: []});
+      assert.deepEqual(requests, initial);
+    }
+    await page.evaluate(() => {
+      window.setPreviewVisibility(true);
+      window.danmakuRig.player.seek(20);
+    });
+    await page.waitForFunction(() => !window.danmakuRig.video.seeking && window.danmakuRig.loading.hidden);
+    await page.evaluate(() => window.setPreviewVisibility(false));
+    await page.waitForFunction(() => window.danmakuRig.diagnostics.at(-1).status === 'completed');
+    assert.equal(
+      await page.evaluate(() => window.overlayPixels().count),
+      0,
+      'a hidden seek must not restore old comments',
+    );
+    assert.deepEqual(requests, initial);
+  } finally {
+    await page.close();
+  }
+});
+
+test('backgrounding during the first archive load preserves the in-flight request', async () => {
+  const {page, requests} = await danmakuPage({delay: 200});
+  try {
+    const archiveRequested = page.waitForRequest(request => request.url().endsWith('.parquet'));
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await archiveRequested;
+    await page.evaluate(() => window.setPreviewVisibility(true));
+    await page.waitForTimeout(500);
+    const prepared = [...requests];
+    await page.evaluate(() => window.setPreviewVisibility(false));
+    await page.waitForFunction(() => window.danmakuRig.diagnostics.at(-1).status === 'completed');
+    assert.deepEqual(requests, prepared);
+    assert.equal(requests.filter(url => url.endsWith('.parquet')).length, 1);
+    assert.deepEqual(await page.evaluate(() => window.danmakuRig.errors), []);
+  } finally {
+    await page.close();
+  }
+});
+
+test('paused cold preview shows available text while its first emote is still loading', async () => {
+  const {page} = await danmakuPage();
+  const bytes = await page.evaluate(async () => {
+    const canvas = new OffscreenCanvas(8, 8);
+    canvas.getContext('2d').fillRect(0, 0, 8, 8);
+    return Array.from(new Uint8Array(await (await canvas.convertToBlob({type: 'image/png'})).arrayBuffer()));
+  });
+  let release, started;
+  const blocked = new Promise(resolve => {
+    release = resolve;
+  });
+  const imageStarted = new Promise(resolve => {
+    started = resolve;
+  });
+  await page.route('https://data.bellaris.fans/emotes/**', async route => {
+    const name = route.request().url().split('/').at(-1);
+    if (name === 'flower.png') {
+      started();
+      await blocked;
+    }
+    const body =
+      name === 'index.json'
+        ? JSON.stringify({catalog: 'catalog.json'})
+        : name === 'catalog.json'
+          ? JSON.stringify({emotes: [{name: '花', kind: 'emoji', file: 'flower.png', width: 128, height: 128}]})
+          : Buffer.from(bytes);
+    await route.fulfill({
+      body,
+      contentType: name.endsWith('.png') ? 'image/png' : 'application/json',
+      headers: {'Access-Control-Allow-Origin': '*'},
+    });
+  });
+  try {
+    await page.evaluate(() => window.danmakuRig.preview.setEnabled(true));
+    await imageStarted;
+    await page.waitForFunction(() => !window.danmakuRig.canvas.hidden && window.overlayPixels().count > 10);
+    const textPixels = await page.evaluate(() => window.overlayPixels().count);
+    assert.equal(await page.evaluate(() => window.danmakuRig.video.paused), true);
+    assert.equal(await page.evaluate(() => window.danmakuRig.diagnostics[0].status), 'loading');
+    release();
+    await page.waitForFunction(count => window.overlayPixels().count > count, textPixels);
+    await page.waitForFunction(() => window.danmakuRig.diagnostics[0].status === 'completed');
+  } finally {
+    release();
+    await page.close();
+  }
+});

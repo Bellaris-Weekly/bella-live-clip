@@ -515,3 +515,50 @@ window.checkEmoteFallbackPixels = async kind => {
     sample.close();
   }
 };
+
+window.checkPreviewEmotePriority = async () => {
+  const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
+  const bytes = new Uint8Array(await (await fetch('/flower.png')).arrayBuffer());
+  const events = [
+    ['old', 6],
+    ['current', 19],
+    ['future', 25],
+  ].map(([name, time], order) => ({time, order, text: `[${name}]`, mode: 5, color: 0xffffff}));
+  const selected = new Map(
+    ['old', 'current', 'future'].map(name => [`[${name}]`, {file: `${name}.png`, width: 128, height: 128}]),
+  );
+  const requests = [];
+  const compositor = await createStreamingCompositor(
+    {room: 1},
+    {
+      origin: 0,
+      start: 20,
+      sourceTime: t => t,
+      width: 640,
+      height: 360,
+      reader: {
+        read: async ({start, end}) => events.filter(event => event.time >= start && event.time < end),
+        close() {},
+      },
+      emoteCache: {
+        catalog: async () => selected,
+        read: async (entry, signal) => {
+          requests.push(entry.file);
+          if (entry.file !== 'current.png')
+            await new Promise((_, reject) =>
+              signal.addEventListener('abort', () => reject(signal.reason), {once: true}),
+            );
+          return {bytes, response: new Response(null, {headers: {'Content-Type': 'image/png'}})};
+        },
+      },
+    },
+  );
+  const before = [...requests];
+  try {
+    await compositor.prepare(20);
+    compositor.renderOverlay(20);
+    return {before, requests: [...requests]};
+  } finally {
+    await compositor.close();
+  }
+};

@@ -33,7 +33,9 @@ export async function createStreamingCompositor(
     order = 0,
     pinned = new Set(),
     supplying = Promise.resolve(),
-    prefetching = Promise.resolve();
+    prefetching = Promise.resolve(),
+    foregroundPrepared = !emoteCache;
+  const deferredNames = new Set();
   const parentSignal = signal,
     controller = new AbortController();
   signal = controller.signal;
@@ -122,6 +124,10 @@ export async function createStreamingCompositor(
     supplying = task.catch(() => {});
     return task;
   }
+  function prefetchAssets(names) {
+    const pending = [...names].map(name => assets.get(name)).filter(Boolean);
+    prefetching = prefetching.then(() => mapConcurrent(pending, 3, asset => asset.prefetch(), signal)).catch(() => {});
+  }
   async function supplyWindow(events, speculative) {
     signal?.throwIfAborted();
     const retained = painter
@@ -162,8 +168,8 @@ export async function createStreamingCompositor(
       loaded.assets.clear(); // Ownership moves into this windowed store.
     }
     // Fetch compressed input now; decoder creation and frame retention stay on demand.
-    const pending = [...names].map(name => assets.get(name)).filter(Boolean);
-    prefetching = prefetching.then(() => mapConcurrent(pending, 3, asset => asset.prefetch(), signal)).catch(() => {});
+    if (foregroundPrepared) prefetchAssets(names);
+    else if (speculative) for (const name of referencedEmotes(events.filter(visibleComment))) deferredNames.add(name);
   }
   try {
     until = Math.min(until, endTime());
@@ -238,6 +244,19 @@ export async function createStreamingCompositor(
             );
         } finally {
           finishStall?.();
+        }
+        if (!foregroundPrepared) {
+          // A preview's first visible emotes take all three download slots.
+          // Expired preroll and future-window images must not queue ahead of
+          // them. Export retains its existing eager prefetch behavior.
+          foregroundPrepared = true;
+          const remaining = [
+            ...active,
+            ...painter.layout.waiting,
+            ...painter.layout.events.slice(painter.layout.cursor),
+          ];
+          prefetchAssets(new Set([...referencedEmotes(remaining.filter(visibleComment)), ...deferredNames]));
+          deferredNames.clear();
         }
       },
       renderOverlay(timestamp) {

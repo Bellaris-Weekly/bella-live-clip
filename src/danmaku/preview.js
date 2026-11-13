@@ -1,9 +1,10 @@
 import {streamOrigin} from './clock.js';
 import {readPartClock} from '../media/replay-clock.js';
+import {createExportMetrics} from '../media/export-metrics.js';
 
 // Video keeps its native playback path. Only the transparent comment layer is
 // painted here, and asynchronous archive/emote work never holds up the video.
-export function createDanmakuPreview({video, canvas, getFrame, onError = () => {}}) {
+export function createDanmakuPreview({video, canvas, getFrame, onError = () => {}, onDiagnostic = () => null}) {
   let enabled = false,
     scrubbing = false,
     configuration,
@@ -28,6 +29,9 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
   }
   function release() {
     resetSession();
+    source?.report?.diagnostic?.finish({status: 'canceled'});
+    source?.report?.metrics.close();
+    source?.metrics.close();
     source?.controller.abort();
     void source?.comments?.then(({reader}) => reader.close()).catch(() => {});
     void source?.emotes?.then(cache => cache.close()).catch(() => {});
@@ -47,6 +51,8 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       ]);
       source = {...configuration, controller, modules, comments: null, clocks: new Map(), notified: false};
       const owner = source;
+      owner.metrics = createExportMetrics();
+      beginReport(owner, false);
       owner.emotes = modules.then(([, , , {createPreviewEmoteCache}]) => {
         controller.signal.throwIfAborted();
         return createPreviewEmoteCache(owner.record.room, {signal: controller.signal});
@@ -55,12 +61,48 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     }
     return source;
   }
+  function beginReport(owner, resumed) {
+    const metrics = resumed ? createExportMetrics() : owner.metrics;
+    const diagnostic = onDiagnostic(owner.record, resumed);
+    diagnostic?.observe(metrics);
+    diagnostic?.stage(resumed ? 'resuming' : 'preparing');
+    owner.report = {metrics, diagnostic};
+  }
+  function reportReady(owner) {
+    if (!owner.report) return;
+    owner.report.metrics.firstFrame();
+    owner.report.diagnostic?.finish();
+    owner.report.metrics.close();
+    owner.report = null;
+  }
+  function warmSource() {
+    if (!enabled || !configuration || destroyed || document.hidden) return;
+    const owner = getSource();
+    // Start independent downloads while the video is still buffering. Warmup
+    // failures are observed here and retried/reported by the demanded frame.
+    void commentsFor(owner).catch(() => {});
+    owner.catalogWarm ??= owner.emotes
+      .then(cache => {
+        const finish = owner.metrics.start('emoteCatalog');
+        return cache.catalog(owner.controller.signal).finally(finish);
+      })
+      .catch(() => {
+        owner.catalogWarm = null;
+      });
+    if (owner.part) void clockFor(owner, owner.part).catch(() => {});
+  }
   function commentsFor(owner) {
     owner.comments ??= owner.modules
       .then(async ([{prepareComments, createCommentReader}]) => {
         const signal = owner.controller.signal;
         signal.throwIfAborted();
-        const archive = await prepareComments(owner.record, {signal});
+        const finish = owner.metrics.start('archiveSetup');
+        let archive;
+        try {
+          archive = await prepareComments(owner.record, {signal});
+        } finally {
+          finish();
+        }
         signal.throwIfAborted();
         const initialMetadata = archive.metadata;
         const reader = createCommentReader(owner.record, {
@@ -68,6 +110,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
           prepared: archive,
           waitForCoverage: false,
           maxArchiveBytes: 32 * 1024 * 1024,
+          metrics: owner.metrics,
         });
         return {
           reader,
@@ -86,41 +129,61 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       });
     return owner.comments;
   }
-  async function prepare(owner, frame, width, height, signal) {
-    const key = frame.part.start_time;
+  function clockFor(owner, part) {
+    const key = part.start_time;
     if (!owner.clocks.has(key)) {
       const clock = (async () => {
-        const groups = await owner.loadGroups(owner.controller.signal);
+        const finishPlaylist = owner.metrics.start('playlistLoad');
+        let groups;
+        try {
+          groups = await owner.loadGroups(owner.controller.signal);
+        } finally {
+          finishPlaylist();
+        }
         const group = groups.find(group => group.part.start_time === key);
         if (!group) throw new Error('无法读取弹幕预览对应的录像分段。');
-        return readPartClock(owner.request, group, owner.controller.signal);
+        const finishProbe = owner.metrics.start('originProbe');
+        try {
+          return await readPartClock(owner.request, group, owner.controller.signal);
+        } finally {
+          finishProbe();
+        }
       })().catch(error => {
         owner.clocks.delete(key);
         throw error;
       });
       owner.clocks.set(key, clock);
     }
+    return owner.clocks.get(key);
+  }
+  async function prepare(owner, frame, width, height, signal) {
     const [{metadata, reader}, clock, [, {streamClock}, {createStreamingCompositor}], emoteCache] = await Promise.all([
       commentsFor(owner),
-      owner.clocks.get(key),
+      clockFor(owner, frame.part),
       owner.modules,
       owner.emotes,
     ]);
     signal.throwIfAborted();
     const origin = streamOrigin(streamClock(metadata), clock.origin) ?? clock.origin;
-    return await createStreamingCompositor(owner.record, {
-      reader: {
-        read: window => reader.read({...window, signal}),
-        close() {}, // Only release() closes the source's shared reader.
-      },
-      origin,
-      start: frame.time,
-      sourceTime: time => time,
-      width,
-      height,
-      signal,
-      emoteCache,
-    });
+    const finish = owner.metrics.start('compositorInit');
+    try {
+      return await createStreamingCompositor(owner.record, {
+        reader: {
+          read: window => reader.read({...window, signal}),
+          close() {}, // Only release() closes the source's shared reader.
+        },
+        origin,
+        start: frame.time,
+        sourceTime: time => time,
+        width,
+        height,
+        signal,
+        emoteCache,
+        metrics: owner.metrics,
+      });
+    } finally {
+      finish();
+    }
   }
   function startSession(frame) {
     resetSession();
@@ -156,6 +219,15 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     if (session !== own || own.signal.aborted || own.failed) return;
     own.failed = true;
     canvas.hidden = true;
+    if (own.owner.report) {
+      own.owner.report.diagnostic?.fail(error, own.signal);
+      own.owner.report.metrics.close();
+      own.owner.report = null;
+    } else if (!own.owner.notified) {
+      const diagnostic = onDiagnostic(own.owner.record, false);
+      diagnostic?.observe(own.owner.metrics);
+      diagnostic?.fail(error, own.signal);
+    }
     closeSession(own);
     if (!own.owner.notified) {
       own.owner.notified = true;
@@ -167,8 +239,12 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     try {
       const compositor = (own.compositor = await own.promise);
       own.signal.throwIfAborted();
+      // A paused video has no continuous RAF loop. Give text a chance to paint
+      // while the first visible emotes are still downloading/decoding.
+      schedule();
       await compositor.prepare(frame.time);
       own.signal.throwIfAborted();
+      if (document.hidden) return;
       // A slow read must never put old comments over a newer frame. Keep its
       // layout progress and catch up on the next animation tick instead.
       const current = getFrame();
@@ -195,6 +271,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     context.drawImage(overlay, 0, 0);
     if (complete) own.drawn = time;
     canvas.hidden = false;
+    if (complete) reportReady(own.owner);
   }
   function tick() {
     animation = null;
@@ -209,10 +286,11 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
         session.videoWidth !== video.videoWidth ||
         session.videoHeight !== video.videoHeight ||
         frame.time < session.time - 0.02 ||
-        frame.time > session.time + 1
+        (frame.time > session.time + 1 && !(session.resuming && frame.time <= session.time + 10))
       )
         startSession(frame);
       const own = session;
+      own.resuming = false;
       own.time = frame.time;
       if (own.drawn !== null && Math.abs(frame.time - own.drawn) > 0.15) canvas.hidden = true;
       if (own.busy && own.compositor && !own.failed && own.drawn !== frame.time) {
@@ -222,7 +300,8 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
           fail(own, error);
         }
       }
-      if (!own.busy && !own.failed && own.drawn !== frame.time) void draw(own, frame);
+      if (!own.busy && !own.failed && (canvas.hidden || own.drawn !== frame.time)) void draw(own, frame);
+      else if (!canvas.hidden && own.drawn === frame.time) reportReady(own.owner);
     }
     if (!video.paused) schedule();
   }
@@ -235,8 +314,21 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     schedule();
   }
   function visibility() {
-    if (document.hidden) release();
-    else schedule();
+    if (document.hidden) {
+      // Visibility is not ownership: keep bounded archives, clocks, decoders
+      // and in-flight preparation for the return to this same recording.
+      if (animation !== null) cancelAnimationFrame(animation);
+      animation = null;
+      source?.report?.diagnostic?.finish({status: 'canceled'});
+      source?.report?.metrics.close();
+      if (source) source.report = null;
+    } else {
+      if (source && enabled && !source.report) beginReport(source, true);
+      if (session?.failed) resetSession();
+      else if (session) session.resuming = true;
+      warmSource();
+      schedule();
+    }
   }
   const events = ['play', 'playing', 'pause', 'seeked', 'loadeddata', 'resize'];
   for (const event of events) video.addEventListener(event, schedule);
@@ -247,13 +339,16 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
     setSource(next) {
       release();
       configuration = next;
+      warmSource();
       schedule();
     },
     setEnabled(next) {
       if (enabled === next) return;
       enabled = next;
-      if (enabled) schedule();
-      else release();
+      if (enabled) {
+        warmSource();
+        schedule();
+      } else release();
     },
     setScrubbing(next) {
       scrubbing = next;

@@ -70,18 +70,53 @@ window.setupDanmakuPreview = async () => {
     seek: time => r.player.seek(time),
   });
   bindVideoControls(r.video, playback, () => {}, {fullscreenTarget: r.wrap, exitButton: r.exitButton});
-  const errors = [];
+  const errors = [],
+    diagnostics = [];
   const preview = createDanmakuPreview({
     video: r.video,
     canvas,
-    getFrame: () => r.player.danmakuFrame(),
+    getFrame: () => (r.framesBlocked ? null : r.player.danmakuFrame()),
     onError: error => errors.push(error.message),
+    onDiagnostic: (_, resumed) => {
+      const entry = {resumed, status: 'loading'};
+      diagnostics.push(entry);
+      return {
+        observe(provider) {
+          entry.provider = provider;
+        },
+        stage(value) {
+          entry.stage = value;
+        },
+        finish(result = {}) {
+          entry.status = result.status ?? 'completed';
+          entry.metrics = entry.provider.snapshot();
+        },
+        fail(error) {
+          entry.status = 'failed';
+          entry.error = error.message;
+        },
+      };
+    },
   });
   const plan = new RecordingPlan(r.api, streams, new AbortController().signal);
-  preview.setSource({record: r.record, loadGroups: signal => plan.load(signal), request: r.api.request});
+  preview.setSource({
+    record: r.record,
+    part: streams[0],
+    loadGroups: signal => plan.load(signal),
+    request: r.api.request,
+  });
   r.player.seek(3);
   await settled(r, 4000);
-  window.danmakuRig = {...r, preview, canvas, errors};
+  // Keep frame gating on the same object captured by getFrame.
+  window.danmakuRig = Object.assign(r, {preview, canvas, errors, diagnostics});
+  window.setPreviewVisibility = hidden => {
+    Object.defineProperty(document, 'hidden', {configurable: true, get: () => hidden});
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => (hidden ? 'hidden' : 'visible'),
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
   window.overlayPixels = () => {
     const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     let count = 0,
