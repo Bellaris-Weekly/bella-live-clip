@@ -24,6 +24,11 @@ function color(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 }
 
+// Darken a #rrggbb color toward black by the given fraction.
+function darken(value, amount) {
+  return `rgb(${[1, 3, 5].map(i => Math.round(parseInt(value.slice(i, i + 2), 16) * (1 - amount))).join(',')})`;
+}
+
 export function measureSuperChat(event, ink, fontSize, font, avatars) {
   const scale = fontSize / 40;
   const height = Math.ceil(fontSize * 1.2),
@@ -41,6 +46,7 @@ export function measureSuperChat(event, ink, fontSize, font, avatars) {
   ink.font = textFont;
   const body = Math.min(scMaxWidth(fontSize) - head, ink.measureText(text).width + pad * 2 + height * 0.35);
   const width = Math.ceil(head + body);
+  const header = color(event.header_color, '#2A60B2');
   return {
     width,
     height,
@@ -65,10 +71,10 @@ export function measureSuperChat(event, ink, fontSize, font, avatars) {
         face: event.face,
         avatar: avatars?.get(event.face) ?? null,
         background: color(event.bg_color, '#EDF5FF'),
-        header: color(event.header_color, '#2A60B2'),
-        // B's light body uses a dark foreground. The platform's font_color is for
-        // its original dark card and is often nearly white, so cannot be copied here.
-        foreground: '#17212b',
+        header,
+        // Body text takes the tier color, darkened to read on the light body.
+        // The platform's font_color is for its dark card and is often near white.
+        foreground: darken(header, 0.25),
         border: Math.max(1, 2 * (fontSize / 40)),
       },
     ],

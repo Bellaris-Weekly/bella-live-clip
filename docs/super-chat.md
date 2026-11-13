@@ -27,12 +27,12 @@ The paid event becomes `kind: 'sc', mode: 1` at normalization. Missing required
 schema fields fail visibly rather than switching source formats.
 
 The B capsule has a dark `header_color` head with white currency/amount, a light
-`bg_color` body with dark text, a circular static avatar with a white ring, and
+`bg_color` body with tier-colored text, a circular static avatar with a white ring, and
 the same height as ordinary text. Body text is 0.8 of the ordinary font size,
 single-line and limited to 40 Unicode grapheme clusters, plus an ellipsis.
 Amounts use a text font, avoiding colored emoji digits on hosts without the named
-CJK fonts. The platform `font_color` belongs to its dark-card design, so B uses
-dark text on its light body. Geometry caps even pathological glyph widths at 48
+CJK fonts. Body text uses the tier `header_color` darkened by 25%, without a
+stroke; the platform `font_color` belongs to its dark-card design. Geometry caps even pathological glyph widths at 48
 body font sizes.
 
 SC moves at `200 * width / 1920` pixels/second and uses 85% opacity. Ordinary
