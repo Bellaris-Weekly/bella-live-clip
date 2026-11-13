@@ -23,7 +23,7 @@ test('manual marks use UTC+8, session date, midnight and the most recent past fa
     assert.throws(() => parseManualTime(bad, range));
 });
 
-test('pending create persists immediately, holds its note window, and replays the same immutable UUID after response loss', async () => {
+test('a queued create persists, backs off after a lost response, and replays the same immutable UUID', async () => {
   const values = storage(),
     requests = [];
   let now = 1000,
@@ -37,15 +37,10 @@ test('pending create persists immediately, holds its note window, and replays th
     },
   };
   let queue = createPendingQueue({...values, client, now: () => now});
-  queue.add({id: 'uuid', room_id: 3, at: 1234, note: ''});
-  assert.equal(queue.entries().length, 1);
-  await queue.flush(true);
-  assert.equal(requests.length, 0, 'opening another panel cannot send an unfinished note');
-  queue.finish('uuid', 'note');
+  queue.add({id: 'uuid', room_id: 3, at: 1234, note: 'note'});
   await queue.flush();
-  assert.equal(requests.length, 1);
-  assert.equal(queue.entries().length, 1);
-  queue.finish('uuid', 'different');
+  assert.equal(requests.length, 1, 'uploads as soon as it is queued');
+  assert.equal(queue.entries()[0].error, 'response lost');
   await queue.flush();
   assert.equal(requests.length, 1, 'backoff suppresses an early retry');
   queue.stop();
@@ -60,30 +55,34 @@ test('pending create persists immediately, holds its note window, and replays th
   queue.stop();
 });
 
-test('ignored input saves without a note; separate tab writes survive; logged-out queue does not upload', async () => {
+test('separate tab writes survive, a logged-out queue does not upload, and rejected payloads are dropped and reported', async () => {
   const values = storage(),
-    sent = [];
-  let now = 0,
-    loggedIn = true;
+    sent = [],
+    failures = [];
+  let loggedIn = true;
   const client = {
     identity: () => loggedIn,
     async request(path, {body}) {
       sent.push({path, body});
+      if (body.note === 'bad') throw Object.assign(new Error('at: Input should be a valid integer'), {status: 422});
       return {id: path.split('/').at(-1), ...body};
     },
   };
-  const a = createPendingQueue({...values, client, now: () => now});
-  const b = createPendingQueue({...values, client, now: () => now});
+  const a = createPendingQueue({...values, client, failed: (mark, error) => failures.push([mark.id, error.message])});
+  const b = createPendingQueue({...values, client});
+  loggedIn = false;
   a.add({id: 'a', room_id: 1, at: 1, note: ''});
   b.add({id: 'b', room_id: 2, at: 2, note: ''});
-  now = 16000;
-  loggedIn = false;
   await a.flush(true);
   assert.equal(sent.length, 0);
   loggedIn = true;
   await b.flush(true);
   assert.equal(sent.length, 2);
-  assert.ok(sent.every(item => item.body.note === ''));
+  assert.equal(a.entries().length, 0);
+  a.add({id: 'c', room_id: 1, at: 1.5, note: 'bad'});
+  await a.flush();
+  assert.equal(a.entries().length, 0, 'a validation error is not retried');
+  assert.deepEqual(failures, [['c', 'at: Input should be a valid integer']]);
   a.stop();
   b.stop();
 });

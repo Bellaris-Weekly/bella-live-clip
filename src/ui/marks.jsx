@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {Icon} from './icon.jsx';
 import {markTime} from '../preview/marks.js';
+import {AUTOSAVE_SECONDS} from '../preview/marks-session.js';
 
 const FILTERS = [
   ['all', '全部', () => true],
@@ -20,7 +21,13 @@ function describe(key, value) {
 }
 
 function MarkState({mark}) {
-  if (mark.pending) return <span class="badge wait">未同步</span>;
+  // Uploads are silent; only an upload that has already failed once is shown.
+  if (mark.pending)
+    return mark.error ? (
+      <span class="badge wait" title={mark.error}>
+        未同步
+      </span>
+    ) : null;
   if (mark.deleted) return <span class="badge bad">已删除</span>;
   if (BV.test(mark.bvid || ''))
     return (
@@ -83,8 +90,8 @@ function MarkRow({mark, selected, actions, onCompose}) {
         onClick={() => actions.jump(mark)}
       >
         <span class="mark-time mono">{markTime(mark.at)}</span>
-        <span class={`mark-note${mark.note ? '' : ' is-empty'}`}>{mark.note || '未写备注'}</span>
-        <span class="mark-who">{mark.created_by}</span>
+        <span class={`mark-note${mark.note ? '' : ' is-empty'}`}>{mark.note || '无备注'}</span>
+        {!mark.mine && <span class="mark-who">{mark.created_by}</span>}
       </button>
       <span class="mark-side">
         <MarkState mark={mark} />
@@ -131,40 +138,56 @@ function MarkRow({mark, selected, actions, onCompose}) {
   );
 }
 
-function CaptureCard({capture, actions}) {
+// The draft of a mark just taken: the time can still be moved before the note is saved.
+function CaptureRow({capture, actions}) {
   const input = useRef(null);
   useEffect(() => input.current?.focus({preventScroll: true}), [capture.id]);
   return (
-    <div class="capture-card" role="group" aria-label="补充备注">
-      <div class="capture-top">
-        <span class="capture-ok">
-          <Icon name="check" />
-        </span>
+    <div class="capture" role="group" aria-label="刚记的轴">
+      <div class="capture-time">
         <b class="mono">{markTime(capture.at)}</b>
-        <span>已记轴，补一句备注</span>
+        <button type="button" class="small ghost" title="时间往前 5 秒" onClick={() => actions.shiftCapture(-5)}>
+          −5s
+        </button>
+        <button type="button" class="small ghost" title="时间往后 5 秒" onClick={() => actions.shiftCapture(5)}>
+          +5s
+        </button>
+        <button type="button" class="small ghost" title="改成当前时间" onClick={actions.restamp}>
+          现在
+        </button>
+        <span class="spacer" />
+        <button type="button" class="icon small" aria-label="放弃这条轴" title="放弃" onClick={actions.discardCapture}>
+          <Icon name="close" />
+        </button>
       </div>
-      <input
-        ref={input}
-        maxLength={200}
-        aria-label="轴备注"
-        placeholder="备注"
-        value={capture.note}
-        onInput={event => actions.setNote(event.currentTarget.value)}
-        onKeyDown={event => {
-          event.stopPropagation();
-          if (event.key === 'Enter' || event.key === 'Escape') {
-            event.preventDefault();
-            actions.finishCapture(event.key === 'Enter' ? event.currentTarget.value : '');
-          }
+      <form
+        class="capture-note"
+        onSubmit={event => {
+          event.preventDefault();
+          actions.saveCapture();
         }}
-      />
-      <div class="capture-meta">
-        <span>Enter 保存 · Esc 留空</span>
-        <span>停下 12 秒自动保存</span>
-      </div>
-      <div class="meter capture-timer">
-        <span key={capture.id} />
-      </div>
+      >
+        <input
+          ref={input}
+          maxLength={200}
+          aria-label="轴备注"
+          placeholder="备注，Enter 保存"
+          value={capture.note}
+          onInput={event => actions.setNote(event.currentTarget.value)}
+          onFocus={actions.holdCapture}
+          onBlur={actions.releaseCapture}
+          onKeyDown={event => {
+            event.stopPropagation();
+            if (event.key === 'Escape') actions.discardCapture();
+          }}
+        />
+        <button class="small tonal">保存</button>
+      </form>
+      {capture.deadline && (
+        <div class="meter capture-timer" title={`${AUTOSAVE_SECONDS} 秒后自动保存`}>
+          <span key={capture.deadline} style={{animationDuration: `${AUTOSAVE_SECONDS}s`}} />
+        </div>
+      )}
     </div>
   );
 }
@@ -251,7 +274,7 @@ export function MarksPanel({marks: session, onCompose}) {
           <Icon name="refresh" />
         </button>
       </div>
-      {capture && <CaptureCard capture={capture} actions={actions} />}
+      {capture && <CaptureRow capture={capture} actions={actions} />}
       <form
         class="mark-add"
         onSubmit={async event => {
@@ -293,7 +316,7 @@ export function MarksPanel({marks: session, onCompose}) {
         />
       </div>
       <div class="side-foot">
-        <span class="kbd">{state.shortcut.value}</span>随时记轴 · 每 10 秒同步
+        <span class="kbd">{state.shortcut.value}</span>随时记轴
       </div>
       {state.history.value && <History history={state.history.value} actions={actions} />}
     </>
@@ -328,16 +351,16 @@ export function MiniMarks({marks: session, onExpand}) {
   if (!state.mini.value) return null;
   const live = state.live.value,
     capture = state.capture.value;
-  const recent = state.items.value
-    .filter(mark => !mark.deleted && mark.id !== capture?.id)
-    .slice(-4)
-    .reverse();
+  const kept = state.items.value.filter(mark => !mark.deleted);
+  const recent = kept.slice(-4).reverse();
   return (
     <section id="miniMarks" aria-label="记轴小窗">
       <div class="mini-head">
         <span class="live-title">
           {live ? <i class="live-dot" /> : null}
-          <span>{live ? `${live.member || ''}直播中` : '记轴'}</span>
+          <span>
+            {live ? `${live.member || ''}直播中` : '记轴'} · {kept.length} 条
+          </span>
         </span>
         <button type="button" class="icon small" aria-label="展开剪辑" title="展开剪辑" onClick={onExpand}>
           <Icon name="expand" />
@@ -353,18 +376,10 @@ export function MiniMarks({marks: session, onExpand}) {
           <span class="kbd">{state.shortcut.value}</span>
         </button>
       </div>
-      {capture && <CaptureCard capture={capture} actions={actions} />}
-      <p class="section-label">本场 {state.items.value.filter(mark => !mark.deleted).length} 条</p>
+      {capture && <CaptureRow capture={capture} actions={actions} />}
       {/* Without the editor there is nothing to jump to; a tap edits the note instead. */}
       <MarkList marks={recent} editingId={state.editing.value} actions={{...actions, jump: actions.edit}} />
       {state.error.value && <p class="inline-error mark-error">{state.error.value}</p>}
-      <div class="mini-foot">
-        <span>每 10 秒同步</span>
-        <button type="button" class="link small" onClick={onExpand}>
-          展开剪辑
-          <Icon name="chevron" />
-        </button>
-      </div>
       {state.history.value && <History history={state.history.value} actions={actions} />}
     </section>
   );

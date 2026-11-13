@@ -102,7 +102,7 @@ export function ComposeSheet({composer}) {
             {view.mark && (
               <div class="linked" data-mark>
                 <span class="mono">{markTime(view.mark.at)}</span>
-                <span class="linked-note">{view.mark.note || '未写备注'}</span>
+                <span class="linked-note">{view.mark.note || '无备注'}</span>
                 <button type="button" class="link small" disabled={view.markLocked} onClick={actions.unlinkMark}>
                   解除关联
                 </button>

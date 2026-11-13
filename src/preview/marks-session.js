@@ -1,5 +1,5 @@
 import {batch, signal} from '@preact/signals';
-import {createPendingQueue, parseManualTime} from './marks.js';
+import {createPendingQueue, markTime, parseManualTime} from './marks.js';
 import {createReplayClock, markSelection} from './replay.js';
 import {utcToReplay} from '../media/replay-clock.js';
 import {bindShortcut} from '../app/shortcut-field.js';
@@ -7,7 +7,8 @@ import {DEFAULT_SHORTCUT, matchesShortcut, normalizeShortcut} from '../ui/shortc
 import {roomIdFromUrl} from '../domain/records.js';
 
 export const MARK_SHORTCUT = {...DEFAULT_SHORTCUT, code: 'KeyM'};
-const NOTE_SECONDS = 12;
+// A note that has been written and left alone is saved after this long.
+export const AUTOSAVE_SECONDS = 8;
 
 // Shared marks for the open recording (editor side column) or the live room this page shows
 // (the mini window). Marks are absolute UTC+8 instants; they map to recording time only once
@@ -23,6 +24,7 @@ export function createMarksSession({
   pageUrl,
   session,
   notify,
+  report,
   onLogout,
 }) {
   const state = {
@@ -55,6 +57,10 @@ export function createMarksSession({
       if (mark) records = [...records.filter(item => item.id !== mark.id), mark];
       render();
     },
+    failed(mark, error) {
+      notify(`${markTime(mark.at)} 的轴没有传上创作台：${error.message}`, {error: true});
+      report(error, {record: {room: mark.room_id}});
+    },
   });
   // The editor's recording wins; otherwise the live room of this page, while it is live.
   function range() {
@@ -81,7 +87,7 @@ export function createMarksSession({
       return;
     }
     const me = client.identity()?.name || '';
-    const pending = queue.entries().map(entry => ({...entry.mark, pending: true, created_by: me}));
+    const pending = queue.entries().map(entry => ({...entry.mark, pending: true, error: entry.error, created_by: me}));
     const {after} = state.margins.value;
     state.items.value = [...new Map([...records, ...pending].map(mark => [mark.id, mark])).values()]
       .filter(mark => Number(mark.room_id) === Number(current.room) && mark.at >= current.from && mark.at < current.to)
@@ -185,11 +191,12 @@ export function createMarksSession({
     state.live.value = live.live ? {room: live.room, start: live.start, title: live.title, member: live.member} : null;
     return live.room;
   }
+  // The draft lives only in memory until it is saved; an empty draft is never uploaded by itself.
   async function capture() {
     if (!client.identity()) return;
     const at = client.serverNow(),
       id = crypto.randomUUID();
-    finishCapture(state.capture.value?.note ?? '');
+    settleCapture();
     const current = session.record();
     const pageRoom = roomIdFromUrl(pageUrl());
     let room = session.isOpen() && current?.kind !== 'submission' ? current?.room : null;
@@ -199,21 +206,40 @@ export function createMarksSession({
       notify('请先打开直播或回放场次', {error: true});
       return;
     }
-    queue.add({id, room_id: room, at, note: ''});
     batch(() => {
-      state.capture.value = {id, at, note: ''};
+      state.capture.value = {id, at, room, note: '', deadline: null};
       if (!session.isOpen()) state.mini.value = true;
     });
-    clearTimeout(captureTimer);
-    captureTimer = setTimeout(() => finishCapture(state.capture.value?.note ?? ''), NOTE_SECONDS * 1000);
     void refresh();
   }
-  function finishCapture(note) {
+  function updateCapture(patch) {
+    if (state.capture.value) state.capture.value = {...state.capture.value, ...patch};
+  }
+  function holdCapture() {
+    clearTimeout(captureTimer);
+    updateCapture({deadline: null});
+  }
+  function releaseCapture() {
     const current = state.capture.value;
-    if (!current) return;
+    if (!current || !current.note.trim() || current.deadline) return;
+    clearTimeout(captureTimer);
+    captureTimer = setTimeout(() => saveCapture(), AUTOSAVE_SECONDS * 1000);
+    updateCapture({deadline: Date.now() + AUTOSAVE_SECONDS * 1000});
+  }
+  function closeCapture() {
+    const current = state.capture.value;
     clearTimeout(captureTimer);
     state.capture.value = null;
-    queue.finish(current.id, note);
+    return current;
+  }
+  function saveCapture(note = state.capture.value?.note ?? '') {
+    const current = closeCapture();
+    if (current) queue.add({id: current.id, room_id: current.room, at: current.at, note: note.trim()});
+  }
+  // Written notes are kept when the draft has to go away; blank drafts are dropped.
+  function settleCapture() {
+    if (state.capture.value?.note.trim()) saveCapture();
+    else closeCapture();
   }
   bindShortcut({
     root,
@@ -230,7 +256,7 @@ export function createMarksSession({
   });
   const authChanged = () => {
     if (!client.identity()) {
-      finishCapture('');
+      closeCapture();
       waiting = null;
       records = [];
       parts = [];
@@ -270,17 +296,20 @@ export function createMarksSession({
       !matchesShortcut(value, normalizeShortcut(get('marks.shortcut', MARK_SHORTCUT)) || MARK_SHORTCUT),
     actions: {
       capture: () => void run(capture),
-      setNote: note => state.capture.value && (state.capture.value = {...state.capture.value, note}),
-      finishCapture,
+      setNote: note => updateCapture({note}),
+      holdCapture,
+      releaseCapture,
+      saveCapture,
+      discardCapture: closeCapture,
+      restamp: () => updateCapture({at: client.serverNow()}),
+      shiftCapture: seconds =>
+        updateCapture({at: Math.min(client.serverNow(), state.capture.value.at + seconds * 1000)}),
       add: text =>
         run(async () => {
           const current = range();
           if (!current) throw new Error('请先打开直播或回放场次');
           const parsed = parseManualTime(text, {...current, now: client.serverNow()});
-          const id = crypto.randomUUID();
-          queue.add({id, room_id: current.room, ...parsed});
-          queue.finish(id, parsed.note);
-          notify('已补记');
+          queue.add({id: crypto.randomUUID(), room_id: current.room, ...parsed});
         }),
       jump: mark => run(() => jump(mark)),
       edit: mark => (state.editing.value = mark.id),
@@ -314,7 +343,7 @@ export function createMarksSession({
         void refresh(true);
       },
       hideMini: () => {
-        finishCapture(state.capture.value?.note ?? '');
+        settleCapture();
         state.mini.value = false;
       },
     },

@@ -85,15 +85,19 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
               }
             }
             if (response.status < 200 || response.status >= 300) {
+              const detail = data?.detail;
               const error = new Error(
-                typeof data?.detail === 'string'
-                  ? data.detail
-                  : data?.detail?.message || `创作台请求失败（${response.status}）`,
+                typeof detail === 'string'
+                  ? detail
+                  : // FastAPI validation errors arrive as a list of field problems.
+                    detail?.message ||
+                      (Array.isArray(detail) && detail.map(item => `${item.loc?.at(-1)}: ${item.msg}`).join('；')) ||
+                      `创作台请求失败（${response.status}）`,
               );
               error.status = response.status;
-              error.code = data?.detail?.code;
-              error.retryAfter = data?.detail?.retry_after;
-              error.current = data?.detail?.current;
+              error.code = detail?.code;
+              error.retryAfter = detail?.retry_after;
+              error.current = detail?.current;
               finish(reject, error);
             } else finish(resolve, data);
           },
@@ -150,7 +154,8 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
     check,
     logout,
     syncClock,
-    serverNow: () => now() + offset,
+    // Whole milliseconds: the studio API rejects fractional timestamps.
+    serverNow: () => Math.round(now() + offset),
     identity: () => identity,
     subscribe(listener) {
       listeners.add(listener);

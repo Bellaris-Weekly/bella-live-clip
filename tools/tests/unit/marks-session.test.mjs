@@ -217,17 +217,34 @@ async function session(t) {
   };
 }
 
-test('marks capture uses server time immediately, resolves page short IDs with panel closed, saves notes, and avoids shortcut conflicts', async t => {
+test('marks capture drafts in memory, moves the time, saves notes, drops blank drafts, and avoids shortcut conflicts', async t => {
   const f = await session(t);
   await f.ui.refresh();
   f.actions.capture();
   await tick();
-  let entry = [...f.values.values()].find(value => value?.mark);
-  assert.equal(entry.mark.at, 1050000);
-  assert.equal(entry.mark.room_id, 99);
+  assert.equal(
+    [...f.values.values()].some(value => value?.mark),
+    false,
+    'a draft is not queued yet',
+  );
   assert.equal(f.state.capture.value.at, 1050000);
-  assert.equal(f.state.mini.value, false, 'the open panel shows the note card itself');
-  f.actions.finishCapture('note');
+  assert.equal(f.state.capture.value.room, 99);
+  assert.equal(f.state.mini.value, false, 'the open panel shows the note row itself');
+  f.actions.shiftCapture(-5);
+  assert.equal(f.state.capture.value.at, 1045000);
+  f.actions.shiftCapture(30);
+  assert.equal(f.state.capture.value.at, 1050000, 'never later than now');
+  f.actions.shiftCapture(-5);
+  f.actions.restamp();
+  assert.equal(f.state.capture.value.at, 1050000);
+  f.actions.releaseCapture();
+  assert.equal(f.state.capture.value.deadline, null, 'a blank note is not auto-saved');
+  f.actions.setNote(' note ');
+  f.actions.releaseCapture();
+  assert.ok(f.state.capture.value.deadline, 'a written note counts down once left alone');
+  f.actions.holdCapture();
+  assert.equal(f.state.capture.value.deadline, null, 'focusing again stops the countdown');
+  f.actions.saveCapture();
   await tick();
   const put = f.requests.find(request => request.method === 'PUT');
   assert.equal(put.body.note, 'note');
@@ -240,12 +257,18 @@ test('marks capture uses server time immediately, resolves page short IDs with p
     new f.w.KeyboardEvent('keydown', {code: 'KeyM', key: 'M', altKey: true, shiftKey: true, bubbles: true}),
   );
   await tick();
-  entry = [...f.values.values()].find(value => value?.mark);
-  assert.equal(entry.mark.room_id, 12000, 'closed panel uses the real room of the current page');
+  assert.equal(f.state.capture.value.room, 12000, 'closed panel uses the real room of the current page');
   assert.equal(f.state.mini.value, true, 'marking with the panel closed opens the mini window');
-  f.actions.finishCapture('');
+  const puts = f.requests.filter(request => request.method === 'PUT').length;
+  f.actions.capture();
   await tick();
-  assert.equal(f.requests.filter(request => request.method === 'PUT').at(-1).body.note, '');
+  assert.equal(
+    f.requests.filter(request => request.method === 'PUT').length,
+    puts,
+    'a replaced blank draft is dropped',
+  );
+  f.actions.discardCapture();
+  assert.equal(f.state.capture.value, null);
   const field = f.root.getElementById('markShortcut');
   field.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'C', code: 'KeyC', altKey: true, shiftKey: true}));
   assert.equal(f.store.get('marks.shortcut', null), null, 'Alt+Shift+C cannot be assigned to marks');

@@ -963,6 +963,7 @@ export function createApp({
       mediaRequest,
       pageUrl: readPageUrl,
       notify: (text, options) => toast(store, text, options),
+      report: (error, details) => diagnostics.begin('mark_sync', {pageUrl: readPageUrl(), ...details}).fail(error),
       onLogout() {
         composer.logout();
         controller?.abort();

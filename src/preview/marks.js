@@ -19,8 +19,9 @@ export function parseManualTime(text, {from, to, now}) {
 export const markTime = at => new Date(at + ZONE).toISOString().slice(11, 19);
 
 // Each UUID has its own key: tabs never overwrite each other's queue snapshot.
-// A create payload is immutable once sent, including when its response is lost.
-export function createPendingQueue({get, set, keys, client, now = Date.now, changed = () => {}}) {
+// A create payload is immutable once queued, including when its response is lost.
+const RETRYABLE = new Set([401, 408, 429]);
+export function createPendingQueue({get, set, keys, client, now = Date.now, changed = () => {}, failed = () => {}}) {
   const prefix = 'studio.pending.';
   let running,
     timer,
@@ -39,19 +40,24 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
   async function replay(force) {
     for (const entry of entries()) {
       if (stopped || !client.identity()) break;
-      if (entry.next > now() && (!force || !entry.finalized)) continue;
-      entry.finalized = true;
-      set(prefix + entry.mark.id, entry);
+      if (entry.next > now() && !force) continue;
       try {
         const {room_id, at, note} = entry.mark;
         const mark = await client.request(`/marks/${entry.mark.id}`, {method: 'PUT', body: {room_id, at, note}});
         set(prefix + entry.mark.id, null);
         changed(mark);
       } catch (error) {
-        entry.attempt = (entry.attempt || 0) + 1;
-        entry.next = now() + Math.min(300000, 1000 * 2 ** Math.min(entry.attempt, 9));
-        set(prefix + entry.mark.id, entry);
+        // A rejected payload never succeeds on retry; the server keeps the mark on 409.
+        const permanent = error.status >= 400 && error.status < 500 && !RETRYABLE.has(error.status);
+        if (permanent) set(prefix + entry.mark.id, null);
+        else {
+          entry.attempt = (entry.attempt || 0) + 1;
+          entry.next = now() + Math.min(300000, 1000 * 2 ** Math.min(entry.attempt, 9));
+          entry.error = error.message;
+          set(prefix + entry.mark.id, entry);
+        }
         changed();
+        if (permanent) failed(entry.mark, error);
         if (error.status === 401) break;
       }
     }
@@ -68,19 +74,7 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
     entries,
     flush,
     add(mark) {
-      set(prefix + mark.id, {mark, next: now() + 15000});
-      changed();
-      schedule();
-    },
-    finish(id, note) {
-      const key = prefix + id,
-        entry = get(key, null);
-      // Note input is closed before this deadline; retries always replay the exact body.
-      if (!entry || entry.finalized) return;
-      entry.finalized = true;
-      entry.mark.note = note;
-      entry.next = 0;
-      set(key, entry);
+      set(prefix + mark.id, {mark, next: 0});
       changed();
       void flush();
     },
