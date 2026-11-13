@@ -1006,6 +1006,7 @@ export function createApp({
         if (await marks.actions.jump(mark)) composer.actions.start();
       },
       expand: () => void open(),
+      bindMiniWindow: panelWindow.bindMiniWindow,
     };
     // Block stale controls and synthetic UI events immediately on logout.
     for (const type of ['click', 'keydown', 'change', 'submit'])

@@ -6,7 +6,7 @@ import {Settings} from './settings.jsx';
 import {FeedbackSheet} from './feedback.jsx';
 import {dismissToast} from '../app/store.js';
 
-const EDGES = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'];
+import {WindowResizeHandles} from './window-resize-handles.jsx';
 
 const BrandMark = () => (
   <span class="brand-mark" aria-hidden="true">
@@ -45,7 +45,7 @@ function Launcher({store, actions}) {
 function Mini({store}) {
   const extras = store.extras.value;
   if (!extras?.marks || store.open.value || !store.identity.value) return null;
-  return <extras.ui.MiniMarks marks={extras.marks} onExpand={extras.expand} />;
+  return <extras.ui.MiniMarks marks={extras.marks} onExpand={extras.expand} bindWindow={extras.bindMiniWindow} />;
 }
 
 function Header({store, actions, loggedOut, feedback}) {
@@ -254,9 +254,7 @@ function Panel({store, actions, preview, members, studioUrl, feedback}) {
       </div>
       <Settings store={store} actions={actions} preview={preview} />
       {feedback && <FeedbackSheet store={store} actions={actions} />}
-      {EDGES.map(edge => (
-        <span key={edge} class="resize" data-edge={edge} />
-      ))}
+      <WindowResizeHandles />
     </section>
   );
 }

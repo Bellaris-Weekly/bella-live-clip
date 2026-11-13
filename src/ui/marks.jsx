@@ -1,5 +1,6 @@
-import {useEffect, useRef, useState} from 'preact/hooks';
+import {useEffect, useLayoutEffect, useRef, useState} from 'preact/hooks';
 import {Icon} from './icon.jsx';
+import {WindowResizeHandles} from './window-resize-handles.jsx';
 import {markTime} from '../preview/marks.js';
 import {AUTOSAVE_SECONDS} from '../preview/marks-session.js';
 
@@ -346,15 +347,18 @@ export function MarkPins({marks: session, view}) {
 }
 
 // Live pages: a small window that leaves the stream visible.
-export function MiniMarks({marks: session, onExpand}) {
+export function MiniMarks({marks: session, onExpand, bindWindow}) {
   const {state, actions} = session;
-  if (!state.mini.value) return null;
+  const element = useRef(null);
+  const visible = state.mini.value;
+  useLayoutEffect(() => (visible ? bindWindow?.(element.current) : undefined), [visible, bindWindow]);
+  if (!visible) return null;
   const live = state.live.value,
     capture = state.capture.value;
   const kept = state.items.value.filter(mark => !mark.deleted);
   const recent = kept.slice(-4).reverse();
   return (
-    <section id="miniMarks" aria-label="记轴小窗">
+    <section id="miniMarks" ref={element} aria-label="记轴小窗">
       <div class="mini-head">
         <span class="live-title">
           {live ? <i class="live-dot" /> : null}
@@ -376,11 +380,14 @@ export function MiniMarks({marks: session, onExpand}) {
           <span class="kbd">{state.shortcut.value}</span>
         </button>
       </div>
-      {capture && <CaptureRow capture={capture} actions={actions} />}
-      {/* Without the editor there is nothing to jump to; a tap edits the note instead. */}
-      <MarkList marks={recent} editingId={state.editing.value} actions={{...actions, jump: actions.edit}} />
-      {state.error.value && <p class="inline-error mark-error">{state.error.value}</p>}
-      {state.history.value && <History history={state.history.value} actions={actions} />}
+      <div class="mini-body">
+        {capture && <CaptureRow capture={capture} actions={actions} />}
+        {/* Without the editor there is nothing to jump to; a tap edits the note instead. */}
+        <MarkList marks={recent} editingId={state.editing.value} actions={{...actions, jump: actions.edit}} />
+        {state.error.value && <p class="inline-error mark-error">{state.error.value}</p>}
+        {state.history.value && <History history={state.history.value} actions={actions} />}
+      </div>
+      <WindowResizeHandles />
     </section>
   );
 }

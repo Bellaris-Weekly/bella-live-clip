@@ -69,6 +69,7 @@ function element() {
       this.children = nodes;
     },
     querySelector: () => null,
+    querySelectorAll: () => [],
     get childElementCount() {
       return this.children.length;
     },

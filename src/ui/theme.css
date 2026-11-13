@@ -691,6 +691,7 @@ fieldset {
   animation: panel-enter var(--spring-smooth-duration) var(--spring-smooth) both;
 }
 #header {
+  touch-action: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -789,10 +790,10 @@ fieldset {
   cursor: ns-resize;
 }
 .resize[data-edge='n'] {
-  top: -5px;
+  top: 0;
 }
 .resize[data-edge='s'] {
-  bottom: -5px;
+  bottom: 0;
 }
 .resize[data-edge='e'],
 .resize[data-edge='w'] {
@@ -802,10 +803,10 @@ fieldset {
   cursor: ew-resize;
 }
 .resize[data-edge='e'] {
-  right: -5px;
+  right: 0;
 }
 .resize[data-edge='w'] {
-  left: -5px;
+  left: 0;
 }
 .resize[data-edge='nw'],
 .resize[data-edge='ne'],
@@ -815,23 +816,23 @@ fieldset {
   height: 18px;
 }
 .resize[data-edge='nw'] {
-  top: -5px;
-  left: -5px;
+  top: 0;
+  left: 0;
   cursor: nwse-resize;
 }
 .resize[data-edge='ne'] {
-  top: -5px;
-  right: -5px;
+  top: 0;
+  right: 0;
   cursor: nesw-resize;
 }
 .resize[data-edge='sw'] {
-  bottom: -5px;
-  left: -5px;
+  bottom: 0;
+  left: 0;
   cursor: nesw-resize;
 }
 .resize[data-edge='se'] {
-  bottom: -5px;
-  right: -5px;
+  bottom: 0;
+  right: 0;
   cursor: nwse-resize;
 }
 
@@ -2124,14 +2125,12 @@ dialog.history::backdrop {
 /* Mini window: live pages keep the stream visible while marking. */
 #miniMarks {
   position: fixed;
-  right: 22px;
-  bottom: 104px;
   z-index: 2147483638;
   display: flex;
   flex-direction: column;
   width: 320px;
-  max-height: calc(100vh - 140px);
-  overflow: auto;
+  height: 300px;
+  overflow: hidden;
   padding-bottom: 4px;
   background: hsl(var(--background));
   border: 1px solid hsl(var(--border) / 0.7);
@@ -2139,11 +2138,25 @@ dialog.history::backdrop {
   box-shadow: var(--shadow-floating);
   animation: rise var(--spring-smooth-duration) var(--spring-smooth) both;
 }
+.mini-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .mini-head {
+  flex: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 10px 8px 8px 16px;
+}
+.mini-head:active {
+  cursor: grabbing;
 }
 .live-title {
   display: flex;
@@ -2155,6 +2168,7 @@ dialog.history::backdrop {
   font-weight: 700;
 }
 .mini-capture {
+  flex: none;
   padding: 0 12px 10px;
 }
 .mini-capture button {

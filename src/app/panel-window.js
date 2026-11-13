@@ -1,5 +1,6 @@
 import {clamp} from '../shared/math.js';
-import {constrainRect, resizeRect} from '../ui/panel-geometry.js';
+import {constrainRect} from '../ui/panel-geometry.js';
+import {bindWindowDrag, createFloatingWindow} from './floating-window.js';
 
 // Everything about where the panel and launcher sit: dragging, resizing and
 // keeping both on screen. Positions persist across pages.
@@ -13,49 +14,15 @@ export function createPanelWindow({root, get, set}) {
       height = Math.min(920, innerHeight - 40);
     return constrainRect({left: (innerWidth - width) / 2, top: (innerHeight - height) / 2, width, height}, viewport());
   };
-  let rect = constrainRect(get('windowV3', defaults()), viewport());
-  const applyRect = () =>
-    Object.assign($('panel').style, Object.fromEntries(Object.entries(rect).map(([k, v]) => [k, `${v}px`])));
-  applyRect();
-  function drag(element, onMove, onEnd) {
-    element.addEventListener('pointerdown', e => {
-      if (element !== $('launcher') && $('panel').hasAttribute('data-logged-out')) return;
-      if (e.button !== 0 || (e.target.closest('button,input,select,a') && element !== $('launcher'))) return;
-      const x = e.clientX,
-        y = e.clientY,
-        initial = {...rect};
-      // Capture on the pressed launcher button, so a press without a drag still clicks that button.
-      (e.target.closest('button') ?? element).setPointerCapture(e.pointerId);
-      e.preventDefault();
-      const move = ev => onMove(ev.clientX - x, ev.clientY - y, initial);
-      const finish = () => {
-        element.removeEventListener('pointermove', move);
-        for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'])
-          element.removeEventListener(name, finish);
-        onEnd?.();
-      };
-      element.addEventListener('pointermove', move);
-      for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) element.addEventListener(name, finish);
-    });
-  }
-  drag(
-    $('header'),
-    (dx, dy, r) => {
-      rect = constrainRect({...r, left: r.left + dx, top: r.top + dy}, viewport());
-      applyRect();
-    },
-    () => set('windowV3', rect),
-  );
-  root.querySelectorAll('[data-edge]').forEach(el =>
-    drag(
-      el,
-      (dx, dy, r) => {
-        rect = resizeRect(r, el.dataset.edge, dx, dy, viewport());
-        applyRect();
-      },
-      () => set('windowV3', rect),
-    ),
-  );
+  createFloatingWindow({
+    element: $('panel'),
+    header: $('header'),
+    get,
+    set,
+    key: 'windowV3',
+    defaults,
+    enabled: () => !$('panel').hasAttribute('data-logged-out'),
+  });
   let launcherMoved = false,
     launcherStart;
   const savedLauncher = get('launcher', null);
@@ -73,24 +40,33 @@ export function createPanelWindow({root, get, set}) {
     launcherMoved = false;
     launcherStart = $('launcher').getBoundingClientRect();
   });
-  drag(
-    $('launcher'),
-    (dx, dy) => {
+  bindWindowDrag($('launcher'), {
+    move(dx, dy) {
       if (Math.abs(dx) + Math.abs(dy) > 4) launcherMoved = true;
       if (launcherMoved) moveLauncher(launcherStart.left + dx, launcherStart.top + dy);
     },
-    () => {
+    end() {
       if (launcherMoved) {
         const b = $('launcher').getBoundingClientRect();
         set('launcher', {left: b.left, top: b.top});
       }
     },
-  );
+  });
   window.addEventListener('resize', () => {
-    rect = constrainRect(rect, viewport());
-    applyRect();
     const b = $('launcher').getBoundingClientRect();
     if (b.right > innerWidth || b.bottom > innerHeight) moveLauncher(b.left, b.top);
   });
-  return {launcherDragged: () => launcherMoved};
+  return {
+    launcherDragged: () => launcherMoved,
+    bindMiniWindow: element =>
+      createFloatingWindow({
+        element,
+        header: element.querySelector('.mini-head'),
+        get,
+        set,
+        key: 'miniMarksWindow',
+        defaults: () => ({left: innerWidth - 342, top: innerHeight - 404, width: 320, height: 300}),
+        minimum: {width: 280, height: 200},
+      }),
+  };
 }
