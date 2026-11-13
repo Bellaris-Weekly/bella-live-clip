@@ -192,7 +192,7 @@ test('only a full-session API request marks the part start as usable for the clo
   assert.throws(() => partOrigin(clipped, 50), /整场开头/);
 });
 
-test('sealed archives use ranges and never read gift/SC column payloads', async () => {
+test('sealed archives read comment sections and exclude gift/audience payloads', async () => {
   const {parquetMetadataAsync} = await import('hyparquet');
   const metadata = await parquetMetadataAsync(fixture);
   const ranges = [];
@@ -218,7 +218,7 @@ test('sealed archives use ranges and never read gift/SC column payloads', async 
   };
   const result = await loadComments({room: 1, key: 'x'}, {origin: 0, start: 90, end: 110, fetcher});
   assert.equal(result.length, 2);
-  const excluded = metadata.row_groups.slice(1).flatMap(group =>
+  const excluded = [metadata.row_groups[1], metadata.row_groups[3]].flatMap(group =>
     group.columns.map(column => {
       const m = column.meta_data;
       const start = Number(m.dictionary_page_offset ?? m.data_page_offset);
@@ -431,8 +431,8 @@ test('three archive partitions reuse their row groups across windows and retry f
     const first = await reader.read({origin: 0, start: 90, end: 99});
     const count = payloadReads;
     const second = await reader.read({origin: 0, start: 99, end: 110});
-    assert.equal(first.length, 3);
-    assert.equal(second.length, 3);
+    assert.equal(first.length, 1, 'overlapping archive parts keep each receipt once');
+    assert.equal(second.length, 1);
     assert.equal(payloadReads, count, 'all three row groups stay cached within the byte budget');
   } finally {
     await reader.close();

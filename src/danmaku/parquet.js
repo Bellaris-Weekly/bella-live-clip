@@ -28,11 +28,18 @@ function indexFor(metadata) {
   if (indexes.has(metadata)) return indexes.get(metadata);
   const meta = archiveValues(metadata);
   if (meta.live_archive_version !== '1' || !meta.sections) throw new Error('弹幕归档格式不支持。');
-  const selected = JSON.parse(meta.sections).danmaku ?? [];
-  if (!Array.isArray(selected) || selected.some(i => !Number.isInteger(i) || i < 0 || i >= metadata.row_groups.length))
-    throw new Error('弹幕归档分区索引无效。');
-  const sections = new Set(selected),
+  const sections = new Map(),
     groups = [];
+  const layout = JSON.parse(meta.sections);
+  for (const section of ['danmaku', 'sc']) {
+    const selected = layout[section] ?? [];
+    if (
+      !Array.isArray(selected) ||
+      selected.some(i => !Number.isInteger(i) || i < 0 || i >= metadata.row_groups.length || sections.has(i))
+    )
+      throw new Error('弹幕归档分区索引无效。');
+    for (const i of selected) sections.set(i, section);
+  }
   let rowStart = 0;
   for (const [i, group] of metadata.row_groups.entries()) {
     const count = Number(group.num_rows),
@@ -49,7 +56,16 @@ function indexFor(metadata) {
           to = max;
         }
       }
-      groups.push({i, rowStart, rowEnd, count, size: Number(group.total_byte_size), from, to});
+      groups.push({
+        i,
+        section: sections.get(i),
+        rowStart,
+        rowEnd,
+        count,
+        size: Number(group.total_byte_size),
+        from,
+        to,
+      });
     }
     rowStart = rowEnd;
   }
@@ -118,17 +134,48 @@ export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal
         metadata,
         rowStart: group.rowStart,
         rowEnd: group.rowEnd,
-        columns: ['sec', 't', 'sent', 'text', 'mode', 'color'],
+        columns:
+          group.section === 'sc'
+            ? [
+                'sec',
+                't',
+                'text',
+                'sc_id',
+                'price',
+                'bg_color',
+                'header_color',
+                'font_color',
+                'face',
+                'event_id',
+                'order',
+              ]
+            : ['sec', 't', 'sent', 'text', 'mode', 'color', 'event_id', 'order'],
         compressors: {ZSTD: (input, output) => decompress(input, new Uint8Array(output))},
       });
     const values = await (readGroup ? readGroup(group.i, group.size, load) : load());
     for (const row of values) {
-      if (row.sec !== 'danmaku') throw new Error('弹幕归档分区不一致。');
+      if (row.sec !== group.section) throw new Error('弹幕归档分区不一致。');
+      if (
+        typeof row.event_id !== 'string' ||
+        !row.event_id ||
+        !Number.isSafeInteger(Number(row.order)) ||
+        row.order == null
+      )
+        throw new Error('弹幕归档缺少有效的事件标识或顺序。');
       const time = receivedTime(row);
       if (time >= from && time <= to) {
         retainedBytes += String(row.text).length * 2 + 128;
         if (retainedBytes > 16 * 1024 * 1024) throw new Error('弹幕文字超过内存预算，请缩短选区。');
-        rows.push(row);
+        if (row.sec === 'sc') {
+          if (
+            !Number.isFinite(Number(row.price)) ||
+            Number(row.price) <= 0 ||
+            typeof row.text !== 'string' ||
+            !row.text.trim()
+          )
+            continue;
+          rows.push({...row, kind: 'sc', mode: 1, color: 0xffffff, price: Number(row.price)});
+        } else rows.push(row);
       }
       if (rows.length > MAX_EVENTS) throw new Error('选区内弹幕过多，请缩短选区后重试。');
     }

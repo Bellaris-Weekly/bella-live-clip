@@ -3,7 +3,8 @@ import {VideoSample} from 'mediabunny';
 import {loadComments} from '../../../src/danmaku/archive.js';
 import {loadEmotes, textTokens, emoteFrame} from '../../../src/danmaku/emotes.js';
 import {DanmakuLayout} from './danmaku-layout-reference.js';
-import {PREROLL} from '../../../src/danmaku/clock.js';
+// Frozen ordinary-comment reference before SC support.
+const PREROLL = 15;
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 const EMOJI_RUN =

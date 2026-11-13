@@ -3,7 +3,8 @@ import {loadComments} from './archive.js';
 import {loadEmotes, textTokens, emoteFrame} from './emotes.js';
 import {DanmakuLayout, visibleComment} from './layout.js';
 import {createSpriteCache} from './sprite-cache.js';
-import {PREROLL} from './clock.js';
+import {commentPreroll, isSuperChat, measureSuperChat, drawSuperChat, SC_OPACITY} from './super-chat.js';
+import {createAvatarCache} from './avatars.js';
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 const EMOJI_RUN =
@@ -20,7 +21,7 @@ export async function createDanmakuCompositor(
   if (width * height > 3840 * 2160) throw new Error('弹幕压制画面超过 4K 内存预算，请选择更低画质。');
   const events = await loadComments(record, {
     origin,
-    start: sourceTime(start) - PREROLL,
+    start: sourceTime(start) - commentPreroll(width, height),
     end: sourceTime(end),
     adjustment,
     signal,
@@ -30,6 +31,14 @@ export async function createDanmakuCompositor(
   prepared = undefined;
   const fontSize = danmakuFontSize(height);
   const resources = await loadEmotes(events.filter(visibleComment), record.room, fontSize, {signal, fetcher});
+  const avatars = createAvatarCache({signal, fetcher, size: fontSize * 1.2});
+  avatars.prefetch(events);
+  const close = resources.close.bind(resources);
+  resources.avatars = avatars;
+  resources.close = () => {
+    avatars.close();
+    close();
+  };
   return createDanmakuPainter(events, resources, {start, sourceTime, width, height, signal});
 }
 
@@ -39,7 +48,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
   try {
     const overlay = new OffscreenCanvas(width, height);
     const ink = overlay.getContext('2d');
-    let canvas, context;
+    let canvas, context, scCanvas, scInk;
     if (!ink) {
       resources.close();
       throw new Error('无法创建弹幕合成画布，可能内存不足。');
@@ -66,6 +75,15 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       target.fillText(part.text, x, y);
     }
     function raster(item, part, x, y, maxBytes) {
+      if (part.sc) {
+        const bytes = part.width * part.height * 4;
+        if (bytes > maxBytes) throw new Error('SC 位图超过渲染预算。');
+        const surface = new OffscreenCanvas(part.width, part.height);
+        const target = surface.getContext('2d');
+        if (!target) throw new Error('无法创建 SC 画布。');
+        drawSuperChat(target, part);
+        return {image: surface.transferToImageBitmap(), left: 0, top: 0, bytes};
+      }
       // Preserve the first draw's subpixel phase. Fixed comments then use an
       // integer bitmap translation instead of filtering an integer-phase glyph.
       const phase = x - Math.floor(x);
@@ -91,6 +109,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       return {image, left, top, bytes};
     }
     function measure(event) {
+      if (isSuperChat(event)) return measureSuperChat(event, ink, fontSize, FONT, resources.avatars);
       if (cache.has(event.text)) return cache.get(event.text);
       const parts = [];
       let width = 0,
@@ -126,13 +145,28 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       cache.set(event.text, content);
       return content;
     }
-    const layout = new DanmakuLayout(events, {width, height, measure, start: sourceTime(start) - PREROLL});
+    const layout = new DanmakuLayout(events, {
+      width,
+      height,
+      measure,
+      start: sourceTime(start) - commentPreroll(width, height),
+    });
     let previous = [],
       regions = [],
       revision = 0,
-      invalidated = false;
+      invalidated = false,
+      scRegions = [];
     return {
       layout,
+      get overlayOpacity() {
+        return 0.65;
+      },
+      get superChatOverlay() {
+        return scRegions.length ? scCanvas : null;
+      },
+      get superChatOpacity() {
+        return SC_OPACITY;
+      },
       get overlayRevision() {
         return revision;
       },
@@ -168,7 +202,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           }
           const x = layout.x(item, time);
           for (const part of item.parts) {
-            const y = item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;
+            const y = part.sc ? item.top : item.top + (item.height - (part.asset?.height ?? fontSize * 1.2)) / 2;
             commands.push({
               item,
               part,
@@ -201,8 +235,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
           const finishOverlay = metrics?.start('overlayDraw');
           try {
             for (const [top, bottom] of regions) ink.clearRect(0, top, width, bottom - top);
+            for (const [top, bottom] of scRegions) scInk.clearRect(0, top, width, bottom - top);
+            scRegions = [];
             const rows = [];
+            const sc = commands.filter(command => command.part.sc);
             for (const {item, part, x, y, frame} of commands) {
+              if (part.sc) continue;
               const top = Math.max(0, Math.floor(y + (frame ? -2 : part.top)));
               const bottom = Math.min(height, Math.ceil(y + (frame ? part.asset.height + 2 : part.bottom)));
               if (Number.isFinite(top) && Number.isFinite(bottom)) {
@@ -213,6 +251,18 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
                 const sprite = sprites.get(item, part, limit => raster(item, part, x, y, limit));
                 if (sprite) ink.drawImage(sprite.image, x + sprite.left, y + sprite.top);
                 else drawText(ink, item, part, x, y);
+              }
+            }
+            if (sc.length) {
+              // A small top-area layer avoids a per-frame alpha-mask pass
+              // over ordinary ink. Both preview and export composite it once.
+              scCanvas ??= new OffscreenCanvas(width, Math.ceil(height * 0.23));
+              scInk ??= scCanvas.getContext('2d');
+              if (!scInk) throw new Error('无法创建 SC 合成画布。');
+              for (const {item, part, x, y} of sc) {
+                const sprite = sprites.get(item, part, limit => raster(item, part, x, y, limit));
+                scInk.drawImage(sprite.image, x, y);
+                scRegions.push([Math.max(0, Math.floor(y)), Math.min(scCanvas.height, Math.ceil(y + part.height))]);
               }
             }
             regions = [];
@@ -259,6 +309,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             finishComposite?.();
           }
         }
+        if (scRegions.length) {
+          context.save();
+          context.globalAlpha = SC_OPACITY;
+          context.drawImage(scCanvas, 0, 0);
+          context.restore();
+        }
         const finishSnapshot = metrics?.start('frameSnapshot');
         try {
           return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});
@@ -270,9 +326,10 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         resources.close();
         sprites.clear();
         cache.clear();
-        previous = regions = [];
+        previous = regions = scRegions = [];
         if (canvas) canvas.width = canvas.height = 1;
         overlay.width = overlay.height = 1;
+        if (scCanvas) scCanvas.width = scCanvas.height = 1;
       },
     };
   } catch (error) {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
+import {commentPreroll} from '../../../src/danmaku/super-chat.js';
 import {chromium} from 'playwright-core';
 
 test('sprite compositor preserves direct-text appearance at fractional positions, animation boundaries and empty frames', async () => {
@@ -19,7 +20,8 @@ test('sprite compositor preserves direct-text appearance at fractional positions
         name: 'frozen-comments',
         setup(build) {
           build.onLoad({filter: /src\/danmaku\/archive\.js$/}, () => ({
-            contents: 'export async function loadComments(){return window.compositorEvents}',
+            contents:
+              'export async function loadComments(){return window.compositorEvents} export async function boundedFetch(){throw new Error("unexpected avatar fetch")}',
             loader: 'js',
           }));
           build.onLoad({filter: /src\/danmaku\/emotes\.js$/}, () => ({
@@ -96,7 +98,7 @@ test('sprite compositor preserves direct-text appearance at fractional positions
     assert.ok(fixed.currentCalls < fixed.referenceCalls / 2, JSON.stringify(fixed));
     const liveWindows = await page.evaluate(() => window.checkLiveWindowPrefetch());
     assert.deepEqual(liveWindows.before, [
-      {start: -15, end: 10, prefetch: false},
+      {start: -commentPreroll(64, 64), end: 10, prefetch: false},
       {start: 10, end: 20, prefetch: true},
     ]);
     assert.deepEqual(liveWindows.after, [...liveWindows.before, {start: 10, end: 20, prefetch: false}]);

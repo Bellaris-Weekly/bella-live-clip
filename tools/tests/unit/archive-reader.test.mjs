@@ -33,7 +33,7 @@ test('a failed part open can be requested again instead of caching the rejection
   );
   try {
     await assert.rejects(reader.read(range), /读取失败/);
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.equal(requests, 3);
   } finally {
     await reader.close();
@@ -80,7 +80,7 @@ test('a snapshot survives a failed disk write, removes the partial file, and is 
   try {
     await assert.rejects(reader.read(range), /disk failure/);
     assert.equal(removed, 1);
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.equal(requests, 1, 'a retry must keep the same live snapshot');
     assert.equal(removed, 1);
   } finally {
@@ -143,11 +143,11 @@ test('current rows start before later archive opens; concurrent windows reuse ea
     release.resolve();
     const results = await Promise.all([one, two]);
     assert.equal(requests, 4);
-    assert.equal(results[0].length, 10);
+    assert.equal(results[0].length, 2);
     assert.deepEqual(results[0], results[1]);
     assert.deepEqual(
       results[0].map(row => row.order),
-      [0, 2, 4, 6, 8, 1, 3, 5, 7, 9],
+      [1, 2],
     );
   } finally {
     release.resolve();
@@ -197,7 +197,7 @@ test('a transient open failure retries once inside the first demanded window', a
     },
   );
   try {
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.equal(requests, 2);
   } finally {
     await reader.close();
@@ -780,8 +780,8 @@ test('canceling one preview read leaves shared archives usable by the next seek'
     const next = reader.read(range);
     oldSeek.abort();
     await rejected;
-    assert.equal((await next).length, 4);
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await next).length, 2);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.equal(requests, 2, 'only the canceled partition is requested again');
   } finally {
     await reader.close();
@@ -807,12 +807,12 @@ test('preview file budget evicts old partitions but retains bounds to skip unrel
     },
   );
   try {
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.deepEqual(requests, ['p1.parquet']);
     assert.equal(initial.file, null, 'the first prepared buffer must not bypass eviction');
     assert.deepEqual(await reader.read({...range, start: 200, end: 210}), []);
     assert.deepEqual(requests, ['p1.parquet'], 'cached time bounds skip evicted files too');
-    assert.equal((await reader.read(range)).length, 4);
+    assert.equal((await reader.read(range)).length, 2, 'overlapping partitions share receipt identities');
     assert.deepEqual(requests, ['p1.parquet', 'p0.parquet', 'p1.parquet']);
   } finally {
     await reader.close();
@@ -998,7 +998,7 @@ test('under file pressure sealed archives become range-backed without evicting t
     },
   );
   try {
-    for (let i = 0; i < 4; i++) assert.equal((await reader.read(firstWindow)).length, 2);
+    for (let i = 0; i < 4; i++) assert.equal((await reader.read(firstWindow)).length, 1);
     assert.equal(liveReads, 1);
     assert.ok(ranged > 0);
   } finally {

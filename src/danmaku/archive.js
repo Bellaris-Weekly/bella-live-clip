@@ -49,8 +49,14 @@ export async function boundedFetch(url, options = {}) {
   }
 }
 
-async function readBounded(url, {signal, headers, limit = MAX_FILE_BYTES, fetcher = fetch}) {
-  const response = await fetcher(url, {signal, headers, credentials: 'omit', cache: 'no-store'});
+async function readBounded(url, {signal, headers, referrerPolicy, limit = MAX_FILE_BYTES, fetcher = fetch}) {
+  const response = await fetcher(url, {
+    signal,
+    headers,
+    credentials: 'omit',
+    cache: 'no-store',
+    ...(referrerPolicy ? {referrerPolicy} : {}),
+  });
   if (!response.ok) {
     await response.body?.cancel();
     throw Object.assign(
@@ -175,7 +181,8 @@ export async function prepareComments(record, {signal, fetcher = fetch} = {}) {
 export async function loadComments(record, {origin, start, end, adjustment = 0, signal, fetcher = fetch, prepared}) {
   const options = {signal, fetcher};
   const archive = await (prepared ?? prepareComments(record, options));
-  const events = [];
+  const events = [],
+    seen = new Set();
   let retainedBytes = 0;
   const from = start + origin + PLAYBACK_LATENCY - adjustment;
   const to = end + origin + PLAYBACK_LATENCY - adjustment;
@@ -184,9 +191,11 @@ export async function loadComments(record, {origin, start, end, adjustment = 0, 
     const file = i === 0 ? archive.file : await archiveFile(part, options);
     const rows = await readDanmaku(file, {from, to, signal, metadata: i === 0 ? archive.metadata : undefined});
     for (const row of rows) {
+      if (seen.has(row.event_id)) continue;
+      seen.add(row.event_id);
       retainedBytes += String(row.text).length * 2 + 128;
       if (retainedBytes > 16 * 1024 * 1024) throw new Error('弹幕文字超过内存预算，请缩短选区。');
-      events.push({...row, time: commentTime(row, origin, adjustment), order: events.length});
+      events.push({...row, time: commentTime(row, origin, adjustment), order: Number(row.order)});
     }
     if (events.length > MAX_EVENTS) throw new Error('选区内弹幕过多，请缩短选区。');
   }
@@ -495,7 +504,8 @@ export function createCommentReader(
       if (record.live && now() - indexChecked >= 10000) await updateIndex(initial, readOptions);
       const from = start + origin + PLAYBACK_LATENCY - adjustment;
       const to = end + origin + PLAYBACK_LATENCY - adjustment;
-      const events = [];
+      const events = [],
+        seen = new Set();
       let bytes = 0;
       // Consume the current part before opening later ones. No batch-wide
       // metadata barrier or speculative archive requests on the video path.
@@ -538,11 +548,12 @@ export function createCommentReader(
         });
         for (const row of rows) {
           const time = commentTime(row, origin, adjustment);
-          if (time < start || time >= end) continue;
+          if (time < start || time >= end || seen.has(row.event_id)) continue;
+          seen.add(row.event_id);
           bytes += String(row.text).length * 2 + 128;
           if (bytes > 16 * 1024 * 1024 || events.length >= MAX_EVENTS)
             throw new Error('弹幕窗口超过内存预算，请缩短选区。');
-          events.push({...row, time, order: events.length});
+          events.push({...row, time, order: Number(row.order)});
         }
         trimFiles(initial);
       }

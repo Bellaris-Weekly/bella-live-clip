@@ -262,6 +262,7 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
   }
   function paint(own, overlay, time, complete = true) {
     const revision = own.compositor.overlayRevision;
+    canvas.style.opacity = '1';
     if (canvas.width !== own.width || canvas.height !== own.height) {
       canvas.width = own.width;
       canvas.height = own.height;
@@ -271,7 +272,14 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('无法创建弹幕预览画布，可能内存不足。');
       context.clearRect(0, 0, canvas.width, canvas.height);
+      context.save();
+      context.globalAlpha = own.compositor.overlayOpacity ?? 0.65;
       context.drawImage(overlay, 0, 0);
+      if (own.compositor.superChatOverlay) {
+        context.globalAlpha = own.compositor.superChatOpacity;
+        context.drawImage(own.compositor.superChatOverlay, 0, 0);
+      }
+      context.restore();
       own.copiedRevision = revision;
     }
     if (complete) own.drawn = time;

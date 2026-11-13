@@ -1,7 +1,9 @@
+import {isSuperChat, scSpeed, SC_WAIT} from './super-chat.js';
 const BLOCKED = new Set(['喜欢主播加关注，点点红包抽礼物', '点点红包，关注主播抽礼物～', '老板大气！点点红包抽礼物']);
 const TICKS = 60;
 
-export const visibleComment = item => [1, 4, 5].includes(item.mode) && !BLOCKED.has(String(item.text).trim());
+export const visibleComment = item =>
+  [1, 4, 5].includes(item.mode) && (isSuperChat(item) || !BLOCKED.has(String(item.text).trim()));
 
 export class DanmakuLayout {
   constructor(events, {width, height, measure, start}) {
@@ -15,6 +17,7 @@ export class DanmakuLayout {
     this.active = [];
     this.waiting = [];
     this.dropped = 0;
+    this.droppedSuperChats = 0;
   }
 
   append(events) {
@@ -29,10 +32,10 @@ export class DanmakuLayout {
     return item.mode === 1 ? this.width - (time - item.started) * item.speed : (this.width - item.width) / 2;
   }
 
-  place(content, mode, now) {
+  place(content, mode, now, superChat = false) {
     const peers = this.active.filter(item => item.mode === mode);
     const gap = 50 * this.scale;
-    const speed = (this.width + content.width + 100 * this.scale) / 12;
+    const speed = superChat ? scSpeed(this.width) : (this.width + content.width + 100 * this.scale) / 12;
     const conflicts = old => {
       if (mode !== 1) return true;
       const distance = this.width - (this.x(old, now) + old.width);
@@ -67,20 +70,28 @@ export class DanmakuLayout {
       this.waiting.push(this.events[this.cursor++]);
     const pending = [],
       blocked = new Set();
-    for (const event of this.waiting) {
-      if (now - event.time > 1.5 + 1e-6) {
+    // Prioritize ready SCs without putting a blocked SC in front of the
+    // ordinary FIFO. Existing placements are never preempted.
+    const waiting = this.waiting.some(isSuperChat)
+      ? this.waiting.filter(isSuperChat).concat(this.waiting.filter(event => !isSuperChat(event)))
+      : this.waiting;
+    for (const event of waiting) {
+      const superChat = isSuperChat(event);
+      const queue = superChat ? 'sc' : event.mode;
+      if (now - event.time > (superChat ? SC_WAIT : 1.5) + 1e-6) {
         this.dropped++;
+        if (superChat) this.droppedSuperChats++;
         continue;
       }
-      if (blocked.has(event.mode)) {
+      if (blocked.has(queue)) {
         pending.push(event);
         continue;
       }
       const content = this.measure(event);
-      const position = this.place(content, event.mode, now);
+      const position = this.place(content, event.mode, now, superChat);
       if (!position) {
         pending.push(event);
-        blocked.add(event.mode);
+        blocked.add(queue);
         continue;
       }
       const item = {...event, ...content, ...position, started: now};

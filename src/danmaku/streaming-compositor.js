@@ -2,7 +2,8 @@ import {mapConcurrent} from '../shared/concurrent.js';
 import {createDanmakuPainter, danmakuFontSize} from './compositor.js';
 import {loadEmoteCatalog, loadEmotes, referencedEmotes} from './emotes.js';
 import {visibleComment} from './layout.js';
-import {PREROLL} from './clock.js';
+import {commentPreroll} from './super-chat.js';
+import {createAvatarCache} from './avatars.js';
 
 const WINDOW_SECONDS = 10;
 
@@ -39,7 +40,9 @@ export async function createStreamingCompositor(
   const parentSignal = signal,
     controller = new AbortController();
   signal = controller.signal;
+  const avatars = createAvatarCache({signal, fetcher, metrics, size: danmakuFontSize(height) * 1.2});
   const closeAssets = () => {
+    avatars.close();
     for (const asset of assets.values()) asset.close();
     assets.clear();
   };
@@ -133,6 +136,7 @@ export async function createStreamingCompositor(
     const retained = painter
       ? [...painter.layout.active, ...painter.layout.waiting, ...painter.layout.events.slice(painter.layout.cursor)]
       : [];
+    avatars.prefetch(events, retained.concat(events));
     const names = referencedEmotes(retained.concat(events).filter(visibleComment));
     // Speculation may evict idle entries, but cannot pin future bytes ahead of
     // current playback and make a required decoder fail its budget.
@@ -177,7 +181,7 @@ export async function createStreamingCompositor(
     const finishInitial = metrics?.start('commentWindowInitial');
     let loaded;
     try {
-      loaded = await read(sourceTime(start) - PREROLL, until);
+      loaded = await read(sourceTime(start) - commentPreroll(width, height), until);
     } finally {
       finishInitial?.();
     }
@@ -187,7 +191,7 @@ export async function createStreamingCompositor(
     for (const event of initial) event.order = order++;
     painter = createDanmakuPainter(
       initial,
-      {assets, close: closeAssets},
+      {assets, avatars, close: closeAssets},
       {start, sourceTime, width, height, signal, metrics},
     );
     prefetch();
@@ -227,6 +231,7 @@ export async function createStreamingCompositor(
         }
         metrics?.gauge('activeComments', active.length);
         metrics?.gauge('waitingComments', painter.layout.waiting.length);
+        metrics?.gauge('droppedSuperChats', painter.layout.droppedSuperChats);
         // Multiple appearances of one asset share its decoder and clock table.
         const needed = new Map();
         for (const item of active)
@@ -261,6 +266,15 @@ export async function createStreamingCompositor(
       },
       renderOverlay(timestamp) {
         return painter.renderOverlay(timestamp);
+      },
+      get overlayOpacity() {
+        return painter.overlayOpacity;
+      },
+      get superChatOverlay() {
+        return painter.superChatOverlay;
+      },
+      get superChatOpacity() {
+        return painter.superChatOpacity;
       },
       get overlayRevision() {
         return painter.overlayRevision;

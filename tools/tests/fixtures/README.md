@@ -7,3 +7,5 @@
 `live-before.parquet` / `live-after.parquet` 同样通过 collector 的 `write_archive` / SCHEMA 生成，使用 `live=1`、房间 1、场次 `growing`、开播时间 95000 ms；全部内容为人工数据。前者包含 `t=100000,110000`，后者包含 `t=100000,110000,120000,130000`，正文为对应时间的数字字符串，`sent=t-500`。用于验证增长快照、封存换路径、左闭右开窗口边界、超时和取消；文件大小不同，直播索引故意使用旧大小以覆盖竞态。
 
 `live-progress-before.parquet` / `live-progress-after.parquet` 同样由 collector 的 `write_archive` 生成（房间 1、场次 `growing`，人工数据），在上面两个文件的基础上加入 collector 2026-11-07 起写入的直播元数据：`complete_through_ms`（前者 112000、后者 131000）、`published_ms`（110500 / 120500）、`publish_interval_ms`（10000），以及 `stream_clock`（一个 epoch，`origin_us=95500000`，600 个分片）。用于验证按完整截止时间判断覆盖、按发布节奏刷新、等待提示和流时钟对时。
+
+SC 任务更新了这些人工夹具的 schema，加入 `event_id`、`order` 和可空 `face`；`danmaku.parquet` 的无金额 SC 仍是无效事件，不能作为有效付费留言显示。`super-chat.parquet` 包含同文但不同回执的两条弹幕、两条有效 SC（有头像与缺头像各一条），用于验证颜色/金额/头像和稳定排序。旧合成器参考代码保持原 15 秒普通弹幕回看作为回归基准；新 SC 按几何计算回看长度。

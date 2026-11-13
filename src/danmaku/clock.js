@@ -1,5 +1,4 @@
 export const PLAYBACK_LATENCY = 2;
-export const PREROLL = 15;
 
 // The collector's live archive measures, per stream clock epoch, the host UTC at
 // which stream time zero was first received (origin_us). Replay fragments carry

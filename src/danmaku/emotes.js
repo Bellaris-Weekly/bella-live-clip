@@ -1,3 +1,4 @@
+import {isSuperChat} from './super-chat.js';
 import {mapConcurrent} from '../shared/concurrent.js';
 import {boundedFetch, publicUrl, readJson} from './archive.js';
 
@@ -37,11 +38,13 @@ export async function loadEmoteCatalog(room, {signal, fetcher = fetch} = {}) {
 
 export const referencedEmotes = events =>
   new Set(
-    events.flatMap(event =>
-      textTokens(event.text)
-        .filter(token => /^\[.*\]$/u.test(token))
-        .map(token => token.normalize('NFC')),
-    ),
+    events
+      .filter(event => !isSuperChat(event))
+      .flatMap(event =>
+        textTokens(event.text)
+          .filter(token => /^\[.*\]$/u.test(token))
+          .map(token => token.normalize('NFC')),
+      ),
   );
 
 // Lazy assets keep the animation clock exact, but decode only as far as the
