@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {makeHlsLoader, createPlayer, previewError, livePlaylist} from '../../../src/media/preview-player.js';
+import {makeHlsLoader, createPlayer, previewError, preparePlaylist} from '../../../src/media/preview-player.js';
 test('整场播放器加载分片字节区间并返回计量', async () => {
   let options;
   const Loader = makeHlsLoader(async (url, o) => {
@@ -780,7 +780,7 @@ test('fragment lookup preserves gaps, overlap boundaries, backward seeks and upd
   }
 });
 
-test('a live snapshot reopens for polling and keeps each fragment address it first listed', () => {
+test('a live snapshot reopens for polling, restores frame-exact durations and keeps first fragment addresses', () => {
   const snapshot = (end, paths) =>
     [
       '#EXTM3U',
@@ -791,10 +791,12 @@ test('a live snapshot reopens for polling and keeps each fragment address it fir
       end,
     ].join('\n');
   const known = new Map();
-  const first = livePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'live-bvc/1/8.m4s']), known, true);
+  const first = preparePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'live-bvc/1/8.m4s']), known, true);
   assert.doesNotMatch(first, /ENDLIST|PLAYLIST-TYPE/);
   assert.match(first, /#EXT-X-TARGETDURATION:5/);
-  const next = livePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'a/8.m4s', 'live-bvc/2/9.m4s']), known, false);
+  // 4.17 is 250 frames at 60 fps rounded; the rounding would drift seconds over a long recording.
+  assert.match(first, /#EXTINF:4\.166667\n/);
+  const next = preparePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'a/8.m4s', 'live-bvc/2/9.m4s']), known, false);
   assert.deepEqual(
     next.split('\n').filter(line => !line.startsWith('#')),
     ['a/7.m4s', 'live-bvc/1/8.m4s', 'live-bvc/2/9.m4s'],

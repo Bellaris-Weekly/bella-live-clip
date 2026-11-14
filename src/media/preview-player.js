@@ -43,6 +43,16 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
   return error;
 }
 
+// Listed durations are rounded to 0.01 s (4.17 for 250 frames at 60 fps). Over a
+// long recording the error adds up to seconds, so hls.js picks the fragment
+// before a far seek target and downloads another. Durations that are a whole
+// number of 60 fps frames within that rounding are restored to it.
+const FRAME_GRID = 60;
+function frameDuration(listed) {
+  const frames = Math.round(listed * FRAME_GRID);
+  return Math.abs(listed * FRAME_GRID - frames) <= 0.31 ? frames / FRAME_GRID : listed;
+}
+
 // While a session is live, its playlist is a frozen snapshot that ends with
 // ENDLIST. Reopened as a live playlist, hls.js keeps polling it and appends the
 // newer fragments without tearing playback down. The snapshot declares a
@@ -50,14 +60,17 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
 // The newest fragments move between hosts and paths from one snapshot to the
 // next, and hls.js rejects a known fragment whose path changed. Their first
 // addresses keep working, so each sequence number keeps the one seen first.
-export function livePlaylist(text, known, open) {
+export function preparePlaylist(text, known, open) {
   let sequence = 0,
     longest = 1;
   const lines = text.split(/\r?\n/).flatMap(line => {
     if (open && /^#EXT-X-(?:ENDLIST|PLAYLIST-TYPE:)/.test(line)) return [];
     if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) sequence = Number(line.slice(22));
-    else if (line.startsWith('#EXTINF:')) longest = Math.max(longest, Math.ceil(parseFloat(line.slice(8))));
-    else if (line && !line.startsWith('#')) {
+    else if (line.startsWith('#EXTINF:')) {
+      const listed = parseFloat(line.slice(8));
+      longest = Math.max(longest, Math.ceil(listed));
+      return [line.replace(/^#EXTINF:[\d.]+/, `#EXTINF:${frameDuration(listed).toFixed(6)}`)];
+    } else if (line && !line.startsWith('#')) {
       const sn = sequence++;
       if (known.has(sn)) return [known.get(sn)];
       known.set(sn, line);
@@ -370,10 +383,9 @@ export function createPlayer({
   // hls.js polls an open snapshot; it answers from cache until the live updater
   // brings a newer one, which then extends playback in place.
   const playlistRequest = part => async (url, options) => {
-    if (!record.live) return api.request(url, options);
     const source = streams[part],
       // A later part means this one is complete; its ENDLIST lets playback end.
-      open = part === streams.length - 1 && Date.now() / 1000 - source.end_time < LIVE_EDGE_AGE;
+      open = record.live && part === streams.length - 1 && Date.now() / 1000 - source.end_time < LIVE_EDGE_AGE;
     if (playlist?.source !== source.stream || playlist.open !== open) {
       const response = await api.request(source.stream, options);
       const known = playlist?.known ?? new Map();
@@ -382,7 +394,7 @@ export function createPlayer({
         open,
         known,
         url: response.url,
-        data: livePlaylist(response.data, known, open),
+        data: preparePlaylist(response.data, known, open),
       };
       attachedEnd = source.end_time;
     }
