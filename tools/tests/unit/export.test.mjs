@@ -273,6 +273,29 @@ for (const [kind, absolute] of [
   });
 }
 
+test('packet bursts keep exact final export counters without emitting a snapshot for every packet', async t => {
+  const api = await sampleApi('plain'),
+    events = [];
+  t.mock.method(performance, 'now', () => 0);
+  const outputs = await exportSelection(
+    api,
+    {start: 90},
+    api.groups,
+    {start: 10, end: 22},
+    {
+      onProgress: event => events.push(event),
+    },
+  );
+  assert.ok(events.length < 15, `${events.length} snapshots in a single clock tick`);
+  assert.ok(events.some(event => event.processing > 0 && event.progress < 1));
+  const final = events.at(-1);
+  assert.equal(final.phase, 'complete');
+  assert.equal(final.progress, 1);
+  assert.equal(final.downloaded, 6);
+  assert.equal(final.metrics.counters.mediaRequestBytes, final.bytes);
+  assert.deepEqual((await inspect(outputs[0].blob)).counts, {video: 360, audio: 558});
+});
+
 for (const reason of ['abort', 'network', 'processing']) {
   test(`并行导出${reason}失败终止待下载请求，立即重试可成功`, async () => {
     const api = await sampleApi('plain'),

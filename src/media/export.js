@@ -9,6 +9,7 @@ import {createTemporaryMedia, mediaStorageError} from './temporary-media.js';
 import {requestWithRetry, LIVE_MISSING_RETRIES} from '../services/retry-request.js';
 import {createExportMetrics} from './export-metrics.js';
 import {annotate, cleanUp, storageStep} from '../shared/errors.js';
+import {createProgressGate} from '../shared/progress-gate.js';
 
 const SELECTION_DOWNLOAD_CONCURRENCY = 8;
 
@@ -187,7 +188,15 @@ export async function exportSelection(
     message,
     videoFrames = 0,
     processedSeconds = 0;
+  const shouldReport = createProgressGate();
+  let reportedProcessing = false,
+    reportedVideo = false;
   function report(phase = 'preparing') {
+    const force =
+      phase === 'complete' || (!reportedProcessing && processing > 0) || (!reportedVideo && videoFrames > 0);
+    if (!shouldReport(phase, message, reconnecting, attempt, force)) return;
+    reportedProcessing ||= processing > 0;
+    reportedVideo ||= videoFrames > 0;
     if (metrics && (phase === 'complete' || performance.now() - metricsAt >= 1000)) {
       metricSnapshot = metrics.snapshot();
       metricsAt = performance.now();

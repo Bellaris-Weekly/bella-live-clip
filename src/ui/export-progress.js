@@ -1,4 +1,5 @@
 import {formatBytes} from '../shared/format.js';
+import {createProgressGate} from '../shared/progress-gate.js';
 
 export function renderExportProgress(setProgress, status, state, submission) {
   const preparing = submission && state.phase === 'preparing';
@@ -14,21 +15,9 @@ export function renderExportProgress(setProgress, status, state, submission) {
 // Keep all phase/error transitions immediate, but avoid DOM work per audio/video
 // packet. No delayed callback can overwrite the final success/error message.
 export function limitProgress(render, now = () => performance.now()) {
-  let lastTime = -Infinity,
-    phase,
-    message,
-    reconnecting,
-    attempt;
+  const shouldReport = createProgressGate(now);
   return state => {
-    const time = now();
-    const changed =
-      state.phase !== phase ||
-      state.message !== message ||
-      state.reconnecting !== reconnecting ||
-      state.attempt !== attempt;
-    if (!changed && state.progress !== 1 && time - lastTime < 100) return;
-    lastTime = time;
-    ({phase, message, reconnecting, attempt} = state);
-    render(state);
+    if (shouldReport(state.phase, state.message, state.reconnecting, state.attempt, state.progress === 1))
+      render(state);
   };
 }

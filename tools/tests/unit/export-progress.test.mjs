@@ -1,6 +1,28 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {renderExportProgress, limitProgress} from '../../../src/ui/export-progress.js';
+import {createProgressGate} from '../../../src/shared/progress-gate.js';
+
+test('progress gate skips snapshot construction but immediately reports status changes and forced updates', () => {
+  let time = 0,
+    snapshots = 0;
+  const shouldReport = createProgressGate(() => time);
+  const report = (...args) => {
+    if (shouldReport(...args)) snapshots++;
+  };
+  report('processing', 'encoding', 0, 0);
+  for (let i = 0; i < 10000; i++) report('processing', 'encoding', 0, 0);
+  assert.equal(snapshots, 1);
+  time = 100;
+  report('processing', 'encoding', 0, 0);
+  report('processing', 'waiting for comments', 0, 0);
+  report('processing', 'waiting for comments', 1, 1);
+  report('processing', 'waiting for comments', 1, 2);
+  report('processing', 'encoding', 0, 2);
+  report('processing', 'encoding', 0, 2, true);
+  report('complete', 'saved', 0, 2);
+  assert.equal(snapshots, 8);
+});
 
 test('准备时使用不定进度并标明读取量，实际处理后恢复百分比', () => {
   let progress = 0;

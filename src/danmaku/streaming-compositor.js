@@ -175,6 +175,77 @@ export async function createStreamingCompositor(
     if (foregroundPrepared) prefetchAssets(names);
     else if (speculative) for (const name of referencedEmotes(events.filter(visibleComment))) deferredNames.add(name);
   }
+  async function advanceWindows(time) {
+    while (time >= until && next) {
+      // Finish the old window on its original grid, retaining pending/active
+      // comments. Nothing is re-prerolled at a window boundary.
+      painter.layout.advance(Math.max((painter.layout.tick - 1) / 60, until - 1e-7));
+      const pending = next;
+      const to = Math.min(pending.to, endTime());
+      let loaded;
+      try {
+        loaded = await pending.promise;
+      } catch {
+        signal?.throwIfAborted();
+        // A transient prefetch failure or an over-wide speculative query
+        // gets one demand read with the now-confirmed end boundary.
+        loaded = null;
+      }
+      if (loaded === null) loaded = await read(pending.from, to);
+      const events = loaded.filter(event => event.time < to);
+      await supply(events);
+      for (const event of events) event.order = order++;
+      painter.layout.append(events);
+      until = to;
+      prefetch();
+    }
+  }
+  function prefetchRemaining(active) {
+    if (!foregroundPrepared) {
+      // A preview's first visible emotes take all three download slots.
+      // Expired preroll and future-window images must not queue ahead of
+      // them. Export retains its existing eager prefetch behavior.
+      foregroundPrepared = true;
+      const remaining = [...active, ...painter.layout.waiting, ...painter.layout.events.slice(painter.layout.cursor)];
+      prefetchAssets(new Set([...referencedEmotes(remaining.filter(visibleComment)), ...deferredNames]));
+      deferredNames.clear();
+    }
+  }
+  // Most frames need only layout updates. Avoid a Promise and cancellation
+  // subscription unless a window or an animated image actually needs waiting.
+  function prepareFrame(time) {
+    const finishLayout = metrics?.start('layout');
+    let active;
+    try {
+      active = painter.layout.advance(time);
+    } finally {
+      finishLayout?.();
+    }
+    metrics?.gauge('activeComments', active.length);
+    metrics?.gauge('waitingComments', painter.layout.waiting.length);
+    metrics?.gauge('droppedSuperChats', painter.layout.droppedSuperChats);
+    // Multiple appearances of one asset share its decoder and clock table.
+    let needed;
+    for (const item of active)
+      for (const part of item.parts)
+        if (part.asset && part.asset.needsPreparation(time - item.started)) {
+          needed ??= new Map();
+          needed.set(part.asset, Math.max(needed.get(part.asset) ?? 0, time - item.started));
+        }
+    if (!needed) {
+      prefetchRemaining(active);
+      return;
+    }
+    const finishStall = metrics?.start('emoteStall');
+    return mapConcurrent(
+      [...needed],
+      3,
+      ([asset, elapsed], _, taskSignal) => asset.prepare(elapsed, taskSignal),
+      signal,
+    )
+      .finally(() => finishStall?.())
+      .then(() => prefetchRemaining(active));
+  }
   try {
     until = Math.min(until, endTime());
     void getCatalog(true).catch(() => {});
@@ -196,73 +267,11 @@ export async function createStreamingCompositor(
     );
     prefetch();
     return {
-      async prepare(timestamp) {
+      prepare(timestamp) {
         signal?.throwIfAborted();
         const time = sourceTime(timestamp);
-        while (time >= until && next) {
-          // Finish the old window on its original grid, retaining pending/active
-          // comments. Nothing is re-prerolled at a window boundary.
-          painter.layout.advance(Math.max((painter.layout.tick - 1) / 60, until - 1e-7));
-          const pending = next;
-          const to = Math.min(pending.to, endTime());
-          let loaded;
-          try {
-            loaded = await pending.promise;
-          } catch {
-            signal?.throwIfAborted();
-            // A transient prefetch failure or an over-wide speculative query
-            // gets one demand read with the now-confirmed end boundary.
-            loaded = null;
-          }
-          if (loaded === null) loaded = await read(pending.from, to);
-          const events = loaded.filter(event => event.time < to);
-          await supply(events);
-          for (const event of events) event.order = order++;
-          painter.layout.append(events);
-          until = to;
-          prefetch();
-        }
-        const finishLayout = metrics?.start('layout');
-        let active;
-        try {
-          active = painter.layout.advance(time);
-        } finally {
-          finishLayout?.();
-        }
-        metrics?.gauge('activeComments', active.length);
-        metrics?.gauge('waitingComments', painter.layout.waiting.length);
-        metrics?.gauge('droppedSuperChats', painter.layout.droppedSuperChats);
-        // Multiple appearances of one asset share its decoder and clock table.
-        const needed = new Map();
-        for (const item of active)
-          for (const part of item.parts)
-            if (part.asset && part.asset.needsPreparation(time - item.started))
-              needed.set(part.asset, Math.max(needed.get(part.asset) ?? 0, time - item.started));
-        const finishStall = needed.size ? metrics?.start('emoteStall') : null;
-        try {
-          if (needed.size)
-            await mapConcurrent(
-              [...needed],
-              3,
-              ([asset, elapsed], _, taskSignal) => asset.prepare(elapsed, taskSignal),
-              signal,
-            );
-        } finally {
-          finishStall?.();
-        }
-        if (!foregroundPrepared) {
-          // A preview's first visible emotes take all three download slots.
-          // Expired preroll and future-window images must not queue ahead of
-          // them. Export retains its existing eager prefetch behavior.
-          foregroundPrepared = true;
-          const remaining = [
-            ...active,
-            ...painter.layout.waiting,
-            ...painter.layout.events.slice(painter.layout.cursor),
-          ];
-          prefetchAssets(new Set([...referencedEmotes(remaining.filter(visibleComment)), ...deferredNames]));
-          deferredNames.clear();
-        }
+        if (time >= until && next) return advanceWindows(time).then(() => prepareFrame(time));
+        return prepareFrame(time);
       },
       renderOverlay(timestamp) {
         return painter.renderOverlay(timestamp);

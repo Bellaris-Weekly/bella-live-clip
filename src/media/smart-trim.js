@@ -3,6 +3,7 @@ import {createMediaOutput} from './file-output.js';
 import {encodeVideoRange, readVideoEncodingSettings} from './encoding.js';
 import {createAvcNormalizer, UnsupportedAvcError} from './avc-packets.js';
 import {createAvcSplicer} from './avc-parameter-sets.js';
+import {createProgressGate} from '../shared/progress-gate.js';
 
 const verified = {verifyKeyPackets: true};
 
@@ -199,6 +200,7 @@ async function smartTrim(tracks, {start, end, signal, onProgress, onProcessingSt
 
 async function muxPackets(session, streams, {start, end, signal, onProgress, stats, metrics}) {
   const {output} = session;
+  const shouldReport = createProgressGate();
   let progress = 0,
     canceling;
   const cancel = () => {
@@ -240,7 +242,9 @@ async function muxPackets(session, streams, {start, end, signal, onProgress, sta
       );
       stats.processedSeconds = Math.max(stats.processedSeconds ?? 0, packet.timestamp + packet.duration);
       if (stream.isVideo) stats.videoFrames = (stats.videoFrames ?? 0) + 1;
-      onProgress(progress, stats);
+      // Audio preroll may report first; expose the first video frame even if
+      // the next source read stalls before the normal reporting interval.
+      if (shouldReport('processing') || (stream.isVideo && stats.videoFrames === 1)) onProgress(progress, stats);
       stream.next = await next;
       if (stream.next.done) stream.source.close();
     }

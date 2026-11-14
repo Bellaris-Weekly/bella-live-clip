@@ -199,6 +199,66 @@ window.startLazyResourceTest = async () => {
     });
 };
 
+window.checkSynchronousPreparation = async () => {
+  const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
+  const controller = new AbortController();
+  let release;
+  const pendingWindow = new Promise(resolve => {
+    release = resolve;
+  });
+  const comment = time => ({time, text: '同步准备弹幕', mode: 5, color: 0xffffff});
+  const compositor = await createStreamingCompositor(
+    {room: 1},
+    {
+      reader: {
+        async read({start}) {
+          return start >= 10 ? pendingWindow : [comment(0)];
+        },
+        async close() {},
+      },
+      preparedEmoteCatalog: {promise: Promise.resolve(new Map()), controller: new AbortController()},
+      origin: 0,
+      start: 0,
+      sourceTime: time => time,
+      width: 640,
+      height: 360,
+      endTime: () => 20,
+      signal: controller.signal,
+    },
+  );
+  try {
+    let synchronous = 0;
+    for (let frame = 0; frame < 300; frame++) {
+      if (compositor.prepare(frame / 30) === undefined) synchronous++;
+      compositor.renderOverlay(frame / 30);
+    }
+    let ready = false;
+    const transition = compositor.prepare(10);
+    const awaitingWindow = transition instanceof Promise;
+    const finished = transition.then(() => {
+      ready = true;
+    });
+    await Promise.resolve();
+    const blocked = !ready;
+    release([comment(10)]);
+    await finished;
+    compositor.renderOverlay(10);
+    const resumedSynchronously = compositor.prepare(10.1) === undefined;
+    const reason = new Error('stop fast path');
+    controller.abort(reason);
+    let canceled = false;
+    try {
+      compositor.prepare(10.2);
+    } catch (error) {
+      canceled = error === reason;
+    }
+    return {synchronous, awaitingWindow, blocked, resumedSynchronously, canceled};
+  } finally {
+    release([]);
+    await compositor.close();
+  }
+};
+
 window.checkWindowPolicies = async () => {
   const {createStreamingCompositor} = await import('../../../src/danmaku/streaming-compositor.js');
   const base = {origin: 0, start: 0, sourceTime: t => t, width: 640, height: 360};

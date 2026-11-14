@@ -7,6 +7,7 @@ import {
   VideoSampleSource,
   VideoSampleSink,
 } from 'mediabunny';
+import {createAbortableWait} from '../shared/abortable-wait.js';
 
 // Estimate from a prefix so preparing an encoder never scans the entire recording.
 const VIDEO_STATS_PACKETS = 120;
@@ -115,13 +116,9 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
   output.addVideoTrack(source);
   const endTime = typeof end === 'function' ? end : () => end;
   const samples = new VideoSampleSink(track).samples(start, typeof end === 'function' ? Infinity : end);
-  let rejectAbort;
-  const aborted = new Promise((_, reject) => {
-    rejectAbort = reject;
-  });
-  void aborted.catch(() => {});
+  const waits = createAbortableWait();
   const stop = reason => {
-    rejectAbort(reason);
+    waits.abort(reason);
     // The sink's return closes queued decoded frames and wakes a blocked next().
     canceling ??= Promise.all([samples.return(), output.cancel()]);
     void canceling.catch(() => {});
@@ -158,7 +155,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         const finishPreparation = metrics?.start('danmakuPrepare');
         try {
           const preparation = compositor?.prepare?.(clippedStart);
-          if (preparation) await Promise.race([preparation, aborted]);
+          if (preparation) await waits.wait(preparation);
         } finally {
           finishPreparation?.();
         }
@@ -183,7 +180,7 @@ export async function* encodeVideoRange(track, {start, end, origin = 0, settings
         const finishEncode = metrics?.start('encodeSubmit');
         pending = (async () => {
           try {
-            await Promise.race([source.add(frame, first ? {keyFrame: true} : undefined), aborted]);
+            await waits.wait(source.add(frame, first ? {keyFrame: true} : undefined));
           } finally {
             finishEncode?.();
             close();

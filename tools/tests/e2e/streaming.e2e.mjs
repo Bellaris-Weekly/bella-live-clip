@@ -7,6 +7,7 @@ import path from 'node:path';
 import {createServer} from 'node:http';
 import {build} from 'esbuild';
 import {chromium} from 'playwright-core';
+import {commentPreroll} from '../../../src/danmaku/super-chat.js';
 const fullHD = Boolean(process.env.STREAMING_TEST_1080P);
 let directory, server, browser, origin, code, fixture, image;
 before(async () => {
@@ -153,7 +154,12 @@ test('a completed text-only clip cancels its unused early catalog request', {tim
         return originalFetch(url, options);
       };
     });
-    await page.evaluate(() => window.startStreaming({selection: {start: 30, end: 31}}));
+    // Keep the fixture's early [花] outside the entire layout preroll, which
+    // now also covers long member/SC capsules. This case must stay text-only.
+    await page.evaluate(
+      start => window.startStreaming({selection: {start, end: start + 1}}),
+      commentPreroll(fullHD ? 1920 : 640, fullHD ? 1080 : 360) + 5,
+    );
     await page.waitForFunction(() => window.streamingState.done, null, {timeout: 15000});
     const state = await page.evaluate(() => ({...window.streamingState, catalogCanceled: window.catalogCanceled}));
     assert.equal(state.error, undefined, JSON.stringify(state));
@@ -360,16 +366,31 @@ test(
   },
 );
 
+test('ready frames prepare synchronously, while window transitions still wait and cancellation stops the fast path', async () => {
+  const page = await open();
+  try {
+    assert.deepEqual(await page.evaluate(() => window.checkSynchronousPreparation()), {
+      synchronous: 300,
+      awaitingWindow: true,
+      blocked: true,
+      resumedSynchronously: true,
+      canceled: true,
+    });
+  } finally {
+    await page.close();
+  }
+});
+
 test('unused prefetch failures are isolated; required windows retry with the confirmed end and still report real errors', async () => {
   const page = await open();
   try {
     const result = await page.evaluate(() => window.checkWindowPolicies());
     assert.deepEqual(result.reads, [
-      [-15, 10],
+      [-commentPreroll(640, 360), 10],
       [10, 20],
     ]);
     assert.deepEqual(result.retried, [
-      [-15, 10],
+      [-commentPreroll(640, 360), 10],
       [10, 20],
       [10, 12],
     ]);
