@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {runInNewContext} from 'node:vm';
 import {build} from 'esbuild';
+import {JSDOM} from 'jsdom';
 import {buildUserscript, userscriptBuildOptions} from '../../scripts/build.mjs';
 import {createUpdateChecker, readScriptMetadata} from '../../../src/services/updates.js';
 
@@ -89,7 +90,7 @@ test('ordinary builds ignore deployment secrets and produce identical artifacts'
   }
 });
 
-test('compressed single script keeps licenses, initializes dependencies and supplies its own update metadata', async () => {
+test('compressed single script keeps licenses, initializes dependencies and supplies its own update metadata', async t => {
   const result = await buildUserscript({write: false});
   const script = textOf(result);
   assert.equal(result.outputFiles.length, 1);
@@ -100,14 +101,14 @@ test('compressed single script keeps licenses, initializes dependencies and supp
   assert.match(script, /MPL-2\.0/);
   assert.match(script, /Apache-2\.0/);
   // Evaluate the actual minified artifact, with an existing host to skip DOM/UI startup.
-  const window = {};
-  window.top = window;
+  const {window} = new JSDOM('<div id="bella-live-clip-host"></div>', {url: 'https://www.bilibili.com/video/test'});
+  t.after(() => window.close());
   runInNewContext(
     script,
     {
       window,
       location: {hostname: 'www.bilibili.com'},
-      document: {getElementById: () => ({})},
+      document: window.document,
       setTimeout,
       clearTimeout,
       TextEncoder,

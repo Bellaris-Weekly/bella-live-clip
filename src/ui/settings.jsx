@@ -79,6 +79,12 @@ export function Settings({store, actions, preview}) {
               </label>
               <input id="shortcut" class="shortcut-field" readOnly title="点击后按下新的快捷键" />
             </div>
+            <div class="group-row">
+              <label class="grow" for="screenshotShortcut">
+                截图快捷键
+              </label>
+              <input id="screenshotShortcut" class="shortcut-field" readOnly />
+            </div>
             {preview && (
               <div class="group-row">
                 <label class="grow" for="markShortcut">

@@ -8,7 +8,7 @@ export const DEFAULT_SHORTCUT = Object.freeze({
 
 export function normalizeShortcut(value) {
   if (!value?.code || /^(Control|Alt|Shift|Meta|OS|Fn)(Left|Right)?$/.test(value.code)) return null;
-  if (!value.ctrlKey && !value.altKey && !value.metaKey) return null;
+  if (['Escape', 'Unidentified'].includes(value.code)) return null;
   return Object.fromEntries(
     ['code', 'ctrlKey', 'altKey', 'shiftKey', 'metaKey'].map(key => [
       key,

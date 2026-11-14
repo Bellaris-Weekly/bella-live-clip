@@ -2,8 +2,14 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeShortcut, matchesShortcut, isEditing} from '../../../src/ui/shortcuts.js';
 
-test('快捷键要求功能修饰键并忽略单独修饰键', () => {
-  assert.equal(normalizeShortcut({code: 'KeyZ'}), null);
+test('快捷键支持单键并忽略单独修饰键', () => {
+  assert.deepEqual(normalizeShortcut({code: 'KeyZ'}), {
+    code: 'KeyZ',
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+    metaKey: false,
+  });
   assert.equal(normalizeShortcut({code: 'ShiftLeft', shiftKey: true}), null);
   assert.deepEqual(normalizeShortcut({code: 'KeyZ', metaKey: true, shiftKey: true}), {
     code: 'KeyZ',

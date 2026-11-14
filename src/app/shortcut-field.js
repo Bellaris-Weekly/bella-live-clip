@@ -11,9 +11,13 @@ export function bindShortcut({
   fallback = DEFAULT_SHORTCUT,
   accepts = () => true,
   onChange = () => {},
+  shared,
+  actionId = 'clip-launcher',
+  onConflict = () => {},
 }) {
   const $ = id => root.getElementById(id);
   let shortcut = normalizeShortcut(get(key, fallback)) || fallback;
+  shared?.registerAction(actionId, shortcut);
   $(field).value = formatShortcut(shortcut);
   onChange(formatShortcut(shortcut));
   $(field).onfocus = () => {
@@ -28,10 +32,13 @@ export function bindShortcut({
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') return $(field).blur();
+    if (e.repeat || e.isComposing || e.keyCode === 229) return;
     const value = normalizeShortcut(e);
-    if (value && accepts(value)) {
+    if (value) {
+      if (!accepts(value) || shared?.conflicts(value, actionId)) return onConflict();
       shortcut = value;
       set(key, value);
+      shared?.registerAction(actionId, value);
       onChange(formatShortcut(value));
       $(field).blur();
     }

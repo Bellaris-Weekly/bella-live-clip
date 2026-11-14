@@ -6,10 +6,20 @@ import {BiliApi, createRequest} from './services/bilibili.js';
 import {createSubmissionRequest} from './services/submission-request.js';
 import {createMediaRequest} from './services/media-request.js';
 import {startLiveScreenshot} from './app/live-screenshot.js';
+import {SCREENSHOT_PREF_KEY, createScreenshotShortcut} from './ui/screenshot-shortcut.js';
 import {startPageBridge} from './services/page-bridge.js';
 import {createStudioClient, startLink, TOKEN_KEY} from './preview/studio.js';
 
 let studio;
+const screenshotShortcut =
+  location.hostname === 'studio.bk0717.com'
+    ? null
+    : createScreenshotShortcut({
+        document,
+        clientId: 'clip',
+        read: () => GM_getValue(SCREENSHOT_PREF_KEY, null),
+        write: value => GM_setValue(SCREENSHOT_PREF_KEY, value),
+      });
 if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
   const get = (key, fallback) => GM_getValue(`biliClip.${key}`, fallback);
   const set = (key, value) => GM_setValue(`biliClip.${key}`, value);
@@ -45,6 +55,7 @@ if (location.hostname === 'studio.bk0717.com') {
   });
   const request = createRequest(GM_xmlhttpRequest);
   const app = createApp({
+    screenshotShortcut,
     ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__
       ? {
           studio,

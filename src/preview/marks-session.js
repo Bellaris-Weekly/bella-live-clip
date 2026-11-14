@@ -15,6 +15,7 @@ export const AUTOSAVE_SECONDS = 8;
 // the replay clock of each recorded part is known.
 export function createMarksSession({
   root,
+  screenshotShortcut,
   client,
   get,
   set,
@@ -249,6 +250,9 @@ export function createMarksSession({
     field: 'markShortcut',
     key: 'marks.shortcut',
     fallback: MARK_SHORTCUT,
+    shared: screenshotShortcut,
+    actionId: 'clip-mark',
+    onConflict: () => notify('快捷键已被占用'),
     accepts: value =>
       !matchesShortcut(value, normalizeShortcut(get('shortcut', DEFAULT_SHORTCUT)) || DEFAULT_SHORTCUT) &&
       !matchesShortcut(value, DEFAULT_SHORTCUT),

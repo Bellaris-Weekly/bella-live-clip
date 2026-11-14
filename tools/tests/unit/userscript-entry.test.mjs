@@ -15,16 +15,21 @@ const {outputFiles} = await build({
     {
       name: 'entry-dependencies',
       setup(build) {
-        build.onResolve({filter: /^\.\/(app\/application|app\/live-screenshot|services\/bilibili)\.js$/}, args => ({
-          path: args.path,
-          namespace: 'stub',
-        }));
+        build.onResolve(
+          {filter: /^\.\/(app\/application|app\/live-screenshot|services\/bilibili|ui\/screenshot-shortcut)\.js$/},
+          args => ({
+            path: args.path,
+            namespace: 'stub',
+          }),
+        );
         build.onLoad({filter: /.*/, namespace: 'stub'}, args => ({
           contents: args.path.includes('application')
             ? 'export function createApp(options){globalThis.appOptions=options;return {open(){}};}'
-            : args.path.includes('live-screenshot')
-              ? 'export function startLiveScreenshot(doc){globalThis.screenshotDocument=doc;}'
-              : 'export class BiliApi{};export function createRequest(){};',
+            : args.path.includes('screenshot-shortcut')
+              ? 'export const SCREENSHOT_PREF_KEY="bellaScreenshotShortcutV1"; export function createScreenshotShortcut(options){globalThis.shortcutOptions=options;return {get(){}};}'
+              : args.path.includes('live-screenshot')
+                ? 'export function startLiveScreenshot(doc){globalThis.screenshotDocument=doc;}'
+                : 'export class BiliApi{};export function createRequest(){};',
         }));
       },
     },
@@ -158,9 +163,12 @@ test('OPFS keeps its native storage receiver and the userscript no longer asks f
 test('live iframe starts only screenshots, while top pages retain the editor', () => {
   const top = startContext({}, {}, 'live.bilibili.com');
   assert.equal(top.screenshotDocument, top.document);
+  assert.equal(top.shortcutOptions.document, top.document);
+  assert.ok(top.appOptions.screenshotShortcut);
   assert.ok(top.appOptions);
   const frame = startContext({}, {top: {}}, 'live.bilibili.com');
   assert.equal(frame.screenshotDocument, frame.document);
+  assert.equal(frame.shortcutOptions.document, frame.document);
   assert.equal(frame.appOptions, undefined);
   const ordinaryFrame = startContext({}, {top: {}}, 'www.bilibili.com');
   assert.equal(ordinaryFrame.screenshotDocument, undefined);

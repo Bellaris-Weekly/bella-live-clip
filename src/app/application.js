@@ -20,6 +20,8 @@ import {createLibraryLoader} from './library-loader.js';
 import {createRecordingUpdater} from './recording-updater.js';
 import {createPanelWindow} from './panel-window.js';
 import {bindShortcut} from './shortcut-field.js';
+import {bindScreenshotShortcut} from '../ui/screenshot-shortcut.js';
+import {formatShortcut} from '../ui/shortcuts.js';
 import {bindEditorInput} from './editor-input.js';
 import {createExportActions} from './export-actions.js';
 import {createSubmissionService} from '../services/submission.js';
@@ -41,6 +43,7 @@ import {formatDuration, formatTimeRange, formatDate, formatBytes, formatTime} fr
 
 export function createApp({
   api,
+  screenshotShortcut,
   studio,
   storageKeys,
   diagnostics = createDiagnosticReporter(),
@@ -935,8 +938,17 @@ export function createApp({
     get,
     set,
     onPress: () => (isOpen() ? close() : void open()),
+    shared: screenshotShortcut,
+    onConflict: () => toast(store, '快捷键已被占用'),
     ...(preview ? {accepts: value => marks?.acceptsPanelShortcut(value) ?? true} : {}),
   });
+  if (screenshotShortcut)
+    bindScreenshotShortcut({
+      input: root.getElementById('screenshotShortcut'),
+      shortcut: screenshotShortcut,
+      format: formatShortcut,
+      onConflict: () => toast(store, '快捷键已被占用'),
+    });
   const unbindPageProgress = bindPageProgress({
     document,
     getPlayer: () => player,
@@ -1005,6 +1017,7 @@ export function createApp({
     });
     marks = createMarksSession({
       root,
+      screenshotShortcut,
       client: studio,
       get,
       set,
