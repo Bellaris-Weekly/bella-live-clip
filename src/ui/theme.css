@@ -623,19 +623,14 @@ fieldset {
   animation: rise var(--spring-smooth-duration) var(--spring-smooth) both;
 }
 #launcher > button {
+  width: 40px;
   height: 40px;
   min-height: 40px;
-  padding: 0 14px 0 6px;
+  padding: 0;
   background: transparent;
-  font-size: 13px;
-  font-weight: 700;
 }
 #launcher > button:hover:not(:disabled) {
   background: hsl(var(--accent));
-}
-#launcher > button + button {
-  padding: 0 14px 0 10px;
-  color: hsl(var(--primary));
 }
 #launcher .split {
   width: 1px;

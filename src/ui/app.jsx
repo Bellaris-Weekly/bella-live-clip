@@ -22,7 +22,6 @@ function Launcher({store, actions}) {
     <div id="launcher" data-busy={String(store.busy.value)}>
       <button type="button" id="openPanel" aria-label="贝报切片助手" title="贝报切片助手" onClick={actions.launch}>
         <BrandMark />
-        切片
       </button>
       {canMark && (
         <>
@@ -30,11 +29,11 @@ function Launcher({store, actions}) {
           <button
             type="button"
             id="launcherMark"
+            aria-label="记轴"
             title={`记轴（${marks.state.shortcut.value}）`}
             onClick={marks.actions.capture}
           >
             <Icon name="flag" />
-            记轴
           </button>
         </>
       )}
