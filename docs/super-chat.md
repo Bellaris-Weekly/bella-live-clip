@@ -41,8 +41,9 @@ comments retain their existing speed and combined-layer 75% opacity. Ready event
 are ordered: member comments, then SCs of at least ¥30 (`SC_PRIORITY_PRICE`) by
 amount, then cheaper SCs (mostly ¥2) and ordinary comments in arrival order.
 Members, SCs and each ordinary mode are separate queues, so one blocked queue
-never holds back another, and active comments are never preempted. SCs wait at
-most five seconds, members ten. `droppedSuperChats` counts capacity timeouts of
+never holds back another, and active comments are never preempted. SCs of at least
+¥30 wait at most five seconds, members ten, cheaper SCs 1.5 seconds like
+ordinary comments. `droppedSuperChats` counts capacity timeouts of
 both. Seek lookback includes maximum capsule width, traversal and the member
 wait; 1080p/4K landscape currently needs 31 seconds, with a geometry-derived
 value for other aspect ratios. Live window boundaries retain active layout

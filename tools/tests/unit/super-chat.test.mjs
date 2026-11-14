@@ -218,6 +218,13 @@ test('SCs of at least ¥30 queue by amount; cheaper SCs queue like ordinary comm
   assert.equal(blocked.dropped, 0, 'members wait longer than SCs');
   blocked.advance(MEMBER_WAIT + 0.1);
   assert.equal(blocked.dropped, 1);
+  // Cheap SCs wait as long as ordinary comments.
+  const cheap = layout([sc(0, 0, 2), sc(0, 1, 30)], 0, 1400);
+  cheap.measure = item => ({width: item.width, height: 900});
+  cheap.advance(1.6);
+  assert.equal(cheap.droppedSuperChats, 1);
+  cheap.advance(SC_WAIT + 0.1);
+  assert.equal(cheap.droppedSuperChats, 2);
 });
 
 test('avatar URLs allow only public Bilibili face thumbnails', () => {

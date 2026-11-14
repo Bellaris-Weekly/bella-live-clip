@@ -89,7 +89,7 @@ export class DanmakuLayout {
         mode = capsule ? 1 : event.mode;
       // Separate queues: a blocked wide member band never holds back an SC.
       const queue = anchorOf(event) ? 'member' : capsule ? 'sc' : mode;
-      const wait = anchorOf(event) ? MEMBER_WAIT : capsule ? SC_WAIT : 1.5;
+      const wait = [MEMBER_WAIT, SC_WAIT, 1.5][priority(event)];
       if (now - event.time > wait + 1e-6) {
         this.dropped++;
         if (capsule) this.droppedSuperChats++;
