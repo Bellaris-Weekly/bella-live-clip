@@ -63,8 +63,8 @@ function environment() {
       listeners.forEach(fn => fn());
     },
   };
-  const login = () => {
-    identity = {token: 'token', name: '成员'};
+  const login = (sub = 'member') => {
+    identity = {token: `token-${sub}`, sub, name: '成员'};
     listeners.forEach(fn => fn());
   };
   return {dom, w, values, store, client, login};
@@ -316,6 +316,34 @@ test('list filters session range, jumps with margins, refreshes frozen live repl
   Object.defineProperty(f.w.document, 'hidden', {value: true, configurable: true});
   await f.ui.refresh();
   assert.equal(f.requests.length, count);
+});
+
+test('switching accounts clears marks and drafts and discards an old accounts in-flight list', async t => {
+  const f = await session(t);
+  const mark = {id: 'private', room_id: 99, at: 1040000, note: 'private note', rev: 1, created_by: '成员'};
+  f.setMarks([mark]);
+  await f.ui.refresh();
+  await f.actions.history(f.state.items.value[0]);
+  f.actions.capture();
+  await tick();
+  f.actions.setNote('private draft');
+  assert.equal(f.state.items.value.length, 1);
+  assert.ok(f.state.history.value);
+  let finish;
+  f.client.request = () =>
+    new Promise(resolve => {
+      finish = resolve;
+    });
+  const pending = f.ui.refresh();
+  await tick();
+  f.login('other');
+  assert.equal(f.state.items.value.length, 0);
+  assert.equal(f.state.capture.value, null);
+  assert.equal(f.state.history.value, null);
+  finish([mark]);
+  await pending;
+  assert.equal(f.state.items.value.length, 0);
+  assert.equal(f.store.keys().filter(key => key.startsWith('studio.pending.')).length, 0);
 });
 
 test('preview live screenshot control is hidden on logout and returns on login', async t => {

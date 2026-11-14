@@ -138,7 +138,7 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
     const pending = request('/me')
       .then(me => {
         if (identity?.token !== token) return;
-        identity = {...identity, name: me.name};
+        identity = {...identity, name: me.name, sub: me.sub};
         set(TOKEN_KEY, identity);
         emit();
         return syncClock(changed || checkedAt === -Infinity);

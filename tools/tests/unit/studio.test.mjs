@@ -67,6 +67,8 @@ test('studio client uses GM bearer requests, display name, RTT midpoint and a te
   });
   await client.check();
   assert.equal(client.identity().name, 'Display Name');
+  assert.equal(client.identity().sub, 'id');
+  assert.equal(storage.get(TOKEN_KEY).sub, 'id');
   assert.equal(client.serverNow(), 2200, 'server 2100 at local midpoint 1100 means offset +1000');
   await client.syncClock();
   await client.check();

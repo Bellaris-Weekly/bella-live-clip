@@ -26,11 +26,13 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
   let running,
     timer,
     stopped = false;
+  const owner = () => client.identity()?.sub;
   const entries = () =>
     keys()
       .filter(key => key.startsWith(prefix))
       .map(key => get(key, null))
-      .filter(Boolean);
+      // Legacy entries have no reliable owner; keep them stored without uploading them.
+      .filter(entry => entry && owner() && entry.owner === owner());
   function schedule() {
     clearTimeout(timer);
     const next = entries().reduce((min, entry) => Math.min(min, entry.next || 0), Infinity);
@@ -38,14 +40,15 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
       timer = setTimeout(() => void flush(), Math.max(100, next - now()));
   }
   async function replay(force) {
+    const user = owner();
     for (const entry of entries()) {
-      if (stopped || !client.identity()) break;
+      if (stopped || owner() !== user) break;
       if (entry.next > now() && !force) continue;
       try {
         const {room_id, at, note} = entry.mark;
         const mark = await client.request(`/marks/${entry.mark.id}`, {method: 'PUT', body: {room_id, at, note}});
         set(prefix + entry.mark.id, null);
-        changed(mark);
+        if (owner() === user) changed(mark);
       } catch (error) {
         // A rejected payload never succeeds on retry; the server keeps the mark on 409.
         const permanent = error.status >= 400 && error.status < 500 && !RETRYABLE.has(error.status);
@@ -56,8 +59,10 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
           entry.error = error.message;
           set(prefix + entry.mark.id, entry);
         }
-        changed();
-        if (permanent) failed(entry.mark, error);
+        if (owner() === user) {
+          changed();
+          if (permanent) failed(entry.mark, error);
+        }
         if (error.status === 401) break;
       }
     }
@@ -74,7 +79,8 @@ export function createPendingQueue({get, set, keys, client, now = Date.now, chan
     entries,
     flush,
     add(mark) {
-      set(prefix + mark.id, {mark, next: 0});
+      if (!owner()) throw new Error('请先联网验证登录身份后再记轴');
+      set(prefix + mark.id, {mark, owner: owner(), next: 0});
       changed();
       void flush();
     },

@@ -8,7 +8,6 @@ const FILTERS = [
   ['all', '全部', () => true],
   ['open', '未投稿', mark => !mark.bvid && !mark.deleted],
   ['done', '已投稿', mark => Boolean(mark.bvid)],
-  ['mine', '我的', mark => mark.mine],
 ];
 const OPS = {create: '新建', update: '修改', delete: '删除', restore: '恢复'};
 const FIELDS = {room_id: '直播间', at: '时间', note: '备注', bvid: 'BV 号', deleted: '删除状态'};
@@ -262,7 +261,7 @@ export function MarksPanel({marks: session, onCompose}) {
   return (
     <>
       <div class="side-head">
-        <h2>本场轴</h2>
+        <h2>我的本场轴</h2>
         <span class="count">{items.filter(mark => !mark.deleted).length}</span>
         <span class="spacer" />
         <button
@@ -363,7 +362,7 @@ export function MiniMarks({marks: session, onExpand, bindWindow}) {
         <span class="live-title">
           {live ? <i class="live-dot" /> : null}
           <span>
-            {live ? `${live.member || ''}直播中` : '记轴'} · {kept.length} 条
+            {live ? `${live.member || ''}直播中` : '记轴'} · 我的 {kept.length} 条
           </span>
         </span>
         <button type="button" class="icon small" aria-label="展开剪辑" title="展开剪辑" onClick={onExpand}>

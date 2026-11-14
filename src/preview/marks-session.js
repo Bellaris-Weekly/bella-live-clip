@@ -10,7 +10,7 @@ export const MARK_SHORTCUT = {...DEFAULT_SHORTCUT, code: 'KeyM'};
 // A note that has been written and left alone is saved after this long.
 export const AUTOSAVE_SECONDS = 8;
 
-// Shared marks for the open recording (editor side column) or the live room this page shows
+// Personal marks for the open recording (editor side column) or the live room this page shows
 // (the mini window). Marks are absolute UTC+8 instants; they map to recording time only once
 // the replay clock of each recorded part is known.
 export function createMarksSession({
@@ -48,7 +48,10 @@ export function createMarksSession({
     disposed = false,
     captureTimer,
     clock = createReplayClock(mediaRequest),
-    ownerKey;
+    ownerKey,
+    authToken = client.identity()?.token,
+    authUser = client.identity()?.sub,
+    authVersion = 0;
   const queue = createPendingQueue({
     get,
     set,
@@ -95,7 +98,7 @@ export function createMarksSession({
       .sort((a, b) => a.at - b.at)
       .map(mark => ({
         ...mark,
-        mine: mark.created_by === me,
+        mine: true,
         time: mark.deleted ? null : timeOf(mark),
         // Only the editor knows how far the replay reaches.
         waiting:
@@ -112,7 +115,7 @@ export function createMarksSession({
       if (error.status === 409) {
         state.editing.value = null;
         await refresh(true);
-        notify('这条轴刚被别人修改，已刷新，请重试。', {error: true});
+        notify('这条轴已在其他窗口修改，已刷新，请重试。', {error: true});
       } else notify(error.message, {error: true});
     }
   }
@@ -150,7 +153,8 @@ export function createMarksSession({
   async function readMarks() {
     if (disposed || !client.identity() || document.hidden) return;
     if (!session.isOpen() && !state.mini.value) return;
-    const record = session.record(),
+    const version = authVersion,
+      record = session.record(),
       key = record?.key ?? `live:${state.live.value?.room}`;
     try {
       if (ownerKey !== key) {
@@ -162,32 +166,35 @@ export function createMarksSession({
       }
       render();
       await queue.flush();
+      if (version !== authVersion) return;
       const current = range();
       if (!current) return;
       const result = await client.request(
         `/marks?${new URLSearchParams({room_id: current.room, from: current.from, to: current.to, include_deleted: 1})}`,
       );
-      if (ownerKey !== key || !client.identity()) return;
+      if (version !== authVersion || ownerKey !== key || !client.identity()) return;
       records = result;
       state.error.value = '';
       render();
       if (record && session.ready()) {
         const mapped = await clock(await session.groups(), session.signal());
-        if (session.record()?.key !== key || !client.identity()) return;
+        if (version !== authVersion || session.record()?.key !== key || !client.identity()) return;
         parts = mapped;
         render();
         if (waiting) await jump(waiting);
       }
       void client.syncClock().catch(() => {});
     } catch (error) {
-      if (error.name !== 'AbortError') state.error.value = error.message;
+      if (version === authVersion && error.name !== 'AbortError') state.error.value = error.message;
     }
   }
   // The real room id and the running stream for this page, so marks work without the editor.
   async function resolveLive() {
+    const version = authVersion;
     const pageRoom = roomIdFromUrl(pageUrl());
     if (!pageRoom || !client.identity()) return null;
     const live = await api.current({room: pageRoom, name: '当前直播间'});
+    if (version !== authVersion) return null;
     set(`studio.room.${pageRoom}`, live.room);
     state.live.value = live.live ? {room: live.room, start: live.start, title: live.title, member: live.member} : null;
     return live.room;
@@ -195,7 +202,9 @@ export function createMarksSession({
   // The draft lives only in memory until it is saved; an empty draft is never uploaded by itself.
   async function capture() {
     if (!client.identity()) return;
-    const at = client.serverNow(),
+    if (!client.identity().sub) throw new Error('请先联网验证登录身份后再记轴');
+    const version = authVersion,
+      at = client.serverNow(),
       id = crypto.randomUUID();
     settleCapture();
     const current = session.record();
@@ -203,6 +212,7 @@ export function createMarksSession({
     let room = session.isOpen() && current?.kind !== 'submission' ? current?.room : null;
     if (!room && pageRoom)
       room = state.live.value?.room ?? get(`studio.room.${pageRoom}`, null) ?? (await resolveLive());
+    if (version !== authVersion) return;
     if (!room || !client.identity()) {
       notify('请先打开直播或回放场次', {error: true});
       return;
@@ -259,18 +269,27 @@ export function createMarksSession({
     onChange: text => (state.shortcut.value = text),
   });
   const authChanged = () => {
-    if (!client.identity()) {
+    const identity = client.identity();
+    if (authToken !== identity?.token || authUser !== identity?.sub) {
+      authToken = identity?.token;
+      authUser = identity?.sub;
+      authVersion++;
       closeCapture();
       waiting = null;
       records = [];
       parts = [];
+      ownerKey = null;
       batch(() => {
         state.mini.value = false;
         state.live.value = null;
         state.history.value = null;
         state.editing.value = null;
+        state.selected.value = null;
+        state.error.value = '';
       });
       render();
+    }
+    if (!identity) {
       onLogout();
     } else {
       void resolveLive().catch(() => {});
