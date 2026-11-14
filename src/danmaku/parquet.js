@@ -149,7 +149,7 @@ export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal
                 'event_id',
                 'order',
               ]
-            : ['sec', 't', 'sent', 'text', 'mode', 'color', 'event_id', 'order'],
+            : ['sec', 't', 'sent', 'uid', 'text', 'mode', 'color', 'event_id', 'order'],
         compressors: {ZSTD: (input, output) => decompress(input, new Uint8Array(output))},
       });
     const values = await (readGroup ? readGroup(group.i, group.size, load) : load());
@@ -175,7 +175,7 @@ export async function readDanmaku(file, {from = -Infinity, to = Infinity, signal
           )
             continue;
           rows.push({...row, kind: 'sc', mode: 1, color: 0xffffff, price: Number(row.price)});
-        } else rows.push(row);
+        } else rows.push({...row, uid: row.uid == null ? null : String(row.uid)});
       }
       if (rows.length > MAX_EVENTS) throw new Error('选区内弹幕过多，请缩短选区后重试。');
     }

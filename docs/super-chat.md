@@ -39,7 +39,7 @@ SC moves at `200 * width / 1920` pixels/second and uses 85% opacity. Ordinary
 comments retain their existing speed and combined-layer 75% opacity. SC has a
 five-second queue deadline and priority among ready events without preempting
 active comments or blocking the ordinary FIFO. `droppedSuperChats` diagnoses
-capacity timeouts. Seek lookback includes maximum SC width, traversal and waiting;
+capacity timeouts of SCs and member comments. Seek lookback includes maximum SC width, traversal and waiting;
 1080p/4K landscape currently needs 26 seconds, with a geometry-derived value for
 other aspect ratios. Live window boundaries retain active layout instead of
 replaying events.
@@ -51,6 +51,27 @@ a 2 MiB response cap, three-second request timeout, and 60-second failure cooldo
 Only preparation prefetches. The avatar slot is always reserved; until the image
 arrives it shows a portrait placeholder, and a late image re-rasters only that
 capsule without changing its dimensions or stalling media.
+
+### Member comments
+
+A danmaku row whose `uid` is one of `MEMBERS` (any member, so visits count too)
+is a member comment and uses the same capsule, speed, opacity, top layer and
+deadline. It is placed before SCs and ordinary comments and always scrolls, even
+if sent as a fixed comment. Its head holds only the member's `face` from
+`MEMBERS`; head, edge and text use the member color, and the body is that color
+mixed 85% toward white. Promotion text filtering does not apply; text made only
+of whitespace or zero-width characters is skipped.
+
+Member comments keep emotes. Text runs are drawn in the cached capsule sprite;
+emotes are separate parts drawn per frame on the top layer, so animation never
+re-rasters the capsule. A two-line emote (128px source, `1.8 * fontSize`) grows
+the capsule to the emote height plus the avatar inset; corner radius and avatar
+keep their one-line size. Emotes past the width cap are dropped; a failed emote
+re-measures the capsule with its `[name]` text. SC text never loads emotes.
+
+Measured 2026-11-13 over 102 archived sessions of the five rooms: 52 member
+comments, 2 with two-line emotes; danmaku rows carry no face, hence the fixed
+faces in `MEMBERS`.
 
 ## 4. Validation and errors
 

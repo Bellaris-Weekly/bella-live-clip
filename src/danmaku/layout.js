@@ -1,9 +1,14 @@
-import {isSuperChat, scSpeed, SC_WAIT} from './super-chat.js';
+import {anchorOf, isCapsule, isSuperChat, scSpeed, SC_WAIT} from './super-chat.js';
 const BLOCKED = new Set(['喜欢主播加关注，点点红包抽礼物', '点点红包，关注主播抽礼物～', '老板大气！点点红包抽礼物']);
 const TICKS = 60;
 
+// Member comments are never filtered as promotions; invisible-only text is.
 export const visibleComment = item =>
-  [1, 4, 5].includes(item.mode) && (isSuperChat(item) || !BLOCKED.has(String(item.text).trim()));
+  [1, 4, 5].includes(item.mode) &&
+  (isSuperChat(item) ||
+    (anchorOf(item)
+      ? /[^\s\u200b-\u200d\u2060\ufeff]/u.test(String(item.text))
+      : !BLOCKED.has(String(item.text).trim())));
 
 export class DanmakuLayout {
   constructor(events, {width, height, measure, start}) {
@@ -70,17 +75,22 @@ export class DanmakuLayout {
       this.waiting.push(this.events[this.cursor++]);
     const pending = [],
       blocked = new Set();
-    // Prioritize ready SCs without putting a blocked SC in front of the
-    // ordinary FIFO. Existing placements are never preempted.
-    const waiting = this.waiting.some(isSuperChat)
-      ? this.waiting.filter(isSuperChat).concat(this.waiting.filter(event => !isSuperChat(event)))
+    // Prioritize ready member comments, then SCs, without putting a blocked
+    // capsule in front of the ordinary FIFO. Placements are never preempted.
+    const waiting = this.waiting.some(isCapsule)
+      ? this.waiting.filter(anchorOf).concat(
+          this.waiting.filter(isSuperChat),
+          this.waiting.filter(event => !isCapsule(event)),
+        )
       : this.waiting;
     for (const event of waiting) {
-      const superChat = isSuperChat(event);
-      const queue = superChat ? 'sc' : event.mode;
-      if (now - event.time > (superChat ? SC_WAIT : 1.5) + 1e-6) {
+      // Capsules always scroll in the top area, whatever the source mode.
+      const capsule = isCapsule(event),
+        mode = capsule ? 1 : event.mode;
+      const queue = capsule ? 'sc' : mode;
+      if (now - event.time > (capsule ? SC_WAIT : 1.5) + 1e-6) {
         this.dropped++;
-        if (superChat) this.droppedSuperChats++;
+        if (capsule) this.droppedSuperChats++;
         continue;
       }
       if (blocked.has(queue)) {
@@ -88,14 +98,14 @@ export class DanmakuLayout {
         continue;
       }
       const content = this.measure(event);
-      const position = this.place(content, event.mode, now, superChat);
+      const position = this.place(content, mode, now, capsule);
       if (!position) {
         pending.push(event);
         blocked.add(queue);
         continue;
       }
-      const item = {...event, ...content, ...position, started: now};
-      item.expires = now + (event.mode === 1 ? (this.width + content.width + 50 * this.scale) / item.speed : 5);
+      const item = {...event, mode, ...content, ...position, started: now};
+      item.expires = now + (mode === 1 ? (this.width + content.width + 50 * this.scale) / item.speed : 5);
       this.active.push(item);
     }
     this.waiting = pending;

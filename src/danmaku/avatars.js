@@ -1,5 +1,5 @@
 import {boundedFetch} from './archive.js';
-import {isSuperChat} from './super-chat.js';
+import {capsuleFace, isCapsule} from './super-chat.js';
 
 export function avatarUrl(value) {
   if (typeof value !== 'string' || !value) return null;
@@ -86,12 +86,12 @@ export function createAvatarCache({signal, fetcher, metrics, size = 48, maxEntri
       if (closed || signal.aborted) return;
       pinned = new Set(
         retained
-          .filter(isSuperChat)
-          .map(event => avatarUrl(event.face))
+          .filter(isCapsule)
+          .map(event => avatarUrl(capsuleFace(event)))
           .filter(Boolean),
       );
-      for (const event of events.filter(isSuperChat)) {
-        const url = avatarUrl(event.face);
+      for (const event of events.filter(isCapsule)) {
+        const url = avatarUrl(capsuleFace(event));
         if (!url) continue;
         const old = entries.get(url);
         if (old?.image || old?.pending || old?.retryAt > Date.now()) continue;

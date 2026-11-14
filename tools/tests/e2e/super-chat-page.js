@@ -129,6 +129,39 @@ window.checkLateAvatar = () => {
   return {before, after, widthBefore: width, widthAfter: item.width};
 };
 
+// A member comment animates its two-line emote over the cached capsule sprite.
+window.checkMemberCapsule = () => {
+  const frame = color => {
+    const canvas = new OffscreenCanvas(72, 72),
+      ink = canvas.getContext('2d');
+    ink.fillStyle = color;
+    ink.fillRect(0, 0, 72, 72);
+    return canvas.transferToImageBitmap();
+  };
+  const asset = {width: 72, height: 72, frames: [frame('#00ff00'), frame('#0000ff')], ends: [0.5, 1], loops: Infinity};
+  const metrics = createExportMetrics();
+  const event = {time: 0, order: 0, mode: 1, color: 0xffffff, uid: '672353429', text: '晚安[tall]'};
+  const painter = createDanmakuPainter(
+    [event],
+    {assets: new Map([['[tall]', asset]]), close() {}},
+    {...options(), metrics},
+  );
+  painter.layout.advance(0);
+  painter.layout.x = () => 40;
+  const ink = new OffscreenCanvas(1920, 1080).getContext('2d');
+  const item = painter.layout.active[0],
+    emote = item.parts[1];
+  const sample = () => [...ink.getImageData(40 + emote.x + 36, item.top + item.height / 2, 1, 1).data];
+  paintOverlay(painter, 0, ink);
+  const first = sample();
+  paintOverlay(painter, 0.6, ink);
+  const second = sample();
+  const counters = metrics.snapshot().counters;
+  painter.close();
+  metrics.close();
+  return {first, second, height: item.height, rasters: counters.spriteRasters};
+};
+
 window.checkSuperChatWindows = async () => {
   const events = [make({time: 0, text: '长'.repeat(40)}), make({time: 10, order: 1, text: '第二条'})];
   const windows = [];

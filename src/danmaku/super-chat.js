@@ -1,5 +1,12 @@
+import {MEMBERS} from '../domain/records.js';
+
 // One shared geometry contract for layout, seeking and the cached Canvas sprite.
+// Capsules are SCs and the members' own comments; both share speed and queue.
 export const isSuperChat = event => event.kind === 'sc';
+const MEMBER_BY_UID = new Map(MEMBERS.map(member => [String(member.uid), member]));
+export const anchorOf = event => (isSuperChat(event) ? undefined : MEMBER_BY_UID.get(String(event.uid)));
+export const isCapsule = event => isSuperChat(event) || !!anchorOf(event);
+export const capsuleFace = event => (isSuperChat(event) ? event.face : anchorOf(event)?.face);
 export const SC_OPACITY = 0.85;
 export const SC_WAIT = 5;
 export const scSpeed = width => (200 * width) / 1920;
@@ -24,29 +31,61 @@ function color(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 }
 
-// Darken a #rrggbb color toward black by the given fraction.
-function darken(value, amount) {
-  return `rgb(${[1, 3, 5].map(i => Math.round(parseInt(value.slice(i, i + 2), 16) * (1 - amount))).join(',')})`;
+// Mix a #rrggbb color toward black (amount < 0) or white (amount > 0).
+function shade(value, amount) {
+  const target = amount < 0 ? 0 : 255,
+    t = Math.abs(amount);
+  return `rgb(${[1, 3, 5].map(i => Math.round(parseInt(value.slice(i, i + 2), 16) * (1 - t) + target * t)).join(',')})`;
 }
 
-export function measureSuperChat(event, ink, fontSize, font, avatars) {
+// Body runs are text and (member comments only) emotes. Emotes are separate
+// parts drawn per frame over the static capsule sprite; tall ones grow it.
+export function measureCapsule(event, ink, fontSize, font, {avatars, assets, tokens} = {}) {
   const scale = fontSize / 40;
-  const height = Math.ceil(fontSize * 1.2),
-    pad = 6 * scale,
+  const member = anchorOf(event);
+  const pad = 6 * scale,
     inset = 3 * scale,
-    avatarSize = height - inset * 2;
-  const amount = `¥${Number(event.price).toLocaleString('en-US', {maximumFractionDigits: 2, useGrouping: false})}`;
-  // Keep currency/digits in a text font even when the host only has a color
-  // emoji font among the named CJK fallbacks.
-  const amountFont = `700 ${fontSize * 0.7}px Arial, sans-serif`;
-  ink.font = amountFont;
-  const head = Math.min(7 * fontSize, inset + avatarSize + pad * 3 + ink.measureText(amount).width);
-  const text = scText(event.text),
-    textFont = `600 ${fontSize * 0.8}px ${font}`;
+    base = Math.ceil(fontSize * 1.2);
+  const textFont = `600 ${fontSize * 0.8}px ${font}`;
+  const runs = [];
+  if (member)
+    for (const token of tokens(event.text)) {
+      const asset = assets?.get(token.normalize('NFC'));
+      runs.push(asset && !asset.failed ? {asset} : {text: token});
+    }
+  else runs.push({text: scText(event.text)});
+  const tallest = Math.max(0, ...runs.map(run => run.asset?.height ?? 0));
+  const height = Math.max(base, Math.ceil(tallest + inset * 2)),
+    avatarSize = base - inset * 2;
+  let head = inset + avatarSize + pad * 1.5,
+    amount,
+    amountFont;
+  if (!member) {
+    amount = `¥${Number(event.price).toLocaleString('en-US', {maximumFractionDigits: 2, useGrouping: false})}`;
+    // Keep currency/digits in a text font even when the host only has a color
+    // emoji font among the named CJK fallbacks.
+    amountFont = `700 ${fontSize * 0.7}px Arial, sans-serif`;
+    ink.font = amountFont;
+    head = Math.min(7 * fontSize, inset + avatarSize + pad * 3 + ink.measureText(amount).width);
+  }
   ink.font = textFont;
-  const body = Math.min(scMaxWidth(fontSize) - head, ink.measureText(text).width + pad * 2 + height * 0.35);
-  const width = Math.ceil(head + body);
-  const header = color(event.header_color, '#2A60B2');
+  const limit = scMaxWidth(fontSize) - head - pad * 2 - base * 0.35;
+  let x = head + pad * 1.5;
+  const text = [],
+    emotes = [];
+  for (const run of runs) {
+    if (x - head - pad * 1.5 >= limit) break;
+    if (run.asset) {
+      if (x + run.asset.width > head + pad * 1.5 + limit) break;
+      emotes.push({asset: run.asset, x, capsule: true});
+      x += run.asset.width;
+    } else {
+      text.push({text: run.text, x});
+      x += ink.measureText(run.text).width;
+    }
+  }
+  const width = Math.ceil(Math.min(x, head + pad * 1.5 + limit) + pad * 0.5 + base * 0.35);
+  const header = member ? member.color : color(event.header_color, '#2A60B2');
   return {
     width,
     height,
@@ -68,27 +107,28 @@ export function measureSuperChat(event, ink, fontSize, font, avatars) {
         amountFont,
         text,
         textFont,
-        face: event.face,
-        avatar: avatars?.get(event.face) ?? null,
-        background: color(event.bg_color, '#EDF5FF'),
+        face: capsuleFace(event),
+        avatar: avatars?.get(capsuleFace(event)) ?? null,
+        background: member ? shade(header, 0.85) : color(event.bg_color, '#EDF5FF'),
         header,
-        // Body text takes the tier color, darkened to read on the light body.
+        // Body text takes the capsule color, darkened to read on the light body.
         // The platform's font_color is for its dark card and is often near white.
-        foreground: darken(header, 0.25),
-        border: Math.max(1, 2 * (fontSize / 40)),
+        foreground: shade(header, member ? -0.3 : -0.25),
+        border: Math.max(1, 2 * scale),
       },
+      ...emotes,
     ],
   };
 }
 
-export function drawSuperChat(target, part) {
+export function drawCapsule(target, part) {
   const {width, height, head, pad, inset, avatarSize} = part;
   const center = height / 2,
     avatarCenter = inset + avatarSize / 2,
     ring = part.border;
   target.save();
   target.beginPath();
-  target.roundRect(0, 0, width, height, center);
+  target.roundRect(0, 0, width, height, Math.min(center, (avatarSize + inset * 2) / 2));
   target.clip();
   target.fillStyle = part.background;
   target.fillRect(0, 0, width, height);
@@ -119,23 +159,32 @@ export function drawSuperChat(target, part) {
   target.arc(avatarCenter, center, avatarSize / 2 - ring / 2, 0, Math.PI * 2);
   target.stroke();
   // CJK and Arial glyphs sit visually high on a middle baseline.
-  const optical = height / 48;
+  const optical = (avatarSize + inset * 2) / 48;
   target.textBaseline = 'middle';
-  target.font = part.amountFont;
-  target.fillStyle = '#fff';
-  const amountLeft = inset + avatarSize + pad;
-  target.shadowColor = 'rgba(0,0,0,0.3)';
-  target.shadowBlur = 2 * optical;
-  target.fillText(part.amount, amountLeft, center + optical, head - amountLeft - pad);
-  target.shadowColor = 'transparent';
+  if (part.amount) {
+    target.font = part.amountFont;
+    target.fillStyle = '#fff';
+    const amountLeft = inset + avatarSize + pad;
+    target.shadowColor = 'rgba(0,0,0,0.3)';
+    target.shadowBlur = 2 * optical;
+    target.fillText(part.amount, amountLeft, center + optical, head - amountLeft - pad);
+    target.shadowColor = 'transparent';
+  }
   target.font = part.textFont;
   target.fillStyle = part.foreground;
-  target.fillText(part.text, head + pad * 1.5, center + optical, width - head - pad * 2 - height * 0.35);
+  const right = width - pad * 0.5 - (avatarSize + inset * 2) * 0.35;
+  for (const run of part.text) target.fillText(run.text, run.x, center + optical, Math.max(1, right - run.x));
   target.restore();
   target.strokeStyle = part.header;
   target.lineWidth = part.border;
   const edge = part.border / 2;
   target.beginPath();
-  target.roundRect(edge, edge, width - part.border, height - part.border, (height - part.border) / 2);
+  target.roundRect(
+    edge,
+    edge,
+    width - part.border,
+    height - part.border,
+    Math.min((height - part.border) / 2, (avatarSize + inset * 2 - part.border) / 2),
+  );
   target.stroke();
 }

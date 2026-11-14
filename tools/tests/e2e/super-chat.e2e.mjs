@@ -33,6 +33,11 @@ test('SC sprites, preview/export opacity, avatars and streaming boundaries', asy
     assert.ok(late.before[1] > 25, 'placeholder before the avatar arrives');
     assert.ok(late.after[0] > 200 && late.after[1] < 25 && late.after[2] > 200, JSON.stringify(late));
     assert.equal(late.widthAfter, late.widthBefore);
+    const member = await page.evaluate(() => window.checkMemberCapsule());
+    assert.equal(member.height, 78, JSON.stringify(member));
+    assert.ok(member.first[1] > 200 && member.first[2] < 25, JSON.stringify(member));
+    assert.ok(member.second[2] > 200 && member.second[1] < 25, JSON.stringify(member));
+    assert.equal(member.rasters, 1, 'animation frames reuse the static capsule sprite');
     const windows = await page.evaluate(() => window.checkSuperChatWindows());
     assert.equal(windows.maxDifference, 0);
     assert.deepEqual(windows.firstWindow, {start: -windows.preroll, end: 10});

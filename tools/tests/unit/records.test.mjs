@@ -8,6 +8,7 @@ import {
   roomFromBaseInfo,
   roomIdFromUrl,
 } from '../../../src/domain/records.js';
+import {avatarUrl} from '../../../src/danmaku/avatars.js';
 
 test('直播编号原样保留，不经过浮点数', () => {
   for (const key of ['734979151883758285', '987654321098765432']) {
@@ -23,7 +24,8 @@ test('成员配置与回放转换保留 UID、直播间和姓名', () => {
     ['sinuo', '3537115310721781', 30858592, '思诺', '#7252c0'],
   ]) {
     const member = MEMBERS.find(item => item.id === id);
-    assert.deepEqual(member, {id, uid, room, name, color});
+    assert.deepEqual({...member, face: undefined}, {id, uid, room, name, color, face: undefined});
+    assert.ok(avatarUrl(member.face));
     assert.deepEqual(
       recordFromReplay(
         {live_key: '987654321098765432', start_time: 100, end_time: 200, room_id: room, live_info: {title: '回放'}},

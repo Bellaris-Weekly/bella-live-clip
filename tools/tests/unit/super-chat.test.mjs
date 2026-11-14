@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {readDanmaku, loadComments} from '../../../src/danmaku/archive.js';
 import {DanmakuLayout, visibleComment} from '../../../src/danmaku/layout.js';
-import {scText, scSpeed, SC_WAIT, commentPreroll} from '../../../src/danmaku/super-chat.js';
+import {
+  scText,
+  scSpeed,
+  SC_WAIT,
+  commentPreroll,
+  anchorOf,
+  capsuleFace,
+  measureCapsule,
+} from '../../../src/danmaku/super-chat.js';
+import {textTokens} from '../../../src/danmaku/emotes.js';
 import {avatarUrl, createAvatarCache} from '../../../src/danmaku/avatars.js';
 
 const event = (kind, time, order, width = 200) => ({kind, time, order, width, text: 'hello', mode: 1, color: 0xffffff});
@@ -115,6 +124,64 @@ test('collector SC fields and receipt order reach the browser without merging eq
     ['test:1', 'test:2', 'test:3', 'test:4'],
   );
   assert.equal(events[0].text, events[2].text);
+  assert.ok(rows.filter(row => row.kind !== 'sc').every(row => row.uid === null || typeof row.uid === 'string'));
+});
+
+const BELLA = '672353429';
+
+test('member comments are capsules: matched by UID, first in the queue, always scrolling', () => {
+  assert.equal(anchorOf({uid: BELLA, text: 'hi'}).name, '贝拉');
+  assert.equal(anchorOf({uid: 672353429, text: 'hi'}).name, '贝拉');
+  assert.equal(anchorOf({uid: '1', text: 'hi'}), undefined);
+  assert.equal(anchorOf({kind: 'sc', uid: BELLA}), undefined, 'a member SC stays an SC');
+  assert.ok(avatarUrl(capsuleFace({uid: BELLA})));
+  const member = {...event(undefined, 0, 2), uid: BELLA, mode: 4};
+  const l = layout([event(undefined, 0, 0), event('sc', 0, 1), member]);
+  l.advance(0);
+  // Placement order decides lanes: member first (top lane), then SC, then ordinary.
+  assert.deepEqual(
+    l.active.map(item => [item.order, item.top]),
+    [
+      [2, 12],
+      [1, 61],
+      [0, 110],
+    ],
+  );
+  assert.equal(l.active[0].mode, 1);
+  assert.equal(l.active[0].speed, scSpeed(1920));
+  assert.equal(visibleComment({...member, text: '喜欢主播加关注，点点红包抽礼物'}), true);
+  assert.equal(visibleComment({...member, text: '   \u200c\u200d'}), false);
+});
+
+test('member capsules lay out text and emotes; a two-line emote grows the capsule', () => {
+  const ink = {font: '', measureText: text => ({width: text.length * 32})};
+  const tall = {width: 72, height: 72},
+    small = {width: 36, height: 36};
+  const assets = new Map([
+    ['[tall]', tall],
+    ['[dog]', small],
+  ]);
+  const measure = text => measureCapsule({uid: BELLA, text}, ink, 40, 'sans-serif', {assets, tokens: textTokens});
+  const plain = measure('晚安[dog]');
+  assert.equal(plain.height, 48);
+  const [capsule, emote] = plain.parts;
+  assert.deepEqual(
+    capsule.text.map(run => run.text),
+    ['晚安'],
+  );
+  assert.equal(emote.asset, small);
+  assert.equal(emote.x, capsule.text[0].x + 64);
+  assert.ok(plain.width >= emote.x + 36);
+  const grown = measure('拜拜[tall]');
+  assert.equal(grown.height, 78);
+  assert.equal(grown.parts[0].avatarSize, 42, 'avatar keeps its one-line size');
+  assert.equal(measure('[missing]').parts[0].text[0].text, '[missing]', 'unknown emotes stay text');
+  const sc = measureCapsule({kind: 'sc', price: 30, text: '[tall]', uid: BELLA}, ink, 40, 'sans-serif', {
+    assets,
+    tokens: textTokens,
+  });
+  assert.equal(sc.parts.length, 1, 'SC text never loads emotes');
+  assert.equal(sc.height, 48);
 });
 
 test('avatar URLs allow only public Bilibili face thumbnails', () => {

@@ -1,9 +1,45 @@
+// Faces render on members' own danmaku; old CDN files stay valid after changes.
 export const MEMBERS = Object.freeze([
-  {id: 'bella', name: '贝拉', uid: 672353429, room: 22632424, color: '#b97259'},
-  {id: 'diana', name: '嘉然', uid: 672328094, room: 22637261, color: '#c7829c'},
-  {id: 'eileen', name: '乃琳', uid: 672342685, room: 22625027, color: '#7b85ad'},
-  {id: 'xinyi', name: '心宜', uid: '3537115310721181', room: 30849777, color: '#c93773'},
-  {id: 'sinuo', name: '思诺', uid: '3537115310721781', room: 30858592, color: '#7252c0'},
+  {
+    id: 'bella',
+    name: '贝拉',
+    uid: 672353429,
+    room: 22632424,
+    color: '#b97259',
+    face: 'https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg',
+  },
+  {
+    id: 'diana',
+    name: '嘉然',
+    uid: 672328094,
+    room: 22637261,
+    color: '#c7829c',
+    face: 'https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg',
+  },
+  {
+    id: 'eileen',
+    name: '乃琳',
+    uid: 672342685,
+    room: 22625027,
+    color: '#7b85ad',
+    face: 'https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg',
+  },
+  {
+    id: 'xinyi',
+    name: '心宜',
+    uid: '3537115310721181',
+    room: 30849777,
+    color: '#c93773',
+    face: 'https://i1.hdslb.com/bfs/face/994a4c66de1803e0a9e2fb3f72e0e5adaf84e486.jpg',
+  },
+  {
+    id: 'sinuo',
+    name: '思诺',
+    uid: '3537115310721781',
+    room: 30858592,
+    color: '#7252c0',
+    face: 'https://i1.hdslb.com/bfs/face/2e1b50dcc480c6f34f8eb183edf34a8a458006d8.jpg',
+  },
 ]);
 
 // A poster is decoration: anything but a platform image is simply not shown.

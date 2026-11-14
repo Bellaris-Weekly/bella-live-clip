@@ -3,7 +3,7 @@ import {loadComments} from './archive.js';
 import {loadEmotes, textTokens, emoteFrame} from './emotes.js';
 import {DanmakuLayout, visibleComment} from './layout.js';
 import {createSpriteCache} from './sprite-cache.js';
-import {commentPreroll, isSuperChat, measureSuperChat, drawSuperChat, SC_OPACITY} from './super-chat.js';
+import {commentPreroll, isCapsule, measureCapsule, drawCapsule, SC_OPACITY} from './super-chat.js';
 import {createAvatarCache} from './avatars.js';
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -81,7 +81,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
         const surface = new OffscreenCanvas(part.width, part.height);
         const target = surface.getContext('2d');
         if (!target) throw new Error('无法创建 SC 画布。');
-        drawSuperChat(target, part);
+        drawCapsule(target, part);
         return {image: surface.transferToImageBitmap(), left: 0, top: 0, bytes};
       }
       // Preserve the first draw's subpixel phase. Fixed comments then use an
@@ -109,7 +109,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       return {image, left, top, bytes};
     }
     function measure(event) {
-      if (isSuperChat(event)) return measureSuperChat(event, ink, fontSize, FONT, resources.avatars);
+      if (isCapsule(event))
+        return measureCapsule(event, ink, fontSize, FONT, {
+          avatars: resources.avatars,
+          assets: resources.assets,
+          tokens: textTokens,
+        });
       if (cache.has(event.text)) return cache.get(event.text);
       const parts = [];
       let width = 0,
@@ -246,9 +251,9 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             for (const [top, bottom] of scRegions) scInk.clearRect(0, top, width, bottom - top);
             scRegions = [];
             const rows = [];
-            const sc = commands.filter(command => command.part.sc);
+            const sc = commands.filter(command => command.part.sc || command.part.capsule);
             for (const {item, part, x, y, frame} of commands) {
-              if (part.sc) continue;
+              if (part.sc || part.capsule) continue;
               const top = Math.max(0, Math.floor(y + (frame ? -2 : part.top)));
               const bottom = Math.min(height, Math.ceil(y + (frame ? part.asset.height + 2 : part.bottom)));
               if (Number.isFinite(top) && Number.isFinite(bottom)) {
@@ -267,7 +272,12 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
               scCanvas ??= new OffscreenCanvas(width, Math.ceil(height * 0.23));
               scInk ??= scCanvas.getContext('2d');
               if (!scInk) throw new Error('无法创建 SC 合成画布。');
-              for (const {item, part, x, y} of sc) {
+              for (const {item, part, x, y, frame} of sc) {
+                // Capsule emotes animate over the cached static capsule sprite.
+                if (part.capsule) {
+                  if (frame) scInk.drawImage(frame, x, y);
+                  continue;
+                }
                 const sprite = sprites.get(item, part, limit => raster(item, part, x, y, limit));
                 scInk.drawImage(sprite.image, x, y);
                 scRegions.push([Math.max(0, Math.floor(y)), Math.min(scCanvas.height, Math.ceil(y + part.height))]);
