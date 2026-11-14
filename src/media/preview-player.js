@@ -43,6 +43,32 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
   return error;
 }
 
+// While a session is live, its playlist is a frozen snapshot that ends with
+// ENDLIST. Reopened as a live playlist, hls.js keeps polling it and appends the
+// newer fragments without tearing playback down. The snapshot declares a
+// target duration of 0, which would make hls.js poll without pause.
+// The newest fragments move between hosts and paths from one snapshot to the
+// next, and hls.js rejects a known fragment whose path changed. Their first
+// addresses keep working, so each sequence number keeps the one seen first.
+export function livePlaylist(text, known, open) {
+  let sequence = 0,
+    longest = 1;
+  const lines = text.split(/\r?\n/).flatMap(line => {
+    if (open && /^#EXT-X-(?:ENDLIST|PLAYLIST-TYPE:)/.test(line)) return [];
+    if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) sequence = Number(line.slice(22));
+    else if (line.startsWith('#EXTINF:')) longest = Math.max(longest, Math.ceil(parseFloat(line.slice(8))));
+    else if (line && !line.startsWith('#')) {
+      const sn = sequence++;
+      if (known.has(sn)) return [known.get(sn)];
+      known.set(sn, line);
+    }
+    return [line];
+  });
+  return lines
+    .map(line => (open && line.startsWith('#EXT-X-TARGETDURATION:') ? `#EXT-X-TARGETDURATION:${longest}` : line))
+    .join('\n');
+}
+
 export function makeHlsLoader(request) {
   return class {
     constructor() {
@@ -111,6 +137,9 @@ const BOUNDARY_GAP = 0.1,
 // holding its frame, while playback buffers ahead as usual.
 const PAUSED_BUFFER = 2,
   PLAYING_BUFFER = 12;
+// While live, a snapshot ends 2–15 s before now. One that has stopped growing
+// for longer belongs to a finished broadcast and keeps its ENDLIST.
+const LIVE_EDGE_AGE = 120;
 
 export function createPlayer({
   video,
@@ -146,7 +175,8 @@ export function createPlayer({
     recoveries = 0,
     renewed = false,
     failed = false,
-    renewal = null;
+    renewal = null,
+    playlist = null;
   const offset = () => (streams[index] ? streams[index].start_time - record.start : 0);
   // The presented frame's own timestamp, from requestVideoFrameCallback. currentTime only says
   // where the media clock is; stepping and covers need the frame actually on screen.
@@ -202,8 +232,10 @@ export function createPlayer({
   function hideStill() {
     if (still && !still.hidden) still.hidden = true;
   }
-  function waiting(text) {
+  // A stall during playback keeps its frame on screen behind a small notice.
+  function waiting(text, overFrame = false) {
     loading.textContent = text;
+    loading.classList.toggle('over', overFrame);
     loading.hidden = false;
   }
   function fragmentAt(time) {
@@ -225,7 +257,10 @@ export function createPlayer({
     fragmentCursor = low;
     return contains(low) ? fragments[low] : undefined;
   }
+  // hls.js reads a position before a live playlist's first fragment as a new
+  // start and loads the live edge instead, leaving playback waiting there.
   function clearBoundary(local) {
+    if (fragments.length && local < fragments[0].start) local = fragments[0].start;
     const frag = fragmentAt(local);
     return frag && frag.start > 0 && local - frag.start < BOUNDARY_GAP
       ? frag.start + Math.min(BOUNDARY_GAP, frag.duration / 2)
@@ -286,9 +321,11 @@ export function createPlayer({
     reloads = new Map();
     target = time;
     attachedEnd = streams[part].end_time;
-    loading.hidden = false;
+    playlist = null;
+    waiting('正在加载…');
     hls = new HlsClass({
       loader: makeHlsLoader(api.request),
+      pLoader: makeHlsLoader(playlistRequest(part)),
       enableWorker: false,
       maxBufferLength: PAUSED_BUFFER,
       maxMaxBufferLength: 24,
@@ -330,6 +367,27 @@ export function createPlayer({
     hls.loadSource(streams[index].stream);
     hls.attachMedia(video);
   }
+  // hls.js polls an open snapshot; it answers from cache until the live updater
+  // brings a newer one, which then extends playback in place.
+  const playlistRequest = part => async (url, options) => {
+    if (!record.live) return api.request(url, options);
+    const source = streams[part],
+      // A later part means this one is complete; its ENDLIST lets playback end.
+      open = part === streams.length - 1 && Date.now() / 1000 - source.end_time < LIVE_EDGE_AGE;
+    if (playlist?.source !== source.stream || playlist.open !== open) {
+      const response = await api.request(source.stream, options);
+      const known = playlist?.known ?? new Map();
+      playlist = {
+        source: source.stream,
+        open,
+        known,
+        url: response.url,
+        data: livePlaylist(response.data, known, open),
+      };
+      attachedEnd = source.end_time;
+    }
+    return {url: playlist.url, data: playlist.data};
+  };
   function seek(time) {
     video.pause();
     presented = false;
@@ -362,6 +420,11 @@ export function createPlayer({
       target = local;
       video.currentTime = local;
     }
+  }
+  // Native fullscreen controls seek without the player.
+  function keepInPlaylist() {
+    if (hls && fragments.length && video.currentTime < fragments[0].start)
+      video.currentTime = clearBoundary(video.currentTime);
   }
   function ready() {
     if (
@@ -405,6 +468,7 @@ export function createPlayer({
   };
   const bufferAhead = bufferFor(PLAYING_BUFFER),
     bufferOne = bufferFor(PAUSED_BUFFER);
+  video.addEventListener('seeking', keepInPlaylist);
   video.addEventListener('seeked', ready);
   video.addEventListener('loadeddata', ready);
   video.addEventListener('canplay', ready);
@@ -416,7 +480,7 @@ export function createPlayer({
     ready();
     onTime(offset() + video.currentTime);
   };
-  video.onwaiting = () => waiting('正在加载…');
+  video.onwaiting = () => waiting('正在加载…', video.readyState >= 2);
   video.onplaying = () => {
     loading.hidden = true;
   };
@@ -451,6 +515,7 @@ export function createPlayer({
     for (const event of ['play', 'playing']) video.removeEventListener(event, startProgress);
     for (const event of ['pause', 'ended', 'emptied']) video.removeEventListener(event, stopProgress);
     for (const event of ['seeked', 'loadeddata', 'canplay']) video.removeEventListener(event, ready);
+    video.removeEventListener('seeking', keepInPlaylist);
     video.removeEventListener('play', bufferAhead);
     video.removeEventListener('pause', bufferOne);
     video.ontimeupdate = video.onwaiting = video.onplaying = null;
@@ -507,8 +572,7 @@ export function createPlayer({
       clear();
       const token = generation;
       record = nextRecord;
-      loading.hidden = false;
-      loading.textContent = '正在加载…';
+      waiting('正在加载…');
       showStill(record.poster);
       const [library, nextStreams] = await Promise.all([
         HlsClass ?? loadHls(),

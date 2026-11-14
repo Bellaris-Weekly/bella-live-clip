@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {makeHlsLoader, createPlayer, previewError} from '../../../src/media/preview-player.js';
+import {makeHlsLoader, createPlayer, previewError, livePlaylist} from '../../../src/media/preview-player.js';
 test('整场播放器加载分片字节区间并返回计量', async () => {
   let options;
   const Loader = makeHlsLoader(async (url, o) => {
@@ -73,7 +73,7 @@ function playerFixture(clips, options = {}) {
       this.currentTime = 0;
     },
   });
-  const loading = {hidden: true};
+  const loading = {hidden: true, classList: {toggle() {}}};
   const player = createPlayer({
     video,
     loading,
@@ -778,4 +778,26 @@ test('fragment lookup preserves gaps, overlap boundaries, backward seeks and upd
   } finally {
     f.player.destroy();
   }
+});
+
+test('a live snapshot reopens for polling and keeps each fragment address it first listed', () => {
+  const snapshot = (end, paths) =>
+    [
+      '#EXTM3U',
+      '#EXT-X-TARGETDURATION:0',
+      '#EXT-X-PLAYLIST-TYPE:VOD',
+      '#EXT-X-MEDIA-SEQUENCE:7',
+      ...paths.flatMap(path => ['#EXTINF:4.17', path]),
+      end,
+    ].join('\n');
+  const known = new Map();
+  const first = livePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'live-bvc/1/8.m4s']), known, true);
+  assert.doesNotMatch(first, /ENDLIST|PLAYLIST-TYPE/);
+  assert.match(first, /#EXT-X-TARGETDURATION:5/);
+  const next = livePlaylist(snapshot('#EXT-X-ENDLIST', ['a/7.m4s', 'a/8.m4s', 'live-bvc/2/9.m4s']), known, false);
+  assert.deepEqual(
+    next.split('\n').filter(line => !line.startsWith('#')),
+    ['a/7.m4s', 'live-bvc/1/8.m4s', 'live-bvc/2/9.m4s'],
+  );
+  assert.match(next, /#EXT-X-ENDLIST/);
 });

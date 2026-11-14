@@ -1173,7 +1173,8 @@ fieldset {
   font-size: 13px;
   pointer-events: none;
 }
-#videoStill:not([hidden]) + #videoLoading {
+#videoStill:not([hidden]) + #videoLoading,
+#videoLoading.over {
   place-items: end start;
   padding: 10px 14px;
   background: none;

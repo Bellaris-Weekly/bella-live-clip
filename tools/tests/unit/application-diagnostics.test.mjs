@@ -210,7 +210,7 @@ function start({
     setInterval: () => 0,
     clearInterval() {},
     setTimeout(fn, delay) {
-      if (delay !== 30000) return setTimeout(fn, delay);
+      if (delay !== 10000) return setTimeout(fn, delay);
       const id = ++timerId;
       timers.set(id, fn);
       return id;

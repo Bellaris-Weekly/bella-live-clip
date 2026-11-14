@@ -18,6 +18,7 @@ function fixture(t, clips) {
     },
     onUpdate: parts => updates.push(parts),
     canRefresh: () => !paused,
+    interval: 30000,
   });
   t.after(() => updater.stop());
   return {

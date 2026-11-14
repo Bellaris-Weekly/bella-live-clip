@@ -1,4 +1,5 @@
-const LIVE_INTERVAL = 30000;
+// New live footage lands in batches about every 10 s.
+const LIVE_INTERVAL = 10000;
 
 // One non-overlapping poll belongs to the selected live session. Never look up
 // the room again: a reconnect/new broadcast must not replace the selected key.
