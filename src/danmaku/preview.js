@@ -290,7 +290,8 @@ export function createDanmakuPreview({video, canvas, getFrame, onError = () => {
       context.globalAlpha = own.compositor.overlayOpacity ?? 0.75;
       context.drawImage(overlay, 0, 0);
       if (own.compositor.superChatOverlay) {
-        context.globalAlpha = own.compositor.superChatOpacity;
+        // Capsule opacity is baked into the top layer per sprite.
+        context.globalAlpha = 1;
         context.drawImage(own.compositor.superChatOverlay, 0, 0);
       }
       context.restore();

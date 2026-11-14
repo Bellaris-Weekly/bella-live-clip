@@ -7,6 +7,7 @@ import {
   scText,
   scSpeed,
   SC_WAIT,
+  MEMBER_WAIT,
   commentPreroll,
   anchorOf,
   capsuleFace,
@@ -15,7 +16,16 @@ import {
 import {textTokens} from '../../../src/danmaku/emotes.js';
 import {avatarUrl, createAvatarCache} from '../../../src/danmaku/avatars.js';
 
-const event = (kind, time, order, width = 200) => ({kind, time, order, width, text: 'hello', mode: 1, color: 0xffffff});
+const event = (kind, time, order, width = 200) => ({
+  kind,
+  time,
+  order,
+  width,
+  text: 'hello',
+  mode: 1,
+  color: 0xffffff,
+  ...(kind === 'sc' ? {price: 30} : {}),
+});
 const layout = (events, start = 0, height = 1080) =>
   new DanmakuLayout(events, {
     width: 1920,
@@ -153,7 +163,7 @@ test('member comments are capsules: matched by UID, first in the queue, always s
   assert.equal(visibleComment({...member, text: '   \u200c\u200d'}), false);
 });
 
-test('member capsules lay out text and emotes; a two-line emote grows the capsule', () => {
+test('member bands are always two lines tall and lay out text and emotes', () => {
   const ink = {font: '', measureText: text => ({width: text.length * 32})};
   const tall = {width: 72, height: 72},
     small = {width: 36, height: 36};
@@ -163,18 +173,21 @@ test('member capsules lay out text and emotes; a two-line emote grows the capsul
   ]);
   const measure = text => measureCapsule({uid: BELLA, text}, ink, 40, 'sans-serif', {assets, tokens: textTokens});
   const plain = measure('晚安[dog]');
-  assert.equal(plain.height, 48);
-  const [capsule, emote] = plain.parts;
+  const [band, emote] = plain.parts;
+  // 72px two-line emote + 2 * 3px inset; the 88px avatar overhangs; 8px glow.
+  assert.equal(band.band, 78);
+  assert.equal(band.avatarSize, 88);
+  assert.equal(plain.height, 104);
+  assert.equal(measure('拜拜[tall]').height, 104, 'a two-line emote fits without growing');
+  assert.equal(measure('晚安').height, 104);
   assert.deepEqual(
-    capsule.text.map(run => run.text),
-    ['晚安'],
+    band.text.map(run => [run.text, run.x]),
+    [['晚安', 109]],
   );
   assert.equal(emote.asset, small);
-  assert.equal(emote.x, capsule.text[0].x + 64);
+  assert.equal(emote.x, 109 + 64);
   assert.ok(plain.width >= emote.x + 36);
-  const grown = measure('拜拜[tall]');
-  assert.equal(grown.height, 78);
-  assert.equal(grown.parts[0].avatarSize, 42, 'avatar keeps its one-line size');
+  assert.equal(band.color, '#db7d74');
   assert.equal(measure('[missing]').parts[0].text[0].text, '[missing]', 'unknown emotes stay text');
   const sc = measureCapsule({kind: 'sc', price: 30, text: '[tall]', uid: BELLA}, ink, 40, 'sans-serif', {
     assets,
@@ -184,10 +197,33 @@ test('member capsules lay out text and emotes; a two-line emote grows the capsul
   assert.equal(sc.height, 48);
 });
 
+test('SCs of at least ¥30 queue by amount; cheaper SCs queue like ordinary comments', () => {
+  const sc = (time, order, price) => ({...event('sc', time, order), price});
+  const l = layout([event(undefined, 0, 0), sc(0, 1, 2), sc(0, 2, 30), sc(0, 3, 1000), sc(0, 4, 100)], 0, 1400);
+  l.advance(0);
+  assert.deepEqual(
+    l.active.map(item => item.order),
+    [3, 4, 2, 0, 1],
+  );
+  // A blocked wide member band does not hold back SCs.
+  const member = {...event(undefined, 0, 0), uid: BELLA};
+  const blocked = layout([member, sc(0, 1, 30)]);
+  blocked.measure = item => ({width: item.width, height: item.uid === BELLA ? 900 : 48});
+  blocked.advance(0);
+  assert.deepEqual(
+    blocked.active.map(item => item.order),
+    [1],
+  );
+  blocked.advance(SC_WAIT + 1);
+  assert.equal(blocked.dropped, 0, 'members wait longer than SCs');
+  blocked.advance(MEMBER_WAIT + 0.1);
+  assert.equal(blocked.dropped, 1);
+});
+
 test('avatar URLs allow only public Bilibili face thumbnails', () => {
   assert.equal(
     avatarUrl('http://i1.hdslb.com/bfs/face/test.jpg'),
-    'https://i1.hdslb.com/bfs/face/test.jpg@96w_96h_1c.webp',
+    'https://i1.hdslb.com/bfs/face/test.jpg@192w_192h_1c.webp',
   );
   for (const kind of ['garb', 'baselabs']) assert.ok(avatarUrl(`https://i2.hdslb.com/bfs/${kind}/avatar.png`));
   for (const value of [

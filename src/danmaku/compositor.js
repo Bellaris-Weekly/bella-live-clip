@@ -3,7 +3,7 @@ import {loadComments} from './archive.js';
 import {loadEmotes, textTokens, emoteFrame} from './emotes.js';
 import {DanmakuLayout, visibleComment} from './layout.js';
 import {createSpriteCache} from './sprite-cache.js';
-import {commentPreroll, isCapsule, measureCapsule, drawCapsule, SC_OPACITY} from './super-chat.js';
+import {commentPreroll, isCapsule, measureCapsule, drawCapsule, avatarSize, SC_OPACITY} from './super-chat.js';
 import {createAvatarCache} from './avatars.js';
 
 const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
@@ -31,7 +31,7 @@ export async function createDanmakuCompositor(
   prepared = undefined;
   const fontSize = danmakuFontSize(height);
   const resources = await loadEmotes(events.filter(visibleComment), record.room, fontSize, {signal, fetcher});
-  const avatars = createAvatarCache({signal, fetcher, size: fontSize * 1.2});
+  const avatars = createAvatarCache({signal, fetcher, size: avatarSize(fontSize)});
   avatars.prefetch(events);
   const close = resources.close.bind(resources);
   resources.avatars = avatars;
@@ -169,9 +169,6 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
       get superChatOverlay() {
         return scRegions.length ? scCanvas : null;
       },
-      get superChatOpacity() {
-        return SC_OPACITY;
-      },
       get overlayRevision() {
         return revision;
       },
@@ -278,8 +275,11 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
                   if (frame) scInk.drawImage(frame, x, y);
                   continue;
                 }
+                // SCs are translucent; member comments stay fully opaque.
                 const sprite = sprites.get(item, part, limit => raster(item, part, x, y, limit));
+                scInk.globalAlpha = part.member ? 1 : SC_OPACITY;
                 scInk.drawImage(sprite.image, x, y);
+                scInk.globalAlpha = 1;
                 scRegions.push([Math.max(0, Math.floor(y)), Math.min(scCanvas.height, Math.ceil(y + part.height))]);
               }
             }
@@ -327,12 +327,7 @@ export function createDanmakuPainter(events, resources, {start, sourceTime, widt
             finishComposite?.();
           }
         }
-        if (scRegions.length) {
-          context.save();
-          context.globalAlpha = SC_OPACITY;
-          context.drawImage(scCanvas, 0, 0);
-          context.restore();
-        }
+        if (scRegions.length) context.drawImage(scCanvas, 0, 0);
         const finishSnapshot = metrics?.start('frameSnapshot');
         try {
           return new VideoSample(canvas, {timestamp: sample.timestamp, duration: sample.duration});

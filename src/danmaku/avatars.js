@@ -17,7 +17,7 @@ export function avatarUrl(value) {
     url.protocol = 'https:';
     url.search = url.hash = '';
     // CDN thumbnailing bounds decode work as well as retained bitmap size.
-    url.pathname = url.pathname.split('@')[0] + '@96w_96h_1c.webp';
+    url.pathname = url.pathname.split('@')[0] + '@192w_192h_1c.webp';
     return url.href;
   } catch {
     return null;

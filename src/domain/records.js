@@ -5,7 +5,7 @@ export const MEMBERS = Object.freeze([
     name: '贝拉',
     uid: 672353429,
     room: 22632424,
-    color: '#b97259',
+    color: '#db7d74',
     face: 'https://i2.hdslb.com/bfs/face/3ccbfd77f000cf3154762b78694724cd9e6719e5.jpg',
   },
   {
@@ -13,7 +13,7 @@ export const MEMBERS = Object.freeze([
     name: '嘉然',
     uid: 672328094,
     room: 22637261,
-    color: '#c7829c',
+    color: '#e799b0',
     face: 'https://i2.hdslb.com/bfs/face/9ea3dfdcf336f9dee7f763d9f9b0a0b427bb0fa9.jpg',
   },
   {
@@ -21,7 +21,7 @@ export const MEMBERS = Object.freeze([
     name: '乃琳',
     uid: 672342685,
     room: 22625027,
-    color: '#7b85ad',
+    color: '#576690',
     face: 'https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg',
   },
   {

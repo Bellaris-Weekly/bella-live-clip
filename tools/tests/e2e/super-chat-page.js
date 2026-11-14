@@ -26,7 +26,7 @@ function paintOverlay(painter, time, target) {
   target.globalAlpha = painter.overlayOpacity;
   target.drawImage(overlay, 0, 0);
   if (painter.superChatOverlay) {
-    target.globalAlpha = painter.superChatOpacity;
+    target.globalAlpha = 1;
     target.drawImage(painter.superChatOverlay, 0, 0);
   }
 }
@@ -78,7 +78,7 @@ window.checkSuperChat = async () => {
   expected.globalAlpha = painter.overlayOpacity;
   expected.drawImage(painter.renderOverlay(1), 0, 0);
   if (painter.superChatOverlay) {
-    expected.globalAlpha = painter.superChatOpacity;
+    expected.globalAlpha = 1;
     expected.drawImage(painter.superChatOverlay, 0, 0);
   }
   const actual = new OffscreenCanvas(1920, 1080).getContext('2d');
@@ -129,7 +129,7 @@ window.checkLateAvatar = () => {
   return {before, after, widthBefore: width, widthAfter: item.width};
 };
 
-// A member comment animates its two-line emote over the cached capsule sprite.
+// A member band animates its two-line emote over the cached static sprite.
 window.checkMemberCapsule = () => {
   const frame = color => {
     const canvas = new OffscreenCanvas(72, 72),

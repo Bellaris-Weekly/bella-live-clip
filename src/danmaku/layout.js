@@ -1,6 +1,8 @@
-import {anchorOf, isCapsule, isSuperChat, scSpeed, SC_WAIT} from './super-chat.js';
+import {anchorOf, isCapsule, isSuperChat, scSpeed, SC_WAIT, MEMBER_WAIT, SC_PRIORITY_PRICE} from './super-chat.js';
 const BLOCKED = new Set(['喜欢主播加关注，点点红包抽礼物', '点点红包，关注主播抽礼物～', '老板大气！点点红包抽礼物']);
 const TICKS = 60;
+const priority = event =>
+  anchorOf(event) ? 0 : isSuperChat(event) && Number(event.price) >= SC_PRIORITY_PRICE ? 1 : 2;
 
 // Member comments are never filtered as promotions; invisible-only text is.
 export const visibleComment = item =>
@@ -75,20 +77,20 @@ export class DanmakuLayout {
       this.waiting.push(this.events[this.cursor++]);
     const pending = [],
       blocked = new Set();
-    // Prioritize ready member comments, then SCs, without putting a blocked
-    // capsule in front of the ordinary FIFO. Placements are never preempted.
-    const waiting = this.waiting.some(isCapsule)
-      ? this.waiting.filter(anchorOf).concat(
-          this.waiting.filter(isSuperChat),
-          this.waiting.filter(event => !isCapsule(event)),
-        )
+    // Members first, then SCs of at least SC_PRIORITY_PRICE by amount; cheaper
+    // SCs and ordinary comments keep arrival order. Placements are never
+    // preempted, and a blocked queue never holds back another queue.
+    const waiting = this.waiting.some(event => priority(event) < 2)
+      ? [...this.waiting].sort((a, b) => priority(a) - priority(b) || (priority(a) === 1 ? b.price - a.price : 0))
       : this.waiting;
     for (const event of waiting) {
       // Capsules always scroll in the top area, whatever the source mode.
       const capsule = isCapsule(event),
         mode = capsule ? 1 : event.mode;
-      const queue = capsule ? 'sc' : mode;
-      if (now - event.time > (capsule ? SC_WAIT : 1.5) + 1e-6) {
+      // Separate queues: a blocked wide member band never holds back an SC.
+      const queue = anchorOf(event) ? 'member' : capsule ? 'sc' : mode;
+      const wait = anchorOf(event) ? MEMBER_WAIT : capsule ? SC_WAIT : 1.5;
+      if (now - event.time > wait + 1e-6) {
         this.dropped++;
         if (capsule) this.droppedSuperChats++;
         continue;

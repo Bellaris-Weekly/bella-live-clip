@@ -2,7 +2,7 @@ import {mapConcurrent} from '../shared/concurrent.js';
 import {createDanmakuPainter, danmakuFontSize} from './compositor.js';
 import {loadEmoteCatalog, loadEmotes, referencedEmotes} from './emotes.js';
 import {visibleComment} from './layout.js';
-import {commentPreroll} from './super-chat.js';
+import {avatarSize, commentPreroll} from './super-chat.js';
 import {createAvatarCache} from './avatars.js';
 
 const WINDOW_SECONDS = 10;
@@ -40,7 +40,7 @@ export async function createStreamingCompositor(
   const parentSignal = signal,
     controller = new AbortController();
   signal = controller.signal;
-  const avatars = createAvatarCache({signal, fetcher, metrics, size: danmakuFontSize(height) * 1.2});
+  const avatars = createAvatarCache({signal, fetcher, metrics, size: avatarSize(danmakuFontSize(height))});
   const closeAssets = () => {
     avatars.close();
     for (const asset of assets.values()) asset.close();
@@ -272,9 +272,6 @@ export async function createStreamingCompositor(
       },
       get superChatOverlay() {
         return painter.superChatOverlay;
-      },
-      get superChatOpacity() {
-        return painter.superChatOpacity;
       },
       get overlayRevision() {
         return painter.overlayRevision;
