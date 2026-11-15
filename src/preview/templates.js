@@ -93,12 +93,14 @@ const liveDate = seconds => {
   const date = new Date((seconds + 8 * 3600) * 1000);
   return `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}`;
 };
+// As the studio does: 「【团播】A-SOUL夜谈: 冬日阳光方案」 is titled 「冬日阳光方案」.
+const showTitle = title => title.match(/^【[^】]+】[^:：\n]*[:：]\s*(.+)$/s)?.[1].trim() || title;
 export function liveValue(event) {
-  return event ? `${liveDate(event.start)}  ${event.title}` : '';
+  return event ? `${liveDate(event.start)}  ${showTitle(event.title)}` : '';
 }
 // The studio's template variables. A custom live text replaces {live} and stands in for the title.
 export function liveValues(event, custom, start) {
-  if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: event.title};
+  if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: showTitle(event.title)};
   return {live: custom, live_date: start ? liveDate(start) : '', live_title: custom};
 }
 

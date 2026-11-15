@@ -216,6 +216,14 @@ test('split live variables follow the studio: date and title of the event, custo
   assert.throws(() => submissionFields({...draft, title: '{live_date}'}, {live: 'x', clipper: ''}), /占位符/);
 });
 
+test('live titles drop the schedule kind prefix, as in the studio', () => {
+  const start = Date.parse('2026-11-14T11:49:00Z') / 1000;
+  const values = liveValues({start, title: '【团播】A-SOUL夜谈: 冬日阳光方案'}, '', 0);
+  assert.equal(values.live_title, '冬日阳光方案');
+  assert.equal(values.live, '2026.11.14  冬日阳光方案');
+  assert.equal(liveValues({start, title: '普通标题：带冒号'}, '', 0).live_title, '普通标题：带冒号');
+});
+
 test('each song gets its own 『』 in the collection title', () => {
   assert.equal(titleWithSong('合集丨『』', '青春纪念册'), '合集丨『青春纪念册』');
   assert.equal(titleWithSong('合集丨『A』', 'B'), '合集丨『A』『B』');

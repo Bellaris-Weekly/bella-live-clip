@@ -68,6 +68,9 @@ export function createTemplateForm(host) {
   function preview() {
     const target = appending();
     field('archive').hidden = Boolean(target);
+    // Hidden archive fields must not block the form with their own validation (an empty required title).
+    for (const control of field('archive').querySelectorAll('input, select, textarea'))
+      control.disabled = Boolean(target);
     field('song-label').hidden = !target && !isCollection(field('title').value);
     field('live-custom-label').hidden = field('live').value !== 'custom';
     field('title-count').textContent = `${[...field('title').value].length}/80`;
@@ -119,7 +122,12 @@ export function createTemplateForm(host) {
       field('template').replaceChildren();
       option(field('template'), '', '不使用模板');
       for (const template of templates) option(field('template'), String(template.id), template.name);
-      const matched = matchingTemplate(templates, schedule.matched);
+      // The template this live's collection was made with comes first among those that fit the live.
+      const matched =
+        matchingTemplate(
+          templates.filter(template => collections.some(item => item.template === template.name)),
+          schedule.matched,
+        ) ?? matchingTemplate(templates, schedule.matched);
       field('template').value = preserve ? selected : matched ? String(matched.id) : '';
       field('schedule-note').textContent = schedule.failed
         ? '部分日程读取失败，可自行输入直播信息或重新打开投稿。'

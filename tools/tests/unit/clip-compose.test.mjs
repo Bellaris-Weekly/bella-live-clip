@@ -415,6 +415,7 @@ const collection = {
     tid: 27,
     tags: ['歌舞'],
     includeAntiCollision: true,
+    liveParticipants: ['bella'],
   },
 };
 const sent = (title, extra = {}) => ({
@@ -453,18 +454,28 @@ test('the first song starts a collection: its name fills 『』, it titles the p
   assert.equal(body.origin.template_name, '歌舞合集');
 });
 
+const root = f => f.root;
+const group = {id: 6, name: '团播', payload: {title: '', tid: 27, tags: ['团播'], liveParticipants: ['bella']}};
+
 test('later songs of the live go into its collection without covers or archive fields', async t => {
-  const f = fixture({account_mid: 7}, [collection], true, [sent('【A-SOUL】排期标题 歌舞合集丨『青春纪念册』')]);
+  const f = fixture({account_mid: 7}, [group, collection], true, [sent('【A-SOUL】排期标题 歌舞合集丨『青春纪念册』')]);
   t.after(() => {
     f.api.dispose();
     f.w.close();
   });
   f.api.actions.start();
   await until(() => !f.field('confirm').disabled);
-  f.field('template').value = '5';
-  f.field('template').dispatchEvent(new f.w.Event('change'));
+  // The collection's template wins over another template for the same members, whose title is empty.
+  assert.equal(f.field('template').value, '5');
   assert.equal(f.field('target').value, '0');
   assert.equal(f.field('archive').hidden, true);
+  // Switching to an empty-titled template and back to appending must not leave a blocking required field.
+  f.field('template').value = '6';
+  f.field('template').dispatchEvent(new f.w.Event('change'));
+  f.field('target').value = '0';
+  f.field('target').dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.field('title').disabled, true);
+  assert.equal(root(f).querySelector('form').checkValidity(), true);
   f.field('confirm').click();
   await until(() => f.field('error').textContent.includes('歌名'));
   f.field('song').value = '朋友的酒';

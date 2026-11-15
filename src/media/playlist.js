@@ -12,6 +12,15 @@ function byteRange(value, previousEnd) {
   return {offset, length: Number(match[1])};
 }
 
+// Bilibili lists fragment durations rounded to 0.01 s (4.17 for 250 frames at 60 fps). Summed over a
+// long recording that drifts by seconds, so durations within rounding of whole 60 fps frames are
+// restored. Preview and export must share this, or a clip lands away from where it was picked.
+const FRAME_GRID = 60;
+export function frameDuration(listed) {
+  const frames = Math.round(listed * FRAME_GRID);
+  return Math.abs(listed * FRAME_GRID - frames) <= 0.31 ? frames / FRAME_GRID : listed;
+}
+
 export function parsePlaylist(text, baseUrl) {
   const lines = text
     .trim()
@@ -50,6 +59,7 @@ export function parsePlaylist(text, baseUrl) {
     } else if (line.startsWith('#EXTINF:')) {
       duration = Number(line.slice(8).split(',')[0]);
       if (!(duration > 0)) throw new Error('视频分片时长无效。');
+      duration = frameDuration(duration);
     } else if (line && !line.startsWith('#')) {
       if (duration === null) throw new Error('视频清单缺少分片时长。');
       const url = new URL(line, baseUrl).href;

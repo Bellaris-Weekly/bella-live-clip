@@ -48,3 +48,14 @@ test('跨断流选区保留独立输出，不吞掉后续分段', () => {
   assert.equal(plans[0].end - plans[0].start, 1);
   assert.equal(plans[1].end - plans[1].start, 3);
 });
+
+test('rounded 60 fps fragment durations are restored, so far times match the preview player', () => {
+  const lines = ['#EXTM3U'];
+  for (let i = 0; i < 1100; i++) lines.push('#EXTINF:4.17,', `f${i}.m4s`);
+  lines.push('#EXTINF:2.5,', 'last.m4s');
+  const {groups, duration} = parsePlaylist(lines.join('\n'), 'https://example.com/');
+  assert.equal(groups[0].segments[0].duration, 250 / 60);
+  assert.equal(groups[0].segments.at(-1).duration, 2.5);
+  // Summing the listed 4.17 would put 01:16 about 3.7 s later than the real frames.
+  assert.ok(Math.abs(duration - (1100 * 250) / 60 - 2.5) < 1e-6);
+});

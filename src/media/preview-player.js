@@ -1,4 +1,5 @@
 import {clamp} from '../shared/math.js';
+import {frameDuration} from './playlist.js';
 
 // Named here so the player can be created before hls.js has loaded.
 const EVENT = {
@@ -43,16 +44,8 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
   return error;
 }
 
-// Listed durations are rounded to 0.01 s (4.17 for 250 frames at 60 fps). Over a
-// long recording the error adds up to seconds, so hls.js picks the fragment
-// before a far seek target and downloads another. Durations that are a whole
-// number of 60 fps frames within that rounding are restored to it.
-const FRAME_GRID = 60;
-function frameDuration(listed) {
-  const frames = Math.round(listed * FRAME_GRID);
-  return Math.abs(listed * FRAME_GRID - frames) <= 0.31 ? frames / FRAME_GRID : listed;
-}
-
+// Fragment durations are restored to whole 60 fps frames (see frameDuration), so
+// far seeks land in the right fragment and match the export timeline.
 // While a session is live, its playlist is a frozen snapshot that ends with
 // ENDLIST. Reopened as a live playlist, hls.js keeps polling it and appends the
 // newer fragments without tearing playback down. The snapshot declares a
