@@ -1,7 +1,7 @@
 import {redactText} from '../shared/log-redaction.js';
 import {performanceLog} from '../shared/performance-log.js';
 
-const idle = Object.freeze({stage() {}, progress() {}, observe() {}, finish() {}, fail() {}});
+const idle = Object.freeze({stage() {}, progress() {}, observe() {}, note() {}, finish() {}, fail() {}});
 function text(value, limit) {
   if (typeof value !== 'string') return undefined;
   // Errors from media/network libraries may embed signed URLs with unknown key
@@ -64,6 +64,17 @@ function pageIdentity(value) {
   }
 }
 
+// Flat facts an operation adds about itself (template, target, request id…): primitives only, bounded.
+function facts(values) {
+  if (!values || typeof values !== 'object') return undefined;
+  const result = {};
+  for (const [key, value] of Object.entries(values).slice(0, 32)) {
+    const safe = fact(value);
+    if (safe !== undefined) result[text(key, 64)] = safe;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
 function snapshot(details) {
   const record = details.record || {},
     selection = details.selection || {};
@@ -84,6 +95,7 @@ function snapshot(details) {
     },
     selection: {start: number(selection.start), end: number(selection.end)},
     estimatedBytes: number(details.estimatedBytes),
+    facts: facts(details.facts),
   };
 }
 
@@ -194,6 +206,24 @@ export function createDiagnosticReporter({
       const status = await post(request, endpoint, body);
       return status >= 200 && status < 300 ? 'sent' : status === 429 ? 'rate_limited' : 'failed';
     },
+    // One user action or check that has no lifecycle (a click, a blocked form).
+    event(action, details = {}, message = '') {
+      if (!endpoint || typeof request !== 'function') return;
+      try {
+        const body = JSON.stringify({
+          id: id(),
+          source: 'bella-live-clip',
+          event: text(action, 64),
+          level: details.level === 'warn' ? 'warn' : 'info',
+          version,
+          message: text(message, 1024) || '运行记录',
+          context: {...snapshot(details), browser: text(userAgent, 512), clientAt: clock()},
+        });
+        if (new TextEncoder().encode(body).byteLength <= 65536) enqueue({body, operation: null, periodic: false});
+      } catch {
+        /* Logging never fails the operation. */
+      }
+    },
     begin(action, details = {}) {
       if (!endpoint || typeof request !== 'function') return idle;
       const context = {...snapshot(details), stage: 'starting', timeline: []};
@@ -202,10 +232,6 @@ export function createDiagnosticReporter({
         startedAt = clock(),
         stageTimes = {};
       const exporting = action === 'export' || action === 'recording_download';
-      // Keep full lifecycles for exports and the current danmaku startup
-      // investigation. Routine browsing/sync operations need failures only;
-      // their successful loads and user cancellations used to dominate logs.
-      const lifecycle = exporting || action === 'danmaku_preview' || action === 'danmaku_preview_resume';
       let finished = false,
         sequence = 0,
         timer,
@@ -243,7 +269,6 @@ export function createDiagnosticReporter({
         point(latestMetrics);
       }
       function publish(outcome, message, error, periodic = false) {
-        if (!lifecycle && outcome !== 'failed' && outcome !== 'partial') return;
         try {
           const time = now();
           const elapsedMs = Math.max(0, time - started);
@@ -330,7 +355,7 @@ export function createDiagnosticReporter({
         if (timer !== undefined) cancelTimer(timer);
         publish(outcome, message, error);
       }
-      if (lifecycle) publish('started', exporting ? '导出开始' : '操作开始');
+      publish('started', exporting ? '导出开始' : '操作开始');
       if (exporting) {
         timer = every(() => {
           if (finished) return;
@@ -344,6 +369,11 @@ export function createDiagnosticReporter({
         stage,
         observe(metrics) {
           provider = metrics;
+        },
+        // Facts learnt along the way; the next published event carries them.
+        note(values) {
+          const added = facts(values);
+          if (!finished && added) context.facts = {...context.facts, ...added};
         },
         progress(value) {
           if (finished) return;

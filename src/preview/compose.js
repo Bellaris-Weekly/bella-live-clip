@@ -32,7 +32,19 @@ export function liveCollections(submissions, record, mid) {
     }));
 }
 
-export function createComposer({root, client, gmRequest, mediaApi, storage, schedules, session}) {
+const quiet = {begin: () => ({stage() {}, progress() {}, observe() {}, note() {}, finish() {}, fail() {}}), event() {}};
+
+export function createComposer({
+  root,
+  client,
+  gmRequest,
+  mediaApi,
+  storage,
+  schedules,
+  session,
+  diagnostics = quiet,
+  pageUrl = () => location.href,
+}) {
   const view = signal({open: false, canStart: false});
   const host = id => root.getElementById(id);
   const templateForm = createTemplateForm(host('composeForm'));
@@ -58,9 +70,32 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
       snapshot.mark?.id,
     ].join('|');
   // Everything the page shows, derived from the current submission and its job.
+  // Every step of a submission goes to the log: the lifecycle as one operation, errors as they happen.
+  const describeOwn = own => ({pageUrl: pageUrl(), record: own.record, selection: own.selection, mode: own.mode});
+  function track(own, state) {
+    const seen = (own.seen ??= {});
+    const error = state?.error?.message || own.setupError?.message || '';
+    if (error && error !== seen.error)
+      diagnostics.event('clip_submit_error', {...describeOwn(own), level: 'warn', facts: {stage: own.stage}}, error);
+    seen.error = error;
+    for (const step of ['uploaded', 'confirmed', 'sent']) {
+      if (!state?.[step] || seen[step]) continue;
+      seen[step] = true;
+      own.log.stage(step);
+    }
+    if (state?.done && !seen.done) {
+      seen.done = true;
+      own.log.note({bvid: state.result?.bvid, part: state.result?.part, parts: state.result?.parts});
+      own.log.finish();
+    } else if ((state?.cancelled || own.cancelled) && !seen.done) {
+      seen.done = true;
+      own.log.finish({status: 'canceled'});
+    }
+  }
   function render(own) {
-    if (current !== own) return;
     const state = own.job?.state();
+    track(own, state);
+    if (current !== own) return;
     view.value = {
       open: !own.closed,
       canStart: canStart(),
@@ -148,6 +183,11 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
         setup: new AbortController(),
         stage: '正在读取投稿配置',
       });
+      own.log = diagnostics.begin('clip_submit', {
+        ...describeOwn(own),
+        facts: {segment: own.segmentIndex, mark: own.mark?.id, restart: Boolean(prior && preserve)},
+      });
+      own.log.stage('config');
       const {signal} = own.setup;
       // A restart keeps the cover being made; a new submission keeps only a frame picked for this clip.
       if (!preserve) {
@@ -170,6 +210,11 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
         ]);
         signal.throwIfAborted();
         if (!defaults.account_mid) throw new Error('创作台尚未配置投稿账号，请联系管理员');
+        own.log.note({
+          templates: templates.length,
+          scheduleMatched: Boolean(schedule.matched),
+          collections: submissions.length,
+        });
         templateForm.configure(templates, schedule, me.name, preserve && prior?.ready, {
           existing: liveCollections(submissions, own.record, defaults.account_mid),
           song: own.mark?.note?.trim() || '',
@@ -196,8 +241,10 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
               // Snapshot gets its own plan/lifetime so changing or closing the editor cannot abort this job.
               await clean();
               own.stage = '正在导出';
+              own.log.stage('exporting');
               render(own);
               const metrics = createExportMetrics({observeLongTasks: true});
+              own.log.observe(metrics);
               try {
                 await ensureTemporarySpace(
                   storage,
@@ -222,12 +269,14 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
                   onProgress: limitProgress(progress => {
                     own.export = progress.progress;
                     own.stage = progress.message || '正在导出';
+                    own.log.progress({...progress, phase: 'exporting'});
                     render(own);
                   }),
                 });
                 signal.throwIfAborted();
                 own.file = await temporary.handle.getFile();
                 own.export = 1;
+                own.log.note({fileBytes: own.file.size});
                 // The finished clip, playable on the page before it is sent.
                 own.preview = URL.createObjectURL(own.file);
                 render(own);
@@ -240,8 +289,11 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
             }
             signal.throwIfAborted();
             own.stage = '正在选择上传线路';
+            own.log.stage('line');
             render(own);
             const line = await pickLine(me.lines || {}, transport, signal);
+            own.log.note({line});
+            own.log.stage('uploading');
             return own.uploader.run(own.file, {
               mid: defaults.account_mid,
               line,
@@ -253,6 +305,7 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
               },
               onProgress(value) {
                 own.upload = value;
+                own.log.progress({progress: value, phase: 'uploading'});
                 render(own);
               },
             });
@@ -262,7 +315,10 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
         signal.throwIfAborted();
         own.ready = true;
       } catch (error) {
-        if (!signal.aborted) own.setupError = error;
+        if (!signal.aborted) {
+          own.setupError = error;
+          own.log.fail(error);
+        }
       }
       render(own);
     } finally {
@@ -279,6 +335,15 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
         ...templateForm.fields(),
         ...(own.mark ? {mark_id: own.mark.id} : {}),
       };
+      const chosen = {
+        target: fields.append ? 'append' : 'new',
+        targetBvid: fields.append?.bvid,
+        template: fields.origin?.template_name,
+        title: fields.title,
+        parts: fields.parts?.length,
+      };
+      own.log.note(chosen);
+      diagnostics.event('clip_confirm', {...describeOwn(own), facts: chosen});
       own.confirming = true;
       render(own);
       if (fields.append) {
@@ -295,7 +360,10 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
       own.job.signal.throwIfAborted();
       void own.job.confirm({...fields, cover_id: wide, cover43_id: tall});
     } catch (error) {
-      if (!own.job.signal.aborted) own.formError = error;
+      if (!own.job.signal.aborted) {
+        own.formError = error;
+        diagnostics.event('clip_confirm_rejected', {...describeOwn(own), level: 'warn'}, error.message);
+      }
     } finally {
       own.confirming = false;
       render(own);
@@ -342,6 +410,16 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
     }
   };
   window.addEventListener('paste', paste);
+  // The browser blocks a submit with an invalid field before our handler runs; record which one.
+  const invalid = event => {
+    const field = event.target?.attributes?.[0]?.name?.replace(/^data-/, '') || event.target?.tagName;
+    diagnostics.event(
+      'clip_confirm_blocked',
+      {...(current ? describeOwn(current) : {pageUrl: pageUrl()}), level: 'warn', facts: {field}},
+      event.target?.validationMessage || '表单校验未通过',
+    );
+  };
+  root.addEventListener('invalid', invalid, true);
   return {
     view,
     cover,
@@ -394,6 +472,7 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
     dispose() {
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('paste', paste);
+      root.removeEventListener('invalid', invalid, true);
       this.logout();
     },
   };

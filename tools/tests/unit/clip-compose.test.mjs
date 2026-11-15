@@ -136,8 +136,24 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
     },
   };
   let selection = {start: 2, end: 8};
+  const logs = [];
   const api = w.fixture.createComposer({
     root,
+    pageUrl: () => 'https://live.bilibili.com/7',
+    diagnostics: {
+      begin: (action, details) => {
+        logs.push(['begin', action, details.mode]);
+        return {
+          stage: value => logs.push(['stage', value]),
+          progress() {},
+          observe() {},
+          note: value => logs.push(['note', value]),
+          finish: result => logs.push(['finish', result?.status ?? 'completed']),
+          fail: error => logs.push(['fail', error.message]),
+        };
+      },
+      event: (action, details, message) => logs.push(['event', action, details.facts, message]),
+    },
     client: {
       request: async (path, options = {}) => {
         calls.push([path, options]);
@@ -217,6 +233,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
     api,
     field,
     calls,
+    logs,
     captured,
     urls,
     files,
@@ -495,4 +512,16 @@ test('later songs of the live go into its collection without covers or archive f
   assert.equal(options.body.upload_id, 'u');
   assert.ok(!f.calls.some(([path, options]) => path === '/covers' || (path === '/submissions' && options.method)));
   assert.equal(f.field('target-label').hidden, false);
+  // The whole submission is in the log: mode, steps, what was confirmed, the result.
+  const logs = JSON.parse(JSON.stringify(f.logs));
+  assert.deepEqual(logs[0], ['begin', 'clip_submit', 'danmaku']);
+  const stages = logs.filter(([kind]) => kind === 'stage').map(([, value]) => value);
+  for (const step of ['config', 'exporting', 'line', 'uploading', 'uploaded', 'confirmed', 'sent'])
+    assert.ok(stages.includes(step), step);
+  const confirm = logs.find(([kind, action]) => kind === 'event' && action === 'clip_confirm');
+  assert.equal(confirm[2].target, 'append');
+  assert.equal(confirm[2].targetBvid, 'BV1KRxx6QEkN');
+  assert.ok(logs.some(([, action, , message]) => action === 'clip_confirm_rejected' && /歌名/.test(message)));
+  assert.ok(logs.some(([kind, value]) => kind === 'note' && value.part === 2));
+  assert.deepEqual(logs.at(-1), ['finish', 'completed']);
 });

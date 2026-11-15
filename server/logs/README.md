@@ -30,7 +30,9 @@ Worker 和 D1 由你创建，域名由你管理。工作流只核对现有 Worke
 
 ## 运行事件和性能字段
 
-客户端通过 `context.operation.id` 关联一次操作，`operation.sequence` 是客户端序号；`received_at` 是最近一次更新的服务端收到时间，`context.operation.firstReceivedAt` 保留首次收到时间，`clientAt` 是客户端时间。导出事件包括 `export_started`、`export_progress`、`export_stalled`、`export_completed`、`export_canceled`、`export_failed`；整场使用 `recording_download_` 前缀，主动停止并保存使用 `stopped`。普通列表、进房、录像／投稿加载、刷新和记轴同步只上报真实失败，不再记录开始、成功和主动取消；播放器保留独立失败事件。正在排查的弹幕首屏和后台恢复继续保留完整事件及耗时，前缀分别为 `danmaku_preview_`、`danmaku_preview_resume_`。
+客户端通过 `context.operation.id` 关联一次操作，`operation.sequence` 是客户端序号；`received_at` 是最近一次更新的服务端收到时间，`context.operation.firstReceivedAt` 保留首次收到时间，`clientAt` 是客户端时间。导出事件包括 `export_started`、`export_progress`、`export_stalled`、`export_completed`、`export_canceled`、`export_failed`；整场使用 `recording_download_` 前缀，主动停止并保存使用 `stopped`。所有操作（列表、进房、录像／投稿加载、刷新、记轴同步、弹幕首屏 `danmaku_preview_`、后台恢复 `danmaku_preview_resume_` 等）都记录开始、完成、取消和失败；播放器保留独立失败事件。
+
+Preview 构建的切片投稿记为 `clip_submit_*` 一次任务，阶段依次为 `config`、`exporting`、`line`、`uploading`、`uploaded`、`confirmed`、`sent`，完成时带 BV 号及追加的分P序号；`context.facts` 带模板、投稿目标（新稿件或追加的 BV）、标题、分P数、上传线路和成品字节数。单次行为是无任务日志：`clip_confirm`（点确认投稿）、`clip_confirm_rejected`（表单不通过及原因）、`clip_confirm_blocked`（浏览器校验拦下的字段）、`clip_submit_error`（导出、上传或投稿出错，可重试）。`facts` 只收字符串、数字和布尔值，最多 32 项。
 
 `context.metrics` 提供：
 

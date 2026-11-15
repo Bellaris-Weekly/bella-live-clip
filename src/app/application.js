@@ -994,6 +994,8 @@ export function createApp({
     store.extras.value = {ui};
     composer = createComposer({
       root,
+      diagnostics,
+      pageUrl: readPageUrl,
       client: studio,
       gmRequest: options => GM_xmlhttpRequest(options),
       mediaApi,

@@ -994,7 +994,7 @@ test('弹幕首屏与后台恢复记录独立耗时，不混入弹幕内容', as
   }
 });
 
-test('正常浏览列表、打开场次和刷新录像不再发送历史排查用的成功日志', async () => {
+test('正常浏览列表、打开场次和刷新录像也完整记录，便于排查', async () => {
   const record = {key: 'live', room: 123, start: 0, end: 100};
   const f = start({url: 'https://live.bilibili.com/123', current: async () => record});
   await f.app.open();
@@ -1004,9 +1004,10 @@ test('正常浏览列表、打开场次和刷新录像不再发送历史排查�
   await settle();
   f.scenario.actions.openRecord(record);
   await settle();
-  assert.equal(f.events.length, 0);
+  const names = f.events.map(event => event.event);
+  for (const name of ['library_load_completed', 'record_load_completed']) assert.ok(names.includes(name), name);
   const video = start();
   await video.app.open();
   await settle();
-  assert.equal(video.events.length, 0);
+  assert.ok(video.events.some(event => event.event === 'video_load_completed'));
 });

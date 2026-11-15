@@ -455,16 +455,16 @@ for (const action of [
   'preview',
   'mark_sync',
 ]) {
-  test(`${action} ignores normal browsing and cancellations but still reports a real failure once`, async () => {
+  test(`${action} logs its whole lifecycle, cancellations included, and a failure only once`, async () => {
     const {reporter, requests} = setup();
     reporter.begin(action).finish();
-    reporter.begin(action).finish({status: 'canceled'});
     reporter.begin(action).fail(new DOMException('user canceled', 'AbortError'));
-    const controller = new AbortController();
-    controller.abort();
-    reporter.begin(action).fail(new Error('interrupted request'), controller.signal);
     await settle();
-    assert.equal(requests.length, 0);
+    assert.deepEqual(
+      requests.map(item => JSON.parse(item.data).event),
+      [`${action}_started`, `${action}_completed`, `${action}_started`, `${action}_canceled`],
+    );
+    requests.length = 0;
     const operation = reporter.begin(action, {record: {key: 'record', room: 123}});
     operation.stage('loading');
     const error = Object.assign(new Error('请求失败（HTTP 503）'), {status: 503});
@@ -472,16 +472,36 @@ for (const action of [
     operation.finish();
     operation.fail(error);
     await settle();
-    assert.equal(requests.length, 1);
-    const event = JSON.parse(requests[0].data);
-    assert.equal(event.event, `${action}_failed`);
-    assert.equal(event.level, 'error');
-    assert.equal(event.context.operation.sequence, 0);
-    assert.equal(event.context.record.key, 'record');
-    assert.equal(event.context.stage, 'loading');
-    assert.equal(event.context.error.status, 503);
+    const events = requests.map(item => JSON.parse(item.data));
+    assert.deepEqual(
+      events.map(event => event.event),
+      [`${action}_started`, `${action}_failed`],
+    );
+    assert.equal(events[1].level, 'error');
+    assert.equal(events[1].context.record.key, 'record');
+    assert.equal(events[1].context.stage, 'loading');
+    assert.equal(events[1].context.error.status, 503);
   });
 }
+
+test('operations and one-off events carry bounded primitive facts', async () => {
+  const {reporter, requests} = setup();
+  const operation = reporter.begin('clip_submit', {facts: {template: '歌舞合集', target: 'append'}});
+  operation.note({bvid: 'BV1xx411c7mD', nested: {no: 1}, ok: true});
+  operation.finish();
+  reporter.event('clip_confirm_blocked', {facts: {field: 'title'}, level: 'warn'}, '必填项为空');
+  await settle();
+  const events = requests.map(item => JSON.parse(item.data));
+  assert.deepEqual(events.at(-2).context.facts, {
+    template: '歌舞合集',
+    target: 'append',
+    bvid: 'BV1xx411c7mD',
+    ok: true,
+  });
+  assert.equal(events.at(-1).event, 'clip_confirm_blocked');
+  assert.equal(events.at(-1).level, 'warn');
+  assert.deepEqual(events.at(-1).context.facts, {field: 'title'});
+});
 
 for (const action of ['export', 'recording_download', 'danmaku_preview', 'danmaku_preview_resume']) {
   test(`${action} retains success and cancellation diagnostics`, async () => {
