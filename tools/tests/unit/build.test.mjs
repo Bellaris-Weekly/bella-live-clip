@@ -197,7 +197,7 @@ test('studio network/storage grants and feature strings exist only in preview bu
       'liveParticipants',
       '{live}',
       'clipper',
-      '简介预览',
+      '君の名は',
       '/upload-options',
       '/cos/uploads',
       '/submissions',

@@ -9,10 +9,10 @@ import {
   neededVariables,
   isCollection,
   titleWithSong,
-  substitute,
   submissionFields,
   tagsFrom,
 } from './templates.js';
+import {bindTemplateField} from './template-text.js';
 
 const ANTI_COLLISION = {preset_id: 'anti-collision', title: '✩‧₊˚✧'};
 
@@ -30,7 +30,6 @@ export function createTemplateForm(host) {
     <div class="field"><label>标题<span class="counter" data-title-count></span></label><input data-title required></div>
     <div class="field"><label>标签<span class="counter">逗号分隔，最多 12 个</span></label><input data-tags></div>
     <div class="field"><label>简介</label><textarea data-desc rows="3"></textarea></div>
-    <div class="field"><label>简介预览</label><pre class="desc-preview" data-desc-preview></pre></div>
     <div class="field" data-live-label hidden>
       <label>直播</label><select data-live></select>
       <p class="hint" data-schedule-note></p>
@@ -67,6 +66,11 @@ export function createTemplateForm(host) {
     }),
     clipper: field('clipper').value,
   });
+  // Text fields show their variables resolved, like the studio; their template source is kept here.
+  const LIMITS = {title: 80, desc: 2000, source: 200, dynamic: 233};
+  const texts = Object.fromEntries(
+    TEXT_FIELDS.map(key => [key, bindTemplateField(field(key), values, {maxLength: LIMITS[key]})]),
+  );
   const recordDate = () => (start ? new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10) : '');
   const appending = () => collections[Number(field('target').value)] || null;
   function preview() {
@@ -75,18 +79,19 @@ export function createTemplateForm(host) {
     // Hidden archive fields must not block the form with their own validation (an empty required title).
     for (const control of field('archive').querySelectorAll('input, select, textarea'))
       control.disabled = Boolean(target);
-    field('song-label').hidden = !target && !isCollection(field('title').value);
-    const needs = neededVariables(...['title', 'desc', 'source', 'dynamic', 'desc_v2'].map(key => field(key).value));
+    field('song-label').hidden = !target && !isCollection(texts.title.value);
+    const needs = neededVariables(...TEXT_FIELDS.map(key => texts[key].value), field('desc_v2').value);
     field('live-label').hidden = !needs.live;
     field('clipper-label').hidden = !needs.clipper;
     field('live-custom-label').hidden = field('live').value !== 'custom';
     field('live-date-label').hidden = !needs.date;
     field('live-title-label').hidden = !needs.title;
-    field('title-count').textContent = `${[...field('title').value].length}/80`;
-    field('desc-preview').textContent = substitute(field('desc').value, values());
+    for (const text of Object.values(texts)) text.refresh();
+    field('title-count').textContent = `${[...texts.title.shown].length}/80`;
   }
   function write(draft) {
-    for (const key of [...TEXT_FIELDS, ...Object.keys(ID_FIELDS), 'tid', 'copyright', 'scheduleAt'])
+    for (const key of TEXT_FIELDS) texts[key].value = draft[key] ?? '';
+    for (const key of [...Object.keys(ID_FIELDS), 'tid', 'copyright', 'scheduleAt'])
       field(key).value = draft[key] ?? '';
     for (const key of [...Object.keys(FLAG_FIELDS), 'isOnlySelf']) field(key).checked = Boolean(draft[key]);
     field('tags').value = draft.tags.join(', ');
@@ -173,7 +178,8 @@ export function createTemplateForm(host) {
         return {append: {mid: target.mid, bvid: target.bvid}, title: song};
       }
       const draft = {};
-      for (const key of [...TEXT_FIELDS, 'scheduleAt']) draft[key] = field(key).value;
+      for (const key of TEXT_FIELDS) draft[key] = texts[key].value;
+      draft.scheduleAt = field('scheduleAt').value;
       for (const key of [...Object.keys(FLAG_FIELDS), 'isOnlySelf']) draft[key] = field(key).checked;
       for (const key of [...Object.keys(ID_FIELDS), 'tid', 'copyright'])
         draft[key] = field(key).value ? Number(field(key).value) : null;

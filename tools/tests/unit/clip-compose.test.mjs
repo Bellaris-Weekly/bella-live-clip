@@ -74,6 +74,11 @@ const templates = [
     payload: {title: '自选标题', desc: '自选 {clipper}', tid: 9, tags: ['自选模板']},
   },
 ];
+// Types into a field as a user would, so template-bound fields see the edit.
+function type(element, value) {
+  element.value = value;
+  element.dispatchEvent(new element.ownerDocument.defaultView.Event('input', {bubbles: true}));
+}
 function fixture(defaults = {account_mid: 7}, items = templates, matched = true, submissions = []) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', {
     runScripts: 'outside-only',
@@ -260,10 +265,10 @@ test('composer exports to OPFS while form is open, takes a cover frame inside th
   await until(() => f.root.querySelector('[data-cover-source]').textContent.includes('00:00:02.000'));
   assert.match(f.field('mark').textContent, /备注/);
   assert.equal(f.field('template').value, '2');
-  assert.equal(f.field('desc').value, '{live} 视频二创组——{clipper}');
-  assert.match(f.field('desc-preview').textContent, /1970\.1\.2 {2}排期标题.*成员/);
+  // The description shows its variables resolved, as in the studio.
+  assert.match(f.field('desc').value, /1970\.1\.2 {2}排期标题.*成员/);
   assert.equal(f.field('live').options.length, 7);
-  f.field('title').value = '投稿标题';
+  type(f.field('title'), '投稿标题');
   f.field('tags').value = '自选';
   f.api.actions.close();
   assert.equal(f.root.querySelector('form').hidden, true);
@@ -302,7 +307,7 @@ test('a changed clip is offered on return: exporting it cancels the old export, 
   f.api.markSelected({id: 'one', at: 100000000, note: '第一条'});
   f.api.actions.start();
   await until(() => f.w.exports.length === 1 && !f.field('confirm').disabled);
-  f.field('title').value = '保留标题';
+  type(f.field('title'), '保留标题');
   f.api.actions.close();
   f.select({start: 10, end: 15});
   f.api.markSelected({id: 'two', at: 100001000, note: '第二条'});
@@ -375,7 +380,7 @@ test('template switching and free-text live/clipper edits affect only this submi
   assert.equal(f.field('title').value, '自选标题');
   assert.equal(f.field('tid').value, '9');
   assert.equal(f.field('tags').value, '自选模板');
-  assert.equal(f.field('desc-preview').textContent, '自选 自选署名 $&');
+  assert.equal(f.field('desc').value, '自选 自选署名 $&');
   // Only the inputs the template's variables need are shown, as in the studio.
   assert.equal(f.field('live-label').hidden, true);
   assert.equal(f.field('clipper-label').hidden, false);
@@ -389,7 +394,7 @@ test('template switching and free-text live/clipper edits affect only this submi
   assert.equal(f.field('live-date').value, '1970-01-02');
   f.field('live-title').value = '手动直播';
   f.field('live-title').dispatchEvent(new f.w.Event('input', {bubbles: true}));
-  assert.equal(f.field('desc-preview').textContent, '1970.1.2  手动直播 视频二创组——自选署名 $&');
+  assert.equal(f.field('desc').value, '1970.1.2  手动直播 视频二创组——自选署名 $&');
   f.field('confirm').click();
   await until(() => f.field('confirm').textContent.includes('等待上传'));
   f.gate.resolve();
@@ -415,14 +420,14 @@ test('no matching event leaves template unselected, defaults live to newest, and
   assert.equal(f.field('live').value, '0');
   assert.match(f.field('live').selectedOptions[0].textContent, /近期场次0/);
   assert.equal(f.field('live').options.length, 6);
-  f.field('title').value = '标题';
+  type(f.field('title'), '标题');
   f.field('confirm').click();
   await until(() => f.field('error')?.textContent.includes('有效分区'));
   f.field('tid').value = '27';
   f.field('confirm').click();
   await until(() => f.field('error')?.textContent.includes('标签'));
   f.field('tags').value = '标签';
-  f.field('desc').value = '{clipper}';
+  type(f.field('desc'), '{clipper}');
   f.field('clipper').value = '';
   f.field('confirm').click();
   await until(() => f.field('error')?.textContent.includes('占位符'));
