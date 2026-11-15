@@ -252,6 +252,7 @@ const fields = {
   desc: 'desc',
   cover_id: 'cover',
   mark_id: 'mark',
+  parts: [{title: 'title'}, {preset_id: 'anti-collision', title: '✩‧₊˚✧'}],
 };
 
 test('submits template fields exactly once in either order and ignores legacy collection defaults', async () => {
@@ -275,7 +276,10 @@ test('submits template fields exactly once in either order and ignores legacy co
       ...fields,
       request_id: 'request-1',
       account_mid: 7,
-      parts: [{upload_id: 'upload-id', title: 'title'}],
+      parts: [
+        {upload_id: 'upload-id', title: 'title'},
+        {preset_id: 'anti-collision', title: '✩‧₊˚✧'},
+      ],
     });
     assert.equal(f.cleaned(), 1);
     assert.equal(f.job.state().done, true);
@@ -504,4 +508,21 @@ test('uploaded but unconfirmed job can still be cancelled and will not submit af
   await f.job.confirm(fields);
   assert.equal(f.cleaned(), 1);
   assert.equal(f.calls.length, 0);
+});
+
+test('a song is appended to the chosen archive, never submitted as a new one', async () => {
+  const f = jobFixture();
+  const work = f.job.start();
+  await f.job.confirm({append: {mid: 7, bvid: 'BV1KRxx6QEkN'}, title: '朋友的酒'});
+  f.uploaded.resolve('upload-id');
+  await work;
+  await tick();
+  assert.deepEqual(f.calls, [
+    [
+      '/accounts/7/archives/BV1KRxx6QEkN/append',
+      {method: 'POST', body: {request_id: 'request-1', upload_id: 'upload-id', title: '朋友的酒'}},
+    ],
+  ]);
+  assert.equal(f.job.state().done, true);
+  assert.equal(f.cleaned(), 1);
 });

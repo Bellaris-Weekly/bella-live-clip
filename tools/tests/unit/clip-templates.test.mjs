@@ -4,7 +4,9 @@ import {
   draftFromTemplate,
   matchingTemplate,
   liveValue,
+  liveValues,
   substitute,
+  titleWithSong,
   submissionSchedule,
   submissionFields,
 } from '../../../src/preview/templates.js';
@@ -28,11 +30,11 @@ test('live placeholder uses UTC+8 event date, unpadded month/day, two spaces and
   const live = liveValue({start: Date.parse('2026-01-02T16:01:00Z') / 1000, title: '跨日直播 $&'});
   assert.equal(live, '2026.1.3  跨日直播 $&');
   assert.equal(
-    substitute('{clipper} {live}\n{live}', live, '$&署名'),
+    substitute('{clipper} {live}\n{live}', {live, clipper: '$&署名'}),
     '$&署名 2026.1.3  跨日直播 $&\n2026.1.3  跨日直播 $&',
   );
-  assert.equal(substitute('{live}', '任意完整信息', '成员'), '任意完整信息');
-  assert.equal(substitute('{live} {clipper}', '', ''), '{live} {clipper}');
+  assert.equal(substitute('{live}', {live: '任意完整信息', clipper: '成员'}), '任意完整信息');
+  assert.equal(substitute('{live} {clipper}', {live: '', clipper: ''}), '{live} {clipper}');
 });
 
 test('schedule lookup matches the record independently and walks empty months for the last five started Bella events', async () => {
@@ -148,7 +150,7 @@ test('studio template normalization and request mapping retain editable archive 
   assert.deepEqual(draft.tags, ['标签', '另一个']);
   assert.deepEqual(draft.staff, [{mid: 7, title: '剪辑'}]);
   assert.deepEqual(draft.desc_v2, [{type_id: 2, raw_text: '{clipper}', biz_id: '7'}]);
-  const request = submissionFields(draft, '直播', '编辑署名', Date.parse('2026-01-01'));
+  const request = submissionFields(draft, {live: '直播', clipper: '编辑署名'}, Date.parse('2026-01-01'));
   assert.equal(request.title, '直播');
   assert.equal(request.desc, '编辑署名');
   assert.equal(request.desc_v2[0].raw_text, '编辑署名');
@@ -164,9 +166,9 @@ test('studio template normalization and request mapping retain editable archive 
   assert.equal(draftFromTemplate({}).tid, 27);
 });
 
-test('other braces are ordinary text; only {live}/{clipper} are placeholders', () => {
+test('other braces are ordinary text; only studio variables are placeholders', () => {
   const draft = draftFromTemplate({title: '标题 {笑}', desc: '{(>_<)} {live} {clipper}', tags: ['tag']});
-  const fields = submissionFields(draft, '场次', '成员');
+  const fields = submissionFields(draft, {live: '场次', clipper: '成员'});
   assert.equal(fields.title, '标题 {笑}');
   assert.equal(fields.desc, '{(>_<)} 场次 成员');
 });
@@ -179,12 +181,43 @@ test('resolved title/description lengths and all remaining placeholders block su
     ['{clipper}', '成员'],
     ['场次', '{live}'],
   ]) {
-    assert.throws(() => submissionFields(draft, live, clipper), /占位符/);
+    assert.throws(() => submissionFields(draft, {live: live, clipper: clipper}), /占位符/);
   }
-  assert.throws(() => submissionFields(draft, '长'.repeat(81), '成员'), /80/);
-  assert.throws(() => submissionFields(draft, '场次', '长'.repeat(2001)), /2000/);
+  assert.throws(() => submissionFields(draft, {live: '长'.repeat(81), clipper: '成员'}), /80/);
+  assert.throws(() => submissionFields(draft, {live: '场次', clipper: '长'.repeat(2001)}), /2000/);
   assert.throws(
-    () => submissionFields({...draft, desc_v2: [{type_id: 1, raw_text: '{clipper}', biz_id: ''}]}, '场次', ''),
+    () =>
+      submissionFields(
+        {...draft, desc_v2: [{type_id: 1, raw_text: '{clipper}', biz_id: ''}]},
+        {live: '场次', clipper: ''},
+      ),
     /占位符/,
   );
+});
+
+test('split live variables follow the studio: date and title of the event, custom text stands in for the title', () => {
+  const start = Date.parse('2026-11-01T12:00:00Z') / 1000;
+  assert.deepEqual(liveValues({start, title: '我，同频，万圣节'}, '', 0), {
+    live: '2026.11.1  我，同频，万圣节',
+    live_date: '2026.11.1',
+    live_title: '我，同频，万圣节',
+  });
+  assert.deepEqual(liveValues(null, '自填', start), {live: '自填', live_date: '2026.11.1', live_title: '自填'});
+  const draft = draftFromTemplate({
+    title: '【A-SOUL】{live_title} 歌舞合集丨『』',
+    desc: '{live}',
+    tags: ['t'],
+    includeAntiCollision: true,
+  });
+  assert.equal(draft.includeAntiCollision, true);
+  const fields = submissionFields(draft, {...liveValues({start, title: '夜谈'}, '', 0), clipper: ''});
+  assert.equal(fields.title, '【A-SOUL】夜谈 歌舞合集丨『』');
+  assert.ok(!('includeAntiCollision' in fields));
+  assert.throws(() => submissionFields({...draft, title: '{live_date}'}, {live: 'x', clipper: ''}), /占位符/);
+});
+
+test('each song gets its own 『』 in the collection title', () => {
+  assert.equal(titleWithSong('合集丨『』', '青春纪念册'), '合集丨『青春纪念册』');
+  assert.equal(titleWithSong('合集丨『A』', 'B'), '合集丨『A』『B』');
+  assert.equal(titleWithSong('合集丨『』', '$&'), '合集丨『$&』');
 });

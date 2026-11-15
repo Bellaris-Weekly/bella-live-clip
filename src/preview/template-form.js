@@ -5,10 +5,15 @@ import {
   draftFromTemplate,
   matchingTemplate,
   liveValue,
+  liveValues,
+  isCollection,
+  titleWithSong,
   substitute,
   submissionFields,
   tagsFrom,
 } from './templates.js';
+
+const ANTI_COLLISION = {preset_id: 'anti-collision', title: '✩‧₊˚✧'};
 
 export function createTemplateForm(host) {
   const flags = Object.entries(FLAG_FIELDS)
@@ -17,7 +22,10 @@ export function createTemplateForm(host) {
   const ids = Object.entries(ID_FIELDS)
     .map(([key, label]) => `<div class="field"><label>${label}</label><input type="number" min="1" data-${key}></div>`)
     .join('');
-  host.innerHTML = `<div class="field-row">
+  host.innerHTML = `<div class="field" data-target-label hidden><label>投到</label><select data-target></select></div>
+    <div class="field" data-song-label hidden><label>歌名<span class="counter">填进标题的『』，也是分P标题</span></label><input data-song></div>
+    <div data-archive>
+    <div class="field-row">
       <div class="field"><label>投稿模板</label><select data-template></select></div>
       <div class="field"><label>直播场次</label><select data-live></select></div>
     </div>
@@ -40,16 +48,30 @@ export function createTemplateForm(host) {
       <div class="field"><label>定时发布</label><input type="datetime-local" step="1" data-scheduleAt></div>
       <div class="field"><label>合作成员（JSON：mid、title）</label><textarea data-staff rows="2"></textarea></div>
       <div class="field"><label>简介片段 / @ 用户（JSON：type_id、raw_text、biz_id）</label><textarea data-desc_v2 rows="2"></textarea></div>
-    </div></details>`;
+    </div></details>
+    </div>`;
   const field = key => host.querySelector(`[data-${key}]`);
   let templates = [],
-    events = [];
-  const live = () =>
-    field('live').value === 'custom' ? field('live-custom').value : liveValue(events[Number(field('live').value)]);
+    events = [],
+    collections = [],
+    start = 0,
+    antiCollision = false;
+  const values = () => ({
+    ...liveValues(
+      field('live').value === 'custom' ? null : events[Number(field('live').value)],
+      field('live-custom').value,
+      start,
+    ),
+    clipper: field('clipper').value,
+  });
+  const appending = () => collections[Number(field('target').value)] || null;
   function preview() {
+    const target = appending();
+    field('archive').hidden = Boolean(target);
+    field('song-label').hidden = !target && !isCollection(field('title').value);
     field('live-custom-label').hidden = field('live').value !== 'custom';
     field('title-count').textContent = `${[...field('title').value].length}/80`;
-    field('desc-preview').textContent = substitute(field('desc').value, live(), field('clipper').value);
+    field('desc-preview').textContent = substitute(field('desc').value, values());
   }
   function write(draft) {
     for (const key of [...TEXT_FIELDS, ...Object.keys(ID_FIELDS), 'tid', 'copyright', 'scheduleAt'])
@@ -66,30 +88,39 @@ export function createTemplateForm(host) {
     select.append(node);
   }
   field('template').onchange = () => {
-    const template = templates.find(item => `${item.kind}:${item.id}` === field('template').value);
+    const template = templates.find(item => String(item.id) === field('template').value);
     const draft = draftFromTemplate(template?.payload);
     if (!template) draft.tid = null;
+    antiCollision = draft.includeAntiCollision;
     write(draft);
+    // A song collection of this live made with the same template is where the next song goes.
+    const same = collections.findIndex(item => item.template === template?.name);
+    field('target').value = same >= 0 ? String(same) : 'new';
+    preview();
   };
   field('copyright').onchange = () => {
     if (field('copyright').value === '2') field('no_reprint').checked = false;
   };
   host.addEventListener('input', preview);
   field('live').onchange = preview;
+  field('target').onchange = preview;
   return {
-    configure(items, schedule, name, preserve) {
+    // `existing`: this live's song collections already on Bilibili, newest first.
+    configure(items, schedule, name, preserve, {existing = [], song = '', recordStart = 0} = {}) {
       const selected = field('template').value;
+      const target = field('target').value;
+      start = recordStart;
+      collections = existing;
+      field('target').replaceChildren();
+      option(field('target'), 'new', '新稿件');
+      collections.forEach((item, i) => option(field('target'), String(i), `追加到《${item.title}》`));
+      field('target-label').hidden = !collections.length;
       templates = items;
       field('template').replaceChildren();
       option(field('template'), '', '不使用模板');
-      for (const template of templates)
-        option(
-          field('template'),
-          `${template.kind}:${template.id}`,
-          `${template.name}（${template.kind === 'shared' ? '共享' : '我的'}）`,
-        );
+      for (const template of templates) option(field('template'), String(template.id), template.name);
       const matched = matchingTemplate(templates, schedule.matched);
-      field('template').value = preserve ? selected : matched ? `${matched.kind}:${matched.id}` : '';
+      field('template').value = preserve ? selected : matched ? String(matched.id) : '';
       field('schedule-note').textContent = schedule.failed
         ? '部分日程读取失败，可自行输入直播信息或重新打开投稿。'
         : '';
@@ -110,11 +141,19 @@ export function createTemplateForm(host) {
         field('live').value = index >= 0 ? String(index) : events.length ? '0' : 'custom';
         field('live-custom').value = '';
         field('clipper').value = name || '';
+        field('song').value = song;
         field('template').onchange();
-      }
+      } else field('target').value = target === 'new' || collections[Number(target)] ? target : 'new';
       preview();
     },
+    // What confirming sends: one song appended to an existing collection, or a new archive.
     fields() {
+      const song = field('song').value.trim();
+      const target = appending();
+      if (target) {
+        if (!song) throw new Error('请填写歌名');
+        return {append: {mid: target.mid, bvid: target.bvid}, title: song};
+      }
       const draft = {};
       for (const key of [...TEXT_FIELDS, 'scheduleAt']) draft[key] = field(key).value;
       for (const key of [...Object.keys(FLAG_FIELDS), 'isOnlySelf']) draft[key] = field(key).checked;
@@ -132,12 +171,25 @@ export function createTemplateForm(host) {
           throw new Error(`${key === 'staff' ? '合作成员' : '简介片段'}需要有效的 JSON 数组`);
         }
       }
+      const collection = isCollection(draft.title);
+      if (collection) {
+        if (!song) throw new Error('请填写歌名');
+        draft.title = titleWithSong(draft.title, song);
+      }
+      const live = values();
+      let fields;
       try {
-        return submissionFields(draft, live(), field('clipper').value);
+        fields = submissionFields(draft, live);
       } catch (error) {
         host.querySelector('details').open = true;
         throw error;
       }
+      const template = templates.find(item => String(item.id) === field('template').value);
+      return {
+        ...fields,
+        origin: {live: live.live, clipper: live.clipper, template_name: template?.name ?? '无模板'},
+        parts: [{title: collection ? song : fields.title}, ...(antiCollision ? [ANTI_COLLISION] : [])],
+      };
     },
   };
 }

@@ -55,8 +55,7 @@ async function until(predicate) {
 }
 const templates = [
   {
-    id: 1,
-    kind: 'shared',
+    id: 2,
     name: '贝拉单播',
     payload: {
       liveParticipants: ['bella'],
@@ -71,12 +70,11 @@ const templates = [
   },
   {
     id: 1,
-    kind: 'own',
     name: '自定义',
     payload: {title: '自选标题', desc: '自选 {clipper}', tid: 9, tags: ['自选模板']},
   },
 ];
-function fixture(defaults = {account_mid: 7}, items = templates, matched = true) {
+function fixture(defaults = {account_mid: 7}, items = templates, matched = true, submissions = []) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', {
     runScripts: 'outside-only',
     url: 'https://www.bilibili.com',
@@ -149,8 +147,10 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true)
         if (path === '/upload-options') return {cos_enabled: true, max_file_bytes: 100};
         if (path === '/uploads')
           return {id: 'u', url: 'https://upos-test.bilivideo.com/file', auth: 'auth', biz_id: 42, chunk_size: 4};
+        if (path.endsWith('/append')) return {bvid: 'BV1KRxx6QEkN', part: 2, parts: 3};
         if (path === '/covers') return {id: `cover-${calls.filter(([p]) => p === '/covers').length}`};
-        if (path === '/submissions') return {id: 's', bvid: 'BV1234567890', status: 'submitted'};
+        if (path === '/submissions')
+          return options.method ? {id: 's', bvid: 'BV1234567890', status: 'submitted'} : submissions;
       },
     },
     gmRequest: options => {
@@ -242,7 +242,7 @@ test('composer exports to OPFS while form is open, takes a cover frame inside th
   assert.deepEqual(f.captured, [{start: 2, end: 8}]);
   await until(() => f.root.querySelector('[data-cover-source]').textContent.includes('00:00:02.000'));
   assert.match(f.field('mark').textContent, /备注/);
-  assert.equal(f.field('template').value, 'shared:1');
+  assert.equal(f.field('template').value, '2');
   assert.equal(f.field('desc').value, '{live} 视频二创组——{clipper}');
   assert.match(f.field('desc-preview').textContent, /1970\.1\.2 {2}排期标题.*成员/);
   assert.equal(f.field('live').options.length, 7);
@@ -255,10 +255,10 @@ test('composer exports to OPFS while form is open, takes a cover frame inside th
   assert.equal(f.field('title').value, '投稿标题');
   f.field('confirm').click();
   await until(() => f.field('confirm').textContent.includes('等待上传'));
-  assert.equal(f.calls.filter(([path]) => path === '/submissions').length, 0);
+  assert.equal(f.calls.filter(([path, options]) => path === '/submissions' && options.method).length, 0);
   f.gate.resolve();
   await until(() => f.field('state').textContent === '投稿完成');
-  const submitted = f.calls.find(([path]) => path === '/submissions')[1].body;
+  const submitted = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
   assert.equal(submitted.mark_id, 'mark');
   assert.equal(submitted.cover_id, 'cover-1');
   assert.equal(submitted.cover43_id, 'cover-2');
@@ -303,7 +303,7 @@ test('a changed clip is offered on return: exporting it cancels the old export, 
   assert.equal(f.field('mark'), null);
   f.field('cancel').click();
   await until(() => f.files.size === 0);
-  assert.equal(f.calls.filter(([path]) => path === '/submissions').length, 0);
+  assert.equal(f.calls.filter(([path, options]) => path === '/submissions' && options.method).length, 0);
 });
 
 test('the exported clip plays on the page until it is cleaned up, and stops when the page is left', async t => {
@@ -353,13 +353,13 @@ test('template switching and free-text live/clipper edits affect only this submi
   await until(() => !f.field('confirm').disabled);
   f.field('clipper').value = '自选署名 $&';
   f.field('clipper').dispatchEvent(new f.w.Event('input', {bubbles: true}));
-  f.field('template').value = 'own:1';
+  f.field('template').value = '1';
   f.field('template').dispatchEvent(new f.w.Event('change'));
   assert.equal(f.field('title').value, '自选标题');
   assert.equal(f.field('tid').value, '9');
   assert.equal(f.field('tags').value, '自选模板');
   assert.equal(f.field('desc-preview').textContent, '自选 自选署名 $&');
-  f.field('template').value = 'shared:1';
+  f.field('template').value = '2';
   f.field('template').dispatchEvent(new f.w.Event('change'));
   f.field('live').value = 'custom';
   f.field('live').dispatchEvent(new f.w.Event('change'));
@@ -371,7 +371,7 @@ test('template switching and free-text live/clipper edits affect only this submi
   await until(() => f.field('confirm').textContent.includes('等待上传'));
   f.gate.resolve();
   await until(() => f.field('state').textContent === '投稿完成');
-  const body = f.calls.find(([path]) => path === '/submissions')[1].body;
+  const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
   assert.equal(body.title, '手动完整直播信息 切片');
   assert.equal(body.desc, '手动完整直播信息 视频二创组——自选署名 $&');
   assert.deepEqual(templates, original);
@@ -403,5 +403,79 @@ test('no matching event leaves template unselected, defaults live to newest, and
   f.field('clipper').value = '';
   f.field('confirm').click();
   await until(() => f.field('error')?.textContent.includes('占位符'));
-  assert.ok(!f.calls.some(([path]) => path === '/covers' || path === '/submissions'));
+  assert.ok(!f.calls.some(([path, options]) => path === '/covers' || (path === '/submissions' && options.method)));
+});
+
+const collection = {
+  id: 5,
+  name: '歌舞合集',
+  payload: {
+    title: '【A-SOUL】{live_title} 歌舞合集丨『』',
+    desc: '{live}',
+    tid: 27,
+    tags: ['歌舞'],
+    includeAntiCollision: true,
+  },
+};
+const sent = (title, extra = {}) => ({
+  bvid: 'BV1KRxx6QEkN',
+  account_mid: 7,
+  created_at: 100100,
+  title,
+  details: {origin: {template_name: '歌舞合集'}},
+  ...extra,
+});
+
+test('the first song starts a collection: its name fills 『』, it titles the part, and the bumper follows', async t => {
+  const f = fixture({account_mid: 7}, [collection], true, [sent('旧合集『X』', {created_at: 99000})]);
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  f.field('template').value = '5';
+  f.field('template').dispatchEvent(new f.w.Event('change'));
+  // An earlier live's collection is not offered.
+  assert.equal(f.field('target-label').hidden, true);
+  assert.equal(f.field('song-label').hidden, false);
+  f.field('song').value = '青春纪念册';
+  f.field('confirm').click();
+  await until(() => f.field('confirm').textContent.includes('等待上传'));
+  f.gate.resolve();
+  await until(() => f.field('state').textContent === '投稿完成');
+  const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
+  assert.equal(body.title, '【A-SOUL】排期标题 歌舞合集丨『青春纪念册』');
+  assert.deepEqual(JSON.parse(JSON.stringify(body.parts)), [
+    {upload_id: 'u', title: '青春纪念册'},
+    {preset_id: 'anti-collision', title: '✩‧₊˚✧'},
+  ]);
+  assert.equal(body.origin.template_name, '歌舞合集');
+});
+
+test('later songs of the live go into its collection without covers or archive fields', async t => {
+  const f = fixture({account_mid: 7}, [collection], true, [sent('【A-SOUL】排期标题 歌舞合集丨『青春纪念册』')]);
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  f.field('template').value = '5';
+  f.field('template').dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.field('target').value, '0');
+  assert.equal(f.field('archive').hidden, true);
+  f.field('confirm').click();
+  await until(() => f.field('error').textContent.includes('歌名'));
+  f.field('song').value = '朋友的酒';
+  f.field('confirm').click();
+  await until(() => f.field('confirm').textContent.includes('等待上传'));
+  f.gate.resolve();
+  await until(() => f.field('state').textContent === '已追加为第 2 P');
+  const [path, options] = f.calls.find(([path]) => path.endsWith('/append'));
+  assert.equal(path, '/accounts/7/archives/BV1KRxx6QEkN/append');
+  assert.equal(options.body.title, '朋友的酒');
+  assert.equal(options.body.upload_id, 'u');
+  assert.ok(!f.calls.some(([path, options]) => path === '/covers' || (path === '/submissions' && options.method)));
+  assert.equal(f.field('target-label').hidden, false);
 });

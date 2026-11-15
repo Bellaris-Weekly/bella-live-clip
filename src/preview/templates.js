@@ -59,6 +59,7 @@ export function draftFromTemplate(payload) {
   draft.tags = tagsFrom(fields.tags);
   draft.scheduleAt = text(fields.scheduleAt);
   draft.isOnlySelf = flag(fields.isOnlySelf);
+  draft.includeAntiCollision = flag(fields.includeAntiCollision);
   if (Array.isArray(fields.staff))
     draft.staff = fields.staff.map(value => {
       const row = object(value);
@@ -87,19 +88,36 @@ export function matchingTemplate(templates, event) {
   );
 }
 
+const PLACEHOLDER = /\{(live_date|live_title|live|clipper)\}/g;
+const liveDate = seconds => {
+  const date = new Date((seconds + 8 * 3600) * 1000);
+  return `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}`;
+};
 export function liveValue(event) {
-  if (!event) return '';
-  const date = new Date((event.start + 8 * 3600) * 1000);
-  return `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}  ${event.title}`;
+  return event ? `${liveDate(event.start)}  ${event.title}` : '';
+}
+// The studio's template variables. A custom live text replaces {live} and stands in for the title.
+export function liveValues(event, custom, start) {
+  if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: event.title};
+  return {live: custom, live_date: start ? liveDate(start) : '', live_title: custom};
 }
 
-export function substitute(value, live, clipper) {
-  return value.replace(/\{(live|clipper)\}/g, (placeholder, key) => (key === 'live' ? live : clipper) || placeholder);
+export function substitute(value, values) {
+  return value.replace(PLACEHOLDER, (placeholder, key) => values[key] || placeholder);
 }
 
 export function assertResolved(...values) {
-  if (values.some(value => /\{(live|clipper)\}/.test(value)))
+  if (values.some(value => new RegExp(PLACEHOLDER.source).test(value)))
     throw new Error('标题或简介仍有未填写的占位符，请补全直播、二创署名或模板内容');
+}
+
+// Song collections list each song in 『』: fill the template's empty pair, else add a pair after the last.
+// Mirrors the studio's append endpoint.
+export const isCollection = title => title.includes('『』');
+export function titleWithSong(title, song) {
+  if (title.includes('『』')) return title.replace('『』', () => `『${song}』`);
+  const end = title.lastIndexOf('』') + 1;
+  return end ? `${title.slice(0, end)}『${song}』${title.slice(end)}` : title;
 }
 
 export async function submissionSchedule(record, schedules, signal, now = Date.now() / 1000) {
@@ -140,12 +158,12 @@ export async function submissionSchedule(record, schedules, signal, now = Date.n
   return {matched, recent: [...recent.values()].sort((a, b) => b.start - a.start).slice(0, 5), failed};
 }
 
-export function submissionFields(draft, live, clipper, now = Date.now()) {
-  const {scheduleAt, isOnlySelf, ...fields} = draft;
-  fields.title = substitute(fields.title, live, clipper).trim();
-  fields.desc = substitute(fields.desc, live, clipper);
+export function submissionFields(draft, values, now = Date.now()) {
+  const {scheduleAt, isOnlySelf, includeAntiCollision, ...fields} = draft;
+  fields.title = substitute(fields.title, values).trim();
+  fields.desc = substitute(fields.desc, values);
   if (fields.desc_v2)
-    fields.desc_v2 = fields.desc_v2.map(row => ({...row, raw_text: substitute(row.raw_text, live, clipper)}));
+    fields.desc_v2 = fields.desc_v2.map(row => ({...row, raw_text: substitute(row.raw_text, values)}));
   assertResolved(fields.title, fields.desc, ...(fields.desc_v2 || []).map(row => row.raw_text));
   const length = value => [...value].length;
   if (!fields.title || length(fields.title) > 80) throw new Error('标题必填，最多 80 字');

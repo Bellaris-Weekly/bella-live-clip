@@ -40,11 +40,27 @@ export function createSubmissionJob({
     if (running || cancelled || done || !fields || !uploadId) return running;
     running = (async () => {
       error = null;
+      if (fields.append) {
+        // Appends are idempotent per request id; the studio reads the archive afresh, so others' songs are kept.
+        const {mid, bvid} = fields.append;
+        request ??= {request_id: requestId, upload_id: uploadId, title: fields.title};
+        sent = true;
+        emit();
+        try {
+          result = await client.request(`/accounts/${mid}/archives/${bvid}/append`, {method: 'POST', body: request});
+          await clean();
+          done = true;
+        } catch (failure) {
+          error = failure;
+        }
+        return;
+      }
+      const [main, ...rest] = fields.parts;
       request ??= {
         ...fields,
         request_id: requestId,
         account_mid: defaults.account_mid,
-        parts: [{upload_id: uploadId, title: fields.title}],
+        parts: [{...main, upload_id: uploadId}, ...rest],
       };
       sent = true;
       emit();
@@ -95,7 +111,7 @@ export function createSubmissionJob({
     },
     confirm(value) {
       if (cancelled || sent) return;
-      assertResolved(value.title, value.desc, ...(value.desc_v2 || []).map(row => row.raw_text));
+      if (!value.append) assertResolved(value.title, value.desc, ...(value.desc_v2 || []).map(row => row.raw_text));
       fields = structuredClone(value);
       emit();
       return send();

@@ -13,6 +13,25 @@ import {limitProgress} from '../ui/export-progress.js';
 import {formatTimeRange} from '../shared/format.js';
 import {isEditing} from '../ui/shortcuts.js';
 
+// Song collections (title with 『』) sent since this live began on the posting account: songs can go there.
+export function liveCollections(submissions, record, mid) {
+  return submissions
+    .filter(
+      item =>
+        item.bvid &&
+        item.account_mid === mid &&
+        item.created_at >= record.start &&
+        item.title.includes('』') &&
+        item.details?.origin?.template_name,
+    )
+    .map(item => ({
+      bvid: item.bvid,
+      mid: item.account_mid,
+      title: item.title,
+      template: item.details.origin.template_name,
+    }));
+}
+
 export function createComposer({root, client, gmRequest, mediaApi, storage, schedules, session}) {
   const view = signal({open: false, canStart: false});
   const host = id => root.getElementById(id);
@@ -59,7 +78,9 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
       stage: state?.cancelled
         ? '已取消'
         : state?.done
-          ? '投稿完成'
+          ? state.result?.part
+            ? `已追加为第 ${state.result.part} P`
+            : '投稿完成'
           : state?.sent
             ? '正在确认投稿结果'
             : state?.uploaded
@@ -139,16 +160,21 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
       if (!cover.state.value.frame) void captureDefault(own);
       render(own);
       try {
-        const [defaults, me, options, templates, schedule] = await Promise.all([
+        const [defaults, me, options, templates, schedule, submissions] = await Promise.all([
           client.request('/clip-defaults', {signal}),
           client.request('/me', {signal}),
           client.request('/upload-options', {signal}),
           client.request('/templates', {signal}),
           submissionSchedule(own.record, schedules, signal),
+          client.request('/submissions', {signal}),
         ]);
         signal.throwIfAborted();
         if (!defaults.account_mid) throw new Error('创作台尚未配置投稿账号，请联系管理员');
-        templateForm.configure(templates, schedule, me.name, preserve && prior?.ready);
+        templateForm.configure(templates, schedule, me.name, preserve && prior?.ready, {
+          existing: liveCollections(submissions, own.record, defaults.account_mid),
+          song: own.mark?.note?.trim() || '',
+          recordStart: own.record.start,
+        });
         own.uploader = createClipUpload({client, transport});
         let temporary;
         const clean = async () => {
@@ -255,6 +281,10 @@ export function createComposer({root, client, gmRequest, mediaApi, storage, sche
       };
       own.confirming = true;
       render(own);
+      if (fields.append) {
+        void own.job.confirm(fields);
+        return;
+      }
       const files = await cover.files();
       const send = async file => {
         const body = new FormData();
