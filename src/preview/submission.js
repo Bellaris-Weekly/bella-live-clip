@@ -43,7 +43,14 @@ export function createSubmissionJob({
       if (fields.append) {
         // Appends are idempotent per request id; the studio reads the archive afresh, so others' songs are kept.
         const {mid, bvid} = fields.append;
-        request ??= {request_id: requestId, upload_id: uploadId, title: fields.title};
+        request ??= {
+          request_id: requestId,
+          upload_id: uploadId,
+          title: fields.title,
+          // The mark this clip was cut from is linked to the archive, as for a new submission.
+          ...(fields.mark_id ? {mark_id: fields.mark_id} : {}),
+          ...(fields.template_variables ? {template_variables: fields.template_variables} : {}),
+        };
         sent = true;
         emit();
         try {
@@ -68,7 +75,8 @@ export function createSubmissionJob({
         if (!result) result = await client.request('/submissions', {method: 'POST', body: request});
         else if (retry && result.status === 'failed')
           result = await client.request(`/submissions/${result.id}/retry`, {method: 'POST'});
-        while (!result.bvid) {
+        // A studio-held scheduled submission is done once accepted; its BV comes when it is sent.
+        while (!result.bvid && result.status !== 'scheduled') {
           if (result.status === 'failed') throw new Error(result.error_message || '投稿失败');
           emit();
           await sleep(2000, signal);

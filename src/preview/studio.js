@@ -99,8 +99,9 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
               error.detail = reason;
               error.diagnostic = {path: path.split('?')[0], detail: reason};
               error.status = response.status;
-              error.code = detail?.code;
-              error.retryAfter = detail?.retry_after;
+              // Rate limits put code and retry_after beside detail; other errors nest them inside it.
+              error.code = data?.code ?? detail?.code;
+              error.retryAfter = data?.retry_after ?? detail?.retry_after;
               error.current = detail?.current;
               finish(reject, error);
             } else finish(resolve, data);

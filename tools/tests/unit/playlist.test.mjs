@@ -59,3 +59,11 @@ test('rounded 60 fps fragment durations are restored, so far times match the pre
   // Summing the listed 4.17 would put 01:16 about 3.7 s later than the real frames.
   assert.ok(Math.abs(duration - (1100 * 250) / 60 - 2.5) < 1e-6);
 });
+
+test('25/50 fps playlists listed exactly keep their durations', () => {
+  const lines = ['#EXTM3U'];
+  for (let i = 0; i < 1000; i++) lines.push(`#EXTINF:${i % 2 ? '4.12' : '4.08'},`, `f${i}.m4s`);
+  const {groups, duration} = parsePlaylist(lines.join('\n'), 'https://example.com/');
+  assert.equal(groups[0].segments[1].duration, 4.12);
+  assert.ok(Math.abs(duration - 500 * (4.12 + 4.08)) < 1e-6);
+});

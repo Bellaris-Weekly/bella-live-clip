@@ -1,5 +1,5 @@
 import {clamp} from '../shared/math.js';
-import {frameDuration} from './playlist.js';
+import {playlistDurations} from './playlist.js';
 
 // Named here so the player can be created before hls.js has loaded.
 const EVENT = {
@@ -44,7 +44,7 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
   return error;
 }
 
-// Fragment durations are restored to whole 60 fps frames (see frameDuration), so
+// Fragment durations are restored to whole 60 fps frames (see playlistDurations), so
 // far seeks land in the right fragment and match the export timeline.
 // While a session is live, its playlist is a frozen snapshot that ends with
 // ENDLIST. Reopened as a live playlist, hls.js keeps polling it and appends the
@@ -54,6 +54,7 @@ export function previewError(data, mediaSource = globalThis.MediaSource) {
 // next, and hls.js rejects a known fragment whose path changed. Their first
 // addresses keep working, so each sequence number keeps the one seen first.
 export function preparePlaylist(text, known, open) {
+  const restore = playlistDurations(text);
   let sequence = 0,
     longest = 1;
   const lines = text.split(/\r?\n/).flatMap(line => {
@@ -62,7 +63,7 @@ export function preparePlaylist(text, known, open) {
     else if (line.startsWith('#EXTINF:')) {
       const listed = parseFloat(line.slice(8));
       longest = Math.max(longest, Math.ceil(listed));
-      return [line.replace(/^#EXTINF:[\d.]+/, `#EXTINF:${frameDuration(listed).toFixed(6)}`)];
+      return [line.replace(/^#EXTINF:[\d.]+/, `#EXTINF:${restore(listed).toFixed(6)}`)];
     } else if (line && !line.startsWith('#')) {
       const sn = sequence++;
       if (known.has(sn)) return [known.get(sn)];

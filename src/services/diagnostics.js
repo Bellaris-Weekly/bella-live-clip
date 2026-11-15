@@ -100,23 +100,40 @@ function snapshot(details) {
 }
 
 // Resolves the HTTP status, 0 when the network failed, or null when the request never went out.
+// The timer is ours: some script managers ignore `timeout` and never call back, which would hold a
+// sending slot forever and starve every later log.
+const POST_TIMEOUT = 10000;
 function post(request, endpoint, body) {
   return new Promise(resolve => {
+    let handle;
+    const timer = setTimeout(() => {
+      resolve(0);
+      try {
+        handle?.abort?.();
+      } catch {
+        /* Already finished. */
+      }
+    }, POST_TIMEOUT);
+    timer.unref?.();
+    const done = status => {
+      clearTimeout(timer);
+      resolve(status);
+    };
     try {
-      request({
+      handle = request({
         method: 'POST',
         url: endpoint,
         anonymous: true,
         timeout: 8000,
         headers: {'Content-Type': 'application/json'},
         data: body,
-        onload: result => resolve(result.status),
-        onerror: () => resolve(0),
-        ontimeout: () => resolve(0),
-        onabort: () => resolve(null),
+        onload: result => done(result.status),
+        onerror: () => done(0),
+        ontimeout: () => done(0),
+        onabort: () => done(null),
       });
     } catch {
-      resolve(null);
+      done(null);
     }
   });
 }

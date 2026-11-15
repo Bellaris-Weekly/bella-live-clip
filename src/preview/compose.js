@@ -1,7 +1,7 @@
 import {signal} from '@preact/signals';
 import {createClipUpload, createUploadTransport, pickLine} from './upload.js';
 import {createSubmissionJob} from './submission.js';
-import {submissionSchedule} from './templates.js';
+import {liveValue, sameLive, submissionSchedule} from './templates.js';
 import {createTemplateForm} from './template-form.js';
 import {createCover, isDark, readImage} from './cover.js';
 import {createTemporaryMedia, ensureTemporarySpace} from '../media/temporary-media.js';
@@ -13,8 +13,13 @@ import {limitProgress} from '../ui/export-progress.js';
 import {formatTimeRange} from '../shared/format.js';
 import {isEditing} from '../ui/shortcuts.js';
 
-// Song collections (title with 『』) sent since this live began on the posting account: songs can go there.
-export function liveCollections(submissions, record, mid) {
+const SAME_LIVE_SLACK = 6 * 3600;
+const beijingTime = seconds => new Date((seconds + 8 * 3600) * 1000).toISOString().slice(0, 16).replace('T', ' ');
+// Song collections (title with 『』) of this live on the posting account: songs can go there. A live
+// matched in the schedule is recognised by its {live}; otherwise only archives sent while it was
+// recorded or soon after count, so a later live's collection is never offered for an older recording.
+export function liveCollections(submissions, record, mid, live = '') {
+  const end = (record.end || Date.now() / 1000) + SAME_LIVE_SLACK;
   return submissions
     .filter(
       item =>
@@ -22,7 +27,8 @@ export function liveCollections(submissions, record, mid) {
         item.account_mid === mid &&
         item.created_at >= record.start &&
         item.title.includes('』') &&
-        item.details?.origin?.template_name,
+        item.details?.origin?.template_name &&
+        (live && item.details.origin.live ? sameLive(item.details.origin.live, live) : item.created_at <= end),
     )
     .map(item => ({
       bvid: item.bvid,
@@ -128,7 +134,9 @@ export function createComposer({
         : state?.done
           ? state.result?.part
             ? `已追加为第 ${state.result.part} P`
-            : '投稿完成'
+            : state.result?.status === 'scheduled'
+              ? `已安排在 ${beijingTime(state.result.submit_at)} 投稿`
+              : '投稿完成'
           : state?.sent
             ? '正在确认投稿结果'
             : state?.uploaded
@@ -229,7 +237,7 @@ export function createComposer({
           collections: submissions.length,
         });
         templateForm.configure(templates, schedule, me.name, preserve && prior?.ready, {
-          existing: liveCollections(submissions, own.record, defaults.account_mid),
+          existing: liveCollections(submissions, own.record, defaults.account_mid, liveValue(schedule.matched)),
           song: own.mark?.note?.trim() || '',
           recordStart: own.record.start,
         });
@@ -375,7 +383,11 @@ export function createComposer({
     } catch (error) {
       if (!own.job.signal.aborted) {
         own.formError = error;
-        diagnostics.event('clip_confirm_rejected', {...describeOwn(own), level: 'warn'}, error.message);
+        diagnostics.event(
+          'clip_confirm_rejected',
+          {...describeOwn(own), level: 'warn', facts: {status: error.status, path: error.diagnostic?.path}},
+          [error.message, error.detail].filter(Boolean).join('：'),
+        );
       }
     } finally {
       own.confirming = false;

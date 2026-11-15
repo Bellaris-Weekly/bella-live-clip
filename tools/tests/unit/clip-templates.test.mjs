@@ -151,13 +151,19 @@ test('studio template normalization and request mapping retain editable archive 
   assert.deepEqual(draft.tags, ['标签', '另一个']);
   assert.deepEqual(draft.staff, [{mid: 7, title: '剪辑'}]);
   assert.deepEqual(draft.desc_v2, [{type_id: 2, raw_text: '{clipper}', biz_id: '7'}]);
-  const request = submissionFields(draft, {live: '直播', clipper: '编辑署名'}, Date.parse('2026-01-01'));
+  const request = submissionFields(draft, {live: '直播', clipper: '编辑署名'}, Date.parse('2029-12-25T00:00:00Z'));
   assert.equal(request.title, '直播');
   assert.equal(request.desc, '编辑署名');
   assert.equal(request.desc_v2[0].raw_text, '编辑署名');
   assert.equal(request.human_type2, 100);
   assert.equal(request.mission_id, 99);
-  assert.equal(request.dtime, new Date(payload.scheduleAt).getTime() / 1000);
+  // A template time is a studio-held submission on the Beijing clock, in any browser time zone.
+  assert.equal(request.dtime, null);
+  assert.equal(request.submit_at, Date.parse('2030-01-01T04:00:00Z') / 1000);
+  assert.throws(
+    () => submissionFields(draft, {live: '直播', clipper: '编辑署名'}, Date.parse('2029-11-01T00:00:00Z')),
+    /15 天/,
+  );
   assert.equal(request.is_only_self, true);
   for (const key of ['targetSeason', 'liveParticipants', 'cover_url', 'scheduleAt', 'isOnlySelf'])
     assert.ok(!(key in request));

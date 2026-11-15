@@ -515,3 +515,30 @@ for (const action of ['export', 'recording_download', 'danmaku_preview', 'danmak
     );
   });
 }
+
+test('a log request whose manager never calls back frees its slot after its own timeout', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const requests = [];
+  const reporter = createDiagnosticReporter({
+    endpoint,
+    version: '1.2.3',
+    online: () => true,
+    wait: async () => {},
+    // Never calls onload/onerror/ontimeout: both sending slots hang.
+    request: options => {
+      requests.push(options);
+      return {abort() {}};
+    },
+  });
+  reporter.event('one');
+  reporter.event('two');
+  reporter.event('three');
+  await settle();
+  assert.equal(requests.length, 2);
+  // Each hung post gives up after 10 s and is retried once, then its slot is free for the next log.
+  for (let round = 0; round < 2; round++) {
+    t.mock.timers.tick(10000);
+    await settle();
+  }
+  assert.ok(requests.some(options => JSON.parse(options.data).event === 'three'));
+});

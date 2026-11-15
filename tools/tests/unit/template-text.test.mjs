@@ -177,3 +177,21 @@ test('a bound field in a shadow root shows values, exposes the variable under th
   assert.equal(element.value, '2026.11.14  冬日阳光方案\n视频二创组——埃兔！');
   dom.window.close();
 });
+
+test('refreshing a bound field while an IME composes leaves the composed text alone', async () => {
+  const {JSDOM} = await import('jsdom');
+  const {bindTemplateField} = await import('../../../src/preview/template-text.js');
+  const dom = new JSDOM('<!doctype html><textarea></textarea>');
+  const element = dom.window.document.querySelector('textarea');
+  const field = bindTemplateField(element, () => ({clipper: '埃兔'}));
+  field.value = '{clipper}';
+  element.dispatchEvent(new dom.window.CompositionEvent('compositionstart'));
+  element.value = '埃兔小美';
+  element.dispatchEvent(new dom.window.InputEvent('input', {isComposing: true}));
+  field.refresh();
+  assert.equal(element.value, '埃兔小美');
+  element.setSelectionRange(4, 4);
+  element.dispatchEvent(new dom.window.CompositionEvent('compositionend'));
+  assert.equal(field.value, '{clipper}小美');
+  dom.window.close();
+});

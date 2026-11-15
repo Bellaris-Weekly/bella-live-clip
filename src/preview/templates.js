@@ -95,6 +95,14 @@ const liveDate = seconds => {
 };
 // As the studio does: 「【团播】A-SOUL夜谈: 冬日阳光方案」 is titled 「冬日阳光方案」.
 const showTitle = title => title.match(/^【[^】]+】[^:：\n]*[:：]\s*(.+)$/s)?.[1].trim() || title;
+// One live's {live} text, compared without the schedule kind prefix that early versions kept in it.
+export function sameLive(a, b) {
+  const key = text => {
+    const [date, ...title] = (text || '').split('  ');
+    return `${date}  ${showTitle(title.join('  '))}`.trim();
+  };
+  return Boolean(a && b) && key(a) === key(b);
+}
 export function liveValue(event) {
   return event ? `${liveDate(event.start)}  ${showTitle(event.title)}` : '';
 }
@@ -178,12 +186,17 @@ export function submissionFields(draft, values, now = Date.now()) {
   fields.dynamic = substitute(fields.dynamic || '', values);
   if (fields.desc_v2)
     fields.desc_v2 = fields.desc_v2.map(row => ({...row, raw_text: substitute(row.raw_text, values)}));
+  // Every text the studio treats as a template field: staff roles and tags too.
+  if (fields.staff) fields.staff = fields.staff.map(row => ({...row, title: substitute(row.title, values)}));
+  fields.tags = fields.tags.map(tag => substitute(tag, values));
   assertResolved(
     fields.title,
     fields.desc,
     fields.source,
     fields.dynamic,
     ...(fields.desc_v2 || []).map(row => row.raw_text),
+    ...(fields.staff || []).map(row => row.title),
+    ...fields.tags,
   );
   const length = value => [...value].length;
   if (!fields.title || length(fields.title) > 80) throw new Error('标题必填，最多 80 字');
@@ -217,19 +230,21 @@ export function submissionFields(draft, values, now = Date.now()) {
     credits.reduce((sum, row) => sum + length(row.raw_text) + Number(row.type_id === 2), 0) > 2000
   )
     throw new Error('请补全简介片段及 @ 用户的有效 UID（最多 100 段、2000 字）');
-  let dtime = null;
+  // As in the studio, a template's time is a studio-held scheduled submission (submit_at) on the
+  // Beijing wall clock, whatever the browser's time zone; Bilibili's own dtime is not used.
+  let submit_at = null;
   if (scheduleAt) {
-    const date = new Date(scheduleAt);
-    dtime = date.getTime() / 1000;
-    if (
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(scheduleAt) ||
-      !positiveId(dtime) ||
-      dtime > 0xffffffff ||
-      new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, scheduleAt.length) !==
-        scheduleAt
-    )
-      throw new Error('请选择有效的定时发布时间');
-    if (dtime * 1000 < now + 4 * 3600_000) throw new Error('定时发布必须晚于当前时间 4 小时');
+    submit_at = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(scheduleAt)
+      ? Date.parse(`${scheduleAt}+08:00`) / 1000
+      : NaN;
+    if (!Number.isInteger(submit_at) || submit_at <= 0 || submit_at > 0xffffffff)
+      throw new Error('请选择有效的定时投稿时间');
+    if (submit_at * 1000 <= now || submit_at * 1000 > now + 15 * 86400_000)
+      throw new Error('请选择未来 15 天内的定时投稿时间');
   }
-  return {...fields, dtime, is_only_self: isOnlySelf};
+  // The values used, so the studio can resolve anything left and record what was used.
+  const template_variables = Object.fromEntries(
+    ['live', 'live_date', 'live_title', 'clipper'].map(key => [key, values[key] || '']),
+  );
+  return {...fields, dtime: null, submit_at, is_only_self: isOnlySelf, template_variables};
 }

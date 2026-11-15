@@ -526,3 +526,44 @@ test('a song is appended to the chosen archive, never submitted as a new one', a
   assert.equal(f.job.state().done, true);
   assert.equal(f.cleaned(), 1);
 });
+
+test('an appended song carries the mark it was cut from and the variable values', async () => {
+  const f = jobFixture();
+  const work = f.job.start();
+  const template_variables = {
+    live: '2026.11.14  冬日阳光方案',
+    live_date: '2026.11.14',
+    live_title: '冬日阳光方案',
+    clipper: '埃兔',
+  };
+  await f.job.confirm({append: {mid: 7, bvid: 'BV1xosJ6AE1F'}, title: '小美满', mark_id: 'mark-1', template_variables});
+  f.uploaded.resolve('upload-id');
+  await work;
+  await tick();
+  assert.deepEqual(f.calls[0][1].body, {
+    request_id: 'request-1',
+    upload_id: 'upload-id',
+    title: '小美满',
+    mark_id: 'mark-1',
+    template_variables,
+  });
+});
+
+test('a scheduled submission is done once the studio accepts it, without waiting for a BV', async () => {
+  const f = jobFixture({
+    client: {
+      request: async (path, options) => {
+        f.calls.push([path, options]);
+        return {id: 's', status: 'scheduled', submit_at: 1900000000};
+      },
+    },
+  });
+  const work = f.job.start();
+  await f.job.confirm({...fields, submit_at: 1900000000});
+  f.uploaded.resolve('upload-id');
+  await work;
+  await tick();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.job.state().done, true);
+  assert.equal(f.job.state().result.status, 'scheduled');
+});

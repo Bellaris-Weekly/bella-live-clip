@@ -172,8 +172,11 @@ export function bindTemplateField(element, values, {maxLength = 2000, onChange =
       cursor = null;
       render();
     },
-    // Variable values changed (live picked, clipper typed): show them.
-    refresh: render,
+    // Variable values changed (live picked, clipper typed): show them. Never mid-composition: the
+    // field's own input events bubble to the form, and redrawing would wipe the text being composed.
+    refresh() {
+      if (!composing) render();
+    },
     get shown() {
       return view.text;
     },

@@ -13,15 +13,28 @@ function byteRange(value, previousEnd) {
 }
 
 // Bilibili lists fragment durations rounded to 0.01 s (4.17 for 250 frames at 60 fps). Summed over a
-// long recording that drifts by seconds, so durations within rounding of whole 60 fps frames are
-// restored. Preview and export must share this, or a clip lands away from where it was picked.
+// long recording that drifts by seconds, so durations are restored to whole 60 fps frames. Preview and
+// export must share this, or a clip lands away from where it was picked.
 const FRAME_GRID = 60;
+const onGrid = (value, grid, tolerance) => Math.abs(value * grid - Math.round(value * grid)) <= tolerance;
 export function frameDuration(listed) {
   const frames = Math.round(listed * FRAME_GRID);
-  return Math.abs(listed * FRAME_GRID - frames) <= 0.31 ? frames / FRAME_GRID : listed;
+  return onGrid(listed, FRAME_GRID, 0.31) ? frames / FRAME_GRID : listed;
+}
+// Whether a whole playlist reads as rounded 60 fps: every duration within rounding of whole frames,
+// and not all of them exact on a 50 fps grid (25/50 fps fragments are listed exactly, e.g. 4.12).
+// Returns the duration mapping to use for every fragment of that playlist.
+export function playlistDurations(text) {
+  const listed = [...text.matchAll(/#EXTINF:([\d.]+)/g)].map(match => Number(match[1]));
+  const rounded =
+    listed.length > 0 &&
+    listed.every(value => onGrid(value, FRAME_GRID, 0.31)) &&
+    !listed.every(value => onGrid(value, 50, 1e-6));
+  return rounded ? frameDuration : value => value;
 }
 
 export function parsePlaylist(text, baseUrl) {
+  const restore = playlistDurations(text);
   const lines = text
     .trim()
     .split(/\r?\n/)
@@ -59,7 +72,7 @@ export function parsePlaylist(text, baseUrl) {
     } else if (line.startsWith('#EXTINF:')) {
       duration = Number(line.slice(8).split(',')[0]);
       if (!(duration > 0)) throw new Error('视频分片时长无效。');
-      duration = frameDuration(duration);
+      duration = restore(duration);
     } else if (line && !line.startsWith('#')) {
       if (duration === null) throw new Error('视频清单缺少分片时长。');
       const url = new URL(line, baseUrl).href;

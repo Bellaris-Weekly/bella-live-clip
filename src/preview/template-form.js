@@ -48,7 +48,7 @@ export function createTemplateForm(host) {
       <div class="field"><label>同步动态</label><textarea data-dynamic rows="2"></textarea></div>
       <div class="switches">${flags}<label class="switch"><input type="checkbox" role="switch" data-isOnlySelf>仅自己可见</label></div>
       <div class="field-row">${ids}</div>
-      <div class="field"><label>定时发布</label><input type="datetime-local" step="1" data-scheduleAt></div>
+      <div class="field"><label>定时投稿（北京时间）</label><input type="datetime-local" step="1" data-scheduleAt></div>
       <div class="field"><label>合作成员（JSON：mid、title）</label><textarea data-staff rows="2"></textarea></div>
       <div class="field"><label>简介片段 / @ 用户（JSON：type_id、raw_text、biz_id）</label><textarea data-desc_v2 rows="2"></textarea></div>
     </div></details>
@@ -80,7 +80,12 @@ export function createTemplateForm(host) {
     for (const control of field('archive').querySelectorAll('input, select, textarea'))
       control.disabled = Boolean(target);
     field('song-label').hidden = !target && !isCollection(texts.title.value);
-    const needs = neededVariables(...TEXT_FIELDS.map(key => texts[key].value), field('desc_v2').value);
+    const needs = neededVariables(
+      ...TEXT_FIELDS.map(key => texts[key].value),
+      field('desc_v2').value,
+      field('staff').value,
+      field('tags').value,
+    );
     field('live-label').hidden = !needs.live;
     field('clipper-label').hidden = !needs.clipper;
     field('live-custom-label').hidden = field('live').value !== 'custom';
@@ -125,7 +130,8 @@ export function createTemplateForm(host) {
     // `existing`: this live's song collections already on Bilibili, newest first.
     configure(items, schedule, name, preserve, {existing = [], song = '', recordStart = 0} = {}) {
       const selected = field('template').value;
-      const target = field('target').value;
+      // Keep the chosen archive by its BV: the list may have grown or reordered since.
+      const chosen = appending()?.bvid;
       start = recordStart;
       collections = existing;
       field('target').replaceChildren();
@@ -166,7 +172,10 @@ export function createTemplateForm(host) {
         field('clipper').value = name || '';
         field('song').value = song;
         field('template').onchange();
-      } else field('target').value = target === 'new' || collections[Number(target)] ? target : 'new';
+      } else {
+        const kept = collections.findIndex(item => item.bvid === chosen);
+        field('target').value = kept >= 0 ? String(kept) : 'new';
+      }
       preview();
     },
     // What confirming sends: one song appended to an existing collection, or a new archive.
@@ -175,7 +184,17 @@ export function createTemplateForm(host) {
       const target = appending();
       if (target) {
         if (!song) throw new Error('请填写歌名');
-        return {append: {mid: target.mid, bvid: target.bvid}, title: song};
+        const live = values();
+        return {
+          append: {mid: target.mid, bvid: target.bvid},
+          title: song,
+          template_variables: {
+            live: live.live,
+            live_date: live.live_date,
+            live_title: live.live_title,
+            clipper: live.clipper,
+          },
+        };
       }
       const draft = {};
       for (const key of TEXT_FIELDS) draft[key] = texts[key].value;
