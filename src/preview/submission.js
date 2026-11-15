@@ -111,7 +111,14 @@ export function createSubmissionJob({
     },
     confirm(value) {
       if (cancelled || sent) return;
-      if (!value.append) assertResolved(value.title, value.desc, ...(value.desc_v2 || []).map(row => row.raw_text));
+      if (!value.append)
+        assertResolved(
+          value.title,
+          value.desc,
+          value.source || '',
+          value.dynamic || '',
+          ...(value.desc_v2 || []).map(row => row.raw_text),
+        );
       fields = structuredClone(value);
       emit();
       return send();

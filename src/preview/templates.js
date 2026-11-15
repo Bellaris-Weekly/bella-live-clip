@@ -98,10 +98,20 @@ const showTitle = title => title.match(/^【[^】]+】[^:：\n]*[:：]\s*(.+)$/s
 export function liveValue(event) {
   return event ? `${liveDate(event.start)}  ${showTitle(event.title)}` : '';
 }
-// The studio's template variables. A custom live text replaces {live} and stands in for the title.
-export function liveValues(event, custom, start) {
+// The studio's template variables. Without a schedule event, the date (YYYY-MM-DD) and title are typed in.
+export function liveValues(event, {date = '', title = ''} = {}) {
   if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: showTitle(event.title)};
-  return {live: custom, live_date: start ? liveDate(start) : '', live_title: custom};
+  const live_date = date ? date.split('-').map(Number).join('.') : '';
+  return {live: [live_date, title].filter(value => value.trim()).join('  '), live_date, live_title: title};
+}
+
+// Which variables the texts use, so only the inputs they need are shown (as in the studio).
+export function neededVariables(...texts) {
+  const uses = token => texts.some(text => text.includes(token));
+  const live = uses('{live}');
+  const date = live || uses('{live_date}'),
+    title = live || uses('{live_title}');
+  return {live: date || title, date, title, clipper: uses('{clipper}')};
 }
 
 export function substitute(value, values) {
@@ -164,9 +174,17 @@ export function submissionFields(draft, values, now = Date.now()) {
   const {scheduleAt, isOnlySelf, includeAntiCollision, ...fields} = draft;
   fields.title = substitute(fields.title, values).trim();
   fields.desc = substitute(fields.desc, values);
+  fields.source = substitute(fields.source, values);
+  fields.dynamic = substitute(fields.dynamic || '', values);
   if (fields.desc_v2)
     fields.desc_v2 = fields.desc_v2.map(row => ({...row, raw_text: substitute(row.raw_text, values)}));
-  assertResolved(fields.title, fields.desc, ...(fields.desc_v2 || []).map(row => row.raw_text));
+  assertResolved(
+    fields.title,
+    fields.desc,
+    fields.source,
+    fields.dynamic,
+    ...(fields.desc_v2 || []).map(row => row.raw_text),
+  );
   const length = value => [...value].length;
   if (!fields.title || length(fields.title) > 80) throw new Error('标题必填，最多 80 字');
   if (!positiveId(fields.tid) || fields.tid > 65535) throw new Error('请选择模板或填写有效分区 ID');

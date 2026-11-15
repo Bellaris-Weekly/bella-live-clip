@@ -5,6 +5,7 @@ import {
   matchingTemplate,
   liveValue,
   liveValues,
+  neededVariables,
   substitute,
   titleWithSong,
   submissionSchedule,
@@ -197,12 +198,25 @@ test('resolved title/description lengths and all remaining placeholders block su
 
 test('split live variables follow the studio: date and title of the event, custom text stands in for the title', () => {
   const start = Date.parse('2026-11-01T12:00:00Z') / 1000;
-  assert.deepEqual(liveValues({start, title: '我，同频，万圣节'}, '', 0), {
+  assert.deepEqual(liveValues({start, title: '我，同频，万圣节'}), {
     live: '2026.11.1  我，同频，万圣节',
     live_date: '2026.11.1',
     live_title: '我，同频，万圣节',
   });
-  assert.deepEqual(liveValues(null, '自填', start), {live: '自填', live_date: '2026.11.1', live_title: '自填'});
+  assert.deepEqual(liveValues(null, {date: '2026-11-01', title: '自填'}), {
+    live: '2026.11.1  自填',
+    live_date: '2026.11.1',
+    live_title: '自填',
+  });
+  assert.deepEqual(liveValues(null, {title: '只有名字'}), {live: '只有名字', live_date: '', live_title: '只有名字'});
+  assert.deepEqual(neededVariables('{live_title} 合集', '{clipper}'), {
+    live: true,
+    date: false,
+    title: true,
+    clipper: true,
+  });
+  assert.deepEqual(neededVariables('{live}'), {live: true, date: true, title: true, clipper: false});
+  assert.deepEqual(neededVariables('纯文本'), {live: false, date: false, title: false, clipper: false});
   const draft = draftFromTemplate({
     title: '【A-SOUL】{live_title} 歌舞合集丨『』',
     desc: '{live}',
@@ -210,18 +224,23 @@ test('split live variables follow the studio: date and title of the event, custo
     includeAntiCollision: true,
   });
   assert.equal(draft.includeAntiCollision, true);
-  const fields = submissionFields(draft, {...liveValues({start, title: '夜谈'}, '', 0), clipper: ''});
+  const fields = submissionFields(draft, {...liveValues({start, title: '夜谈'}), clipper: ''});
   assert.equal(fields.title, '【A-SOUL】夜谈 歌舞合集丨『』');
   assert.ok(!('includeAntiCollision' in fields));
   assert.throws(() => submissionFields({...draft, title: '{live_date}'}, {live: 'x', clipper: ''}), /占位符/);
+  // The reposted-from source takes variables too.
+  const night = {...liveValues({start, title: '夜谈'}), clipper: ''};
+  const reposted = submissionFields({...draft, copyright: 2, source: '{live}'}, night);
+  assert.equal(reposted.source, night.live);
+  assert.throws(() => submissionFields({...draft, copyright: 2, source: '{live}'}, {...night, live: ''}), /占位符/);
 });
 
 test('live titles drop the schedule kind prefix, as in the studio', () => {
   const start = Date.parse('2026-11-14T11:49:00Z') / 1000;
-  const values = liveValues({start, title: '【团播】A-SOUL夜谈: 冬日阳光方案'}, '', 0);
+  const values = liveValues({start, title: '【团播】A-SOUL夜谈: 冬日阳光方案'});
   assert.equal(values.live_title, '冬日阳光方案');
   assert.equal(values.live, '2026.11.14  冬日阳光方案');
-  assert.equal(liveValues({start, title: '普通标题：带冒号'}, '', 0).live_title, '普通标题：带冒号');
+  assert.equal(liveValues({start, title: '普通标题：带冒号'}).live_title, '普通标题：带冒号');
 });
 
 test('each song gets its own 『』 in the collection title', () => {

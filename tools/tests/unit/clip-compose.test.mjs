@@ -359,21 +359,27 @@ test('template switching and free-text live/clipper edits affect only this submi
   assert.equal(f.field('tid').value, '9');
   assert.equal(f.field('tags').value, '自选模板');
   assert.equal(f.field('desc-preview').textContent, '自选 自选署名 $&');
+  // Only the inputs the template's variables need are shown, as in the studio.
+  assert.equal(f.field('live-label').hidden, true);
+  assert.equal(f.field('clipper-label').hidden, false);
   f.field('template').value = '2';
   f.field('template').dispatchEvent(new f.w.Event('change'));
   f.field('live').value = 'custom';
   f.field('live').dispatchEvent(new f.w.Event('change'));
+  assert.equal(f.field('live-label').hidden, false);
   assert.equal(f.field('live-custom-label').hidden, false);
-  f.field('live-custom').value = '手动完整直播信息';
-  f.field('live-custom').dispatchEvent(new f.w.Event('input', {bubbles: true}));
-  assert.equal(f.field('desc-preview').textContent, '手动完整直播信息 视频二创组——自选署名 $&');
+  // The date starts at the recording's day (UTC+8); the title is typed.
+  assert.equal(f.field('live-date').value, '1970-01-02');
+  f.field('live-title').value = '手动直播';
+  f.field('live-title').dispatchEvent(new f.w.Event('input', {bubbles: true}));
+  assert.equal(f.field('desc-preview').textContent, '1970.1.2  手动直播 视频二创组——自选署名 $&');
   f.field('confirm').click();
   await until(() => f.field('confirm').textContent.includes('等待上传'));
   f.gate.resolve();
   await until(() => f.field('state').textContent === '投稿完成');
   const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
-  assert.equal(body.title, '手动完整直播信息 切片');
-  assert.equal(body.desc, '手动完整直播信息 视频二创组——自选署名 $&');
+  assert.equal(body.title, '1970.1.2  手动直播 切片');
+  assert.equal(body.desc, '1970.1.2  手动直播 视频二创组——自选署名 $&');
   assert.deepEqual(templates, original);
   assert.ok(f.calls.filter(([path]) => path === '/templates').every(([, options]) => !options.method));
   f.api.actions.start();

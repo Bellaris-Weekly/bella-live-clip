@@ -6,6 +6,7 @@ import {
   matchingTemplate,
   liveValue,
   liveValues,
+  neededVariables,
   isCollection,
   titleWithSong,
   substitute,
@@ -25,17 +26,20 @@ export function createTemplateForm(host) {
   host.innerHTML = `<div class="field" data-target-label hidden><label>投到</label><select data-target></select></div>
     <div class="field" data-song-label hidden><label>歌名<span class="counter">填进标题的『』，也是分P标题</span></label><input data-song></div>
     <div data-archive>
-    <div class="field-row">
-      <div class="field"><label>投稿模板</label><select data-template></select></div>
-      <div class="field"><label>直播场次</label><select data-live></select></div>
-    </div>
-    <p class="hint" data-schedule-note></p>
-    <div class="field" data-live-custom-label hidden><label>自行输入直播信息</label><input data-live-custom placeholder="替换整个 {live}"></div>
+    <div class="field"><label>投稿模板</label><select data-template></select></div>
     <div class="field"><label>标题<span class="counter" data-title-count></span></label><input data-title required></div>
     <div class="field"><label>标签<span class="counter">逗号分隔，最多 12 个</span></label><input data-tags></div>
-    <div class="field"><label>二创署名</label><input data-clipper></div>
     <div class="field"><label>简介</label><textarea data-desc rows="3"></textarea></div>
     <div class="field"><label>简介预览</label><pre class="desc-preview" data-desc-preview></pre></div>
+    <div class="field" data-live-label hidden>
+      <label>直播</label><select data-live></select>
+      <p class="hint" data-schedule-note></p>
+      <div class="field-row" data-live-custom-label hidden>
+        <div class="field" data-live-date-label><label>直播日期</label><input type="date" data-live-date></div>
+        <div class="field" data-live-title-label><label>直播名</label><input data-live-title placeholder="填写直播标题"></div>
+      </div>
+    </div>
+    <div class="field" data-clipper-label hidden><label>君の名は</label><input data-clipper></div>
     <details class="advanced"><summary>更多投稿设置</summary><div class="adv-body">
       <div class="field-row">
         <div class="field"><label>分区 ID</label><input data-tid type="number" min="1" max="65535"></div>
@@ -57,13 +61,13 @@ export function createTemplateForm(host) {
     start = 0,
     antiCollision = false;
   const values = () => ({
-    ...liveValues(
-      field('live').value === 'custom' ? null : events[Number(field('live').value)],
-      field('live-custom').value,
-      start,
-    ),
+    ...liveValues(field('live').value === 'custom' ? null : events[Number(field('live').value)], {
+      date: field('live-date').value,
+      title: field('live-title').value,
+    }),
     clipper: field('clipper').value,
   });
+  const recordDate = () => (start ? new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10) : '');
   const appending = () => collections[Number(field('target').value)] || null;
   function preview() {
     const target = appending();
@@ -72,7 +76,12 @@ export function createTemplateForm(host) {
     for (const control of field('archive').querySelectorAll('input, select, textarea'))
       control.disabled = Boolean(target);
     field('song-label').hidden = !target && !isCollection(field('title').value);
+    const needs = neededVariables(...['title', 'desc', 'source', 'dynamic', 'desc_v2'].map(key => field(key).value));
+    field('live-label').hidden = !needs.live;
+    field('clipper-label').hidden = !needs.clipper;
     field('live-custom-label').hidden = field('live').value !== 'custom';
+    field('live-date-label').hidden = !needs.date;
+    field('live-title-label').hidden = !needs.title;
     field('title-count').textContent = `${[...field('title').value].length}/80`;
     field('desc-preview').textContent = substitute(field('desc').value, values());
   }
@@ -147,7 +156,8 @@ export function createTemplateForm(host) {
         );
         option(field('live'), 'custom', '自行输入');
         field('live').value = index >= 0 ? String(index) : events.length ? '0' : 'custom';
-        field('live-custom').value = '';
+        field('live-date').value = recordDate();
+        field('live-title').value = '';
         field('clipper').value = name || '';
         field('song').value = song;
         field('template').onchange();
