@@ -74,9 +74,22 @@ export function createComposer({
   const describeOwn = own => ({pageUrl: pageUrl(), record: own.record, selection: own.selection, mode: own.mode});
   function track(own, state) {
     const seen = (own.seen ??= {});
-    const error = state?.error?.message || own.setupError?.message || '';
+    const failure = state?.error || own.setupError;
+    const error = failure ? [failure.message, failure.detail].filter(Boolean).join('：') : '';
     if (error && error !== seen.error)
-      diagnostics.event('clip_submit_error', {...describeOwn(own), level: 'warn', facts: {stage: own.stage}}, error);
+      diagnostics.event(
+        'clip_submit_error',
+        {
+          ...describeOwn(own),
+          level: 'warn',
+          facts: {
+            stage: state?.sent ? 'sent' : state?.uploaded ? 'uploaded' : own.stage,
+            status: failure.status,
+            path: failure.diagnostic?.path,
+          },
+        },
+        error,
+      );
     seen.error = error;
     for (const step of ['uploaded', 'confirmed', 'sent']) {
       if (!state?.[step] || seen[step]) continue;

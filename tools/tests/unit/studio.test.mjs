@@ -121,3 +121,20 @@ test('focus/storage recheck notices linking and late 401 cannot clear a replacem
   await client.check();
   assert.equal(client.identity(), null);
 });
+
+test('a failed studio request shows only its status; the reason, from text or parsed body, goes to the logs', async () => {
+  for (const reply of [
+    {status: 422, response: null, responseText: '{"detail":"简介中有未替换的 {live}"}'},
+    {status: 422, response: {detail: '简介中有未替换的 {live}'}},
+  ]) {
+    const storage = store();
+    storage.set(TOKEN_KEY, {token: 'token'});
+    const client = createStudioClient({...storage, request: options => options.onload(reply)});
+    await assert.rejects(client.request('/accounts/7/archives/BV1/append?x=1', {method: 'POST', body: {}}), error => {
+      assert.equal(error.message, '创作台请求失败（422）');
+      assert.equal(error.detail, '简介中有未替换的 {live}');
+      assert.deepEqual(error.diagnostic, {path: '/accounts/7/archives/BV1/append', detail: '简介中有未替换的 {live}'});
+      return true;
+    });
+  }
+});

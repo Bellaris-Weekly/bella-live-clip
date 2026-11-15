@@ -72,11 +72,12 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
           timeout: 20000,
           headers: {Authorization: `Bearer ${token}`, ...(!multipart ? {'Content-Type': 'application/json'} : {})},
           data: multipart ? body : body === undefined ? undefined : JSON.stringify(body),
-          responseType: 'json',
+          // Read the text and parse it here: with responseType 'json' some managers hand back neither the
+          // parsed body nor its text for error statuses, and the studio's reason (detail) was lost.
           onload(response) {
             if (settled) return;
             if (response.status === 401 && identity?.token === token) logout();
-            let data = response.response;
+            let data = typeof response.response === 'object' ? response.response : null;
             if (!data && response.responseText) {
               try {
                 data = JSON.parse(response.responseText);
@@ -86,14 +87,17 @@ export function createStudioClient({get, set, request: gmRequest, now = Date.now
             }
             if (response.status < 200 || response.status >= 300) {
               const detail = data?.detail;
-              const error = new Error(
+              // The page shows a short status; the studio's reason goes to the logs (error.diagnostic).
+              const reason =
                 typeof detail === 'string'
                   ? detail
                   : // FastAPI validation errors arrive as a list of field problems.
                     detail?.message ||
-                      (Array.isArray(detail) && detail.map(item => `${item.loc?.at(-1)}: ${item.msg}`).join('；')) ||
-                      `创作台请求失败（${response.status}）`,
-              );
+                    (Array.isArray(detail) && detail.map(item => `${item.loc?.at(-1)}: ${item.msg}`).join('；')) ||
+                    '';
+              const error = new Error(`创作台请求失败（${response.status}）`);
+              error.detail = reason;
+              error.diagnostic = {path: path.split('?')[0], detail: reason};
               error.status = response.status;
               error.code = detail?.code;
               error.retryAfter = detail?.retry_after;
