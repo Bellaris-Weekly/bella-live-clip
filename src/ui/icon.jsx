@@ -15,6 +15,8 @@ const PATHS = {
   check: 'm5 12 5 5 9-10',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  calendar: 'M8 3v4M16 3v4M4 10h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1z',
+  trash: 'M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6',
   person: 'M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM5 21v-2a7 7 0 0 1 14 0v2',
   loop: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3',
   toStart: 'M5 5v14M19 5 9 12l10 7z',
@@ -33,6 +35,11 @@ const PATHS = {
 };
 // Solid glyphs read better than outlines at button size.
 const FILLED = {play: 'M8 5.5v13l10-6.5z'};
+
+// Imperative form controls use the same trusted paths as Preact controls.
+export function iconMarkup(name) {
+  return `<svg class="icon-svg${FILLED[name] ? ' is-filled' : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${FILLED[name] || PATHS[name] || ''}" /></svg>`;
+}
 
 export function Icon({name}) {
   return (

@@ -1,15 +1,7 @@
 import {useEffect, useRef, useState} from 'preact/hooks';
 import {Icon} from './icon.jsx';
-import {
-  OUTPUTS,
-  TEXT_COLORS,
-  TEXT_STYLES,
-  cropRect,
-  drawCover,
-  layerOf,
-  readImage,
-  sourceOf,
-} from '../preview/cover.js';
+import {TextTools} from './cover-text.jsx';
+import {OUTPUTS, cropRect, drawCover, layerOf, readImage, sourceOf} from '../preview/cover.js';
 import {formatTime} from '../shared/format.js';
 
 const KEYS = ['wide', 'tall'];
@@ -275,83 +267,6 @@ function Toolbar({cover, state, active, disabled}) {
         上传图片
       </button>
       <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" hidden data-cover-file onChange={pick} />
-    </div>
-  );
-}
-
-function TextTools({cover, state, active, disabled}) {
-  const text = state.text,
-    layer = layerOf(state, active);
-  return (
-    <div class="cover-text">
-      <textarea
-        data-cover-text
-        rows={2}
-        maxLength={80}
-        placeholder="封面文字（可选），回车换行"
-        value={text.value}
-        disabled={disabled}
-        onInput={event => cover.setText({value: event.currentTarget.value})}
-      />
-      <div class="cover-style">
-        <div class="segmented" role="group" aria-label="文字样式">
-          {TEXT_STYLES.map(style => (
-            <button
-              key={style.id}
-              type="button"
-              aria-pressed={String(text.style === style.id)}
-              disabled={disabled}
-              onClick={() => cover.setText({style: style.id})}
-            >
-              {style.label}
-            </button>
-          ))}
-        </div>
-        <div class="swatches" role="group" aria-label="文字颜色">
-          {TEXT_COLORS.map(color => (
-            <button
-              key={color}
-              type="button"
-              class="swatch"
-              style={{background: color}}
-              aria-label={`颜色 ${color}`}
-              aria-pressed={String(text.color === color)}
-              disabled={disabled}
-              onClick={() => cover.setText({color})}
-            />
-          ))}
-          <label class="swatch is-custom" title="自定义颜色">
-            <input
-              type="color"
-              value={text.color}
-              disabled={disabled}
-              onInput={event => cover.setText({color: event.currentTarget.value})}
-            />
-          </label>
-        </div>
-        <label class="cover-size">
-          字号
-          <input
-            type="range"
-            min="0.03"
-            max="0.3"
-            step="0.005"
-            value={text.size}
-            disabled={disabled}
-            onInput={event => cover.setText({size: Number(event.currentTarget.value)})}
-          />
-        </label>
-      </div>
-      <label class="switch">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={layer.showText}
-          disabled={disabled}
-          onChange={event => cover.showText(active, event.currentTarget.checked)}
-        />
-        在 {OUTPUTS[active].label} 封面上显示文字
-      </label>
     </div>
   );
 }

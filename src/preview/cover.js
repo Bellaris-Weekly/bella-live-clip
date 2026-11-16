@@ -1,5 +1,5 @@
 import {signal} from '@preact/signals';
-import {MEMBERS} from '../domain/records.js';
+import {BELLA_PRESET, PRESETS_KEY, readPresets, textStyle} from './cover-presets.js';
 
 // Bilibili takes two covers: 16:9 for the video page and search, 4:3 for feeds that crop.
 export const OUTPUTS = {
@@ -10,13 +10,6 @@ const MAX_ZOOM = 4,
   MAX_BYTES = 5 * 1024 ** 2,
   SNAP = 0.015;
 const FONT = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC",sans-serif';
-export const TEXT_STYLES = [
-  {id: 'outline', label: '描边'},
-  {id: 'band', label: '底条'},
-  {id: 'shadow', label: '阴影'},
-];
-export const TEXT_COLORS = ['#ffffff', '#ffd23f', '#ff5c5c', '#111111', ...MEMBERS.map(member => member.color)];
-
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 // The largest rectangle of `ratio` inside the source, centered.
@@ -53,7 +46,7 @@ export function initialCover(frame = null) {
     wide: freshLayer(),
     tall: freshLayer(),
     follow: true,
-    text: {value: '', style: 'outline', color: '#ffffff', size: 0.1},
+    text: {value: '', ...BELLA_PRESET.style},
   };
 }
 export function sourceOf(state, layer) {
@@ -95,10 +88,6 @@ function layoutText(context, text, width, height) {
     height: lines.length * lineHeight,
   };
 }
-const darkColor = color => {
-  const value = parseInt(color.slice(1), 16);
-  return 0.299 * (value >> 16) + 0.587 * ((value >> 8) & 255) + 0.114 * (value & 255) < 128;
-};
 // Draws one cover in output coordinates and returns the text box, also in output coordinates.
 export function drawCover(context, state, key, {width, height} = OUTPUTS[key]) {
   const layer = layerOf(state, key),
@@ -120,23 +109,23 @@ export function drawCover(context, state, key, {width, height} = OUTPUTS[key]) {
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.lineJoin = 'round';
-  if (text.style === 'band') {
+  if (text.effect === 'band') {
     const pad = block.px * 0.3;
     context.fillStyle = 'rgba(0, 0, 0, 0.58)';
     context.beginPath();
     context.roundRect(box.x - pad, box.y - pad / 2, box.w + pad * 2, box.h + pad, pad * 0.6);
     context.fill();
   }
-  if (text.style === 'shadow') {
+  if (text.effect === 'shadow') {
     context.shadowColor = 'rgba(0, 0, 0, 0.7)';
     context.shadowBlur = block.px * 0.18;
     context.shadowOffsetY = block.px * 0.05;
   }
   block.lines.forEach((line, index) => {
     const y = top + block.lineHeight * (index + 0.5);
-    if (text.style === 'outline') {
-      context.strokeStyle = darkColor(text.color) ? '#ffffff' : '#000000';
-      context.lineWidth = block.px * 0.16;
+    if (text.effect === 'outline' && text.strokeWidth) {
+      context.strokeStyle = text.stroke;
+      context.lineWidth = block.px * text.strokeWidth;
       context.strokeText(line, cx, y);
     }
     context.fillStyle = text.color;
@@ -174,7 +163,8 @@ async function toFile(state, key) {
 }
 
 // The cover being made for one submission: a frame or picked images, two crops, one text.
-export function createCover() {
+export function createCover({get = (_, fallback) => fallback, set = () => {}} = {}) {
+  const presets = signal(readPresets(get));
   const state = signal(initialCover()),
     active = signal('wide'),
     notice = signal('');
@@ -197,6 +187,14 @@ export function createCover() {
     state,
     active,
     notice,
+    presets,
+    savePresets(next) {
+      const custom = next
+        .filter(preset => preset.id !== 'bella')
+        .map(preset => ({...preset, style: textStyle(preset.style)}));
+      set(PRESETS_KEY, custom);
+      presets.value = [{...BELLA_PRESET, style: {...BELLA_PRESET.style}}, ...custom];
+    },
     // A new submission starts clean, keeping a frame already picked for this clip.
     reset(frame = null) {
       update(initialCover(frame));

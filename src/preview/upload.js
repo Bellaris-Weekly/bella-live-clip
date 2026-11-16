@@ -172,29 +172,7 @@ export async function uploadFile(file, ticket, options) {
     throw new Error(`合并分片失败（${complete.status}）`);
 }
 
-export async function pickLine(lines, transport, signal) {
-  signal.throwIfAborted();
-  const controller = new AbortController();
-  const combined = AbortSignal.any([signal, controller.signal]);
-  const timer = setTimeout(() => controller.abort(), 10000);
-  try {
-    return await Promise.any(
-      Object.entries(lines)
-        .filter(([, host]) => host.endsWith('.bilivideo.com'))
-        .map(async ([line, host]) => {
-          const response = await transport.request({method: 'GET', url: `https://${host}/OK`, signal: combined});
-          if (response.status !== 200) throw new Error('线路不可用');
-          return line;
-        }),
-    );
-  } catch {
-    signal.throwIfAborted();
-    return null;
-  } finally {
-    clearTimeout(timer);
-    controller.abort();
-  }
-}
+export {pickLine} from './upload-route.js';
 
 export const VERIFICATION_MESSAGE = '请前往 studio.bk0717.com 完成上传安全验证后重试';
 export const needsVerification = error => error.code === 'rate_limited' || error.code === 'upload_verification';

@@ -46,6 +46,8 @@ export function createComposer({
   gmRequest,
   mediaApi,
   storage,
+  get,
+  set,
   schedules,
   session,
   diagnostics = quiet,
@@ -55,7 +57,7 @@ export function createComposer({
   const host = id => root.getElementById(id);
   const templateForm = createTemplateForm(host('composeForm'));
   const transport = createUploadTransport(gmRequest);
-  const cover = createCover();
+  const cover = createCover({get, set});
   let current,
     selectedMark,
     pickedFrame = null,
@@ -115,6 +117,7 @@ export function createComposer({
     const state = own.job?.state();
     track(own, state);
     if (current !== own) return;
+    if (!own.ready || own.closed || state?.confirmed || own.confirming) templateForm.closePopups();
     view.value = {
       open: !own.closed,
       canStart: canStart(),
@@ -125,6 +128,8 @@ export function createComposer({
       markLocked: Boolean(state?.confirmed || state?.sent),
       locked: !own.ready || Boolean(state?.confirmed || state?.sent || state?.cancelled || own.confirming),
       confirmText: state?.confirmed && !state.sent ? '已确认，等待上传完成' : '确认投稿',
+      done: Boolean(state?.done),
+      scheduled: state?.result?.status === 'scheduled',
       cancellable: !(state?.sent || state?.done || state?.cancelled),
       retry: Boolean(state?.error || own.setupError),
       retryBusy: Boolean(state?.busy || own.confirming),
@@ -240,6 +245,7 @@ export function createComposer({
           existing: liveCollections(submissions, own.record, defaults.account_mid, liveValue(schedule.matched)),
           song: own.mark?.note?.trim() || '',
           recordStart: own.record.start,
+          cosEnabled: options.cos_enabled,
         });
         own.uploader = createClipUpload({client, transport});
         let temporary;
@@ -495,6 +501,7 @@ export function createComposer({
       if (current && !current.job?.state().sent) void stop(current).catch(() => {});
     },
     dispose() {
+      templateForm.dispose();
       window.removeEventListener('beforeunload', beforeUnload);
       window.removeEventListener('paste', paste);
       root.removeEventListener('invalid', invalid, true);

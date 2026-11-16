@@ -994,6 +994,8 @@ export function createApp({
     store.extras.value = {ui};
     composer = createComposer({
       root,
+      get,
+      set,
       diagnostics,
       pageUrl: readPageUrl,
       client: studio,

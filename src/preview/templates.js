@@ -1,4 +1,5 @@
 import {matchSchedule, scheduleMonths} from '../services/schedule.js';
+import {parseSchedule} from './schedule.js';
 
 export const TEXT_FIELDS = ['title', 'desc', 'source', 'dynamic'];
 export const FLAG_FIELDS = {
@@ -234,11 +235,8 @@ export function submissionFields(draft, values, now = Date.now()) {
   // Beijing wall clock, whatever the browser's time zone; Bilibili's own dtime is not used.
   let submit_at = null;
   if (scheduleAt) {
-    submit_at = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(scheduleAt)
-      ? Date.parse(`${scheduleAt}+08:00`) / 1000
-      : NaN;
-    if (!Number.isInteger(submit_at) || submit_at <= 0 || submit_at > 0xffffffff)
-      throw new Error('请选择有效的定时投稿时间');
+    submit_at = parseSchedule(scheduleAt);
+    if (submit_at === null) throw new Error('请选择有效的定时投稿时间');
     if (submit_at * 1000 <= now || submit_at * 1000 > now + 15 * 86400_000)
       throw new Error('请选择未来 15 天内的定时投稿时间');
   }

@@ -134,6 +134,15 @@ export function ComposeSheet({composer}) {
                 </button>
               </div>
             )}
+            {view.scheduled && (
+              <p class="hint" data-scheduled-result>
+                可在
+                <a href="https://studio.bk0717.com" target="_blank" rel="noopener noreferrer">
+                  创作台
+                </a>
+                的投稿记录中查看或取消定时。
+              </p>
+            )}
             <div class="compose-actions">
               {view.cancellable && (
                 <button type="button" data-cancel onClick={actions.cancel}>
@@ -146,7 +155,7 @@ export function ComposeSheet({composer}) {
                   重试
                 </button>
               )}
-              {view.bvid ? (
+              {view.done ? (
                 <button type="button" class="primary" data-continue onClick={actions.close}>
                   <Icon name="scissors" />
                   继续剪这场

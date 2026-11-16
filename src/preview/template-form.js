@@ -10,9 +10,13 @@ import {
   isCollection,
   titleWithSong,
   submissionFields,
-  tagsFrom,
+  substitute,
+  assertResolved,
 } from './templates.js';
 import {bindTemplateField} from './template-text.js';
+import {createTagInput} from './tag-input.js';
+import {createSchedulePicker} from './schedule-picker.js';
+import {iconMarkup} from '../ui/icon.jsx';
 
 const ANTI_COLLISION = {preset_id: 'anti-collision', title: '✩‧₊˚✧'};
 
@@ -25,10 +29,10 @@ export function createTemplateForm(host) {
     .join('');
   host.innerHTML = `<div class="field" data-target-label hidden><label>投到</label><select data-target></select></div>
     <div class="field" data-song-label hidden><label>歌名<span class="counter">填进标题的『』，也是分P标题</span></label><input data-song></div>
-    <div data-archive>
+    <div data-archive class="form-fields">
     <div class="field"><label>投稿模板</label><select data-template></select></div>
     <div class="field"><label>标题<span class="counter" data-title-count></span></label><input data-title required></div>
-    <div class="field"><label>标签<span class="counter">逗号分隔，最多 12 个</span></label><input data-tags></div>
+    <div class="field"><label>标签<span class="counter" data-tag-count></span></label><div class="tags" data-tag-editor></div></div>
     <div class="field"><label>简介</label><textarea data-desc rows="3"></textarea></div>
     <div class="field" data-live-label hidden>
       <label>直播</label><select data-live></select>
@@ -39,6 +43,16 @@ export function createTemplateForm(host) {
       </div>
     </div>
     <div class="field" data-clipper-label hidden><label>君の名は</label><input data-clipper></div>
+    <div class="field compose-parts" aria-label="视频分 P">
+      <div class="label">视频<span class="counter" data-part-count></span></div>
+      <div class="compose-part"><span class="mono">P1</span><input data-part-title aria-label="P1 标题" maxlength="80"></div>
+      <div class="compose-part" data-bumper-row hidden><span class="mono">P2</span>
+        <div class="field"><input data-bumper-title aria-label="P2 标题" maxlength="80"><span class="hint">防撞分片 · 投稿时上传</span></div>
+        <button type="button" class="icon small" data-remove-bumper aria-label="移除防撞" title="移除防撞">${iconMarkup('trash')}</button>
+      </div>
+      <button type="button" class="tonal small" data-add-bumper>添加防撞</button>
+    </div>
+    <div class="field"><label>定时投稿</label><div data-schedule-picker></div></div>
     <details class="advanced"><summary>更多投稿设置</summary><div class="adv-body">
       <div class="field-row">
         <div class="field"><label>分区 ID</label><input data-tid type="number" min="1" max="65535"></div>
@@ -48,7 +62,6 @@ export function createTemplateForm(host) {
       <div class="field"><label>同步动态</label><textarea data-dynamic rows="2"></textarea></div>
       <div class="switches">${flags}<label class="switch"><input type="checkbox" role="switch" data-isOnlySelf>仅自己可见</label></div>
       <div class="field-row">${ids}</div>
-      <div class="field"><label>定时投稿（北京时间）</label><input type="datetime-local" step="1" data-scheduleAt></div>
       <div class="field"><label>合作成员（JSON：mid、title）</label><textarea data-staff rows="2"></textarea></div>
       <div class="field"><label>简介片段 / @ 用户（JSON：type_id、raw_text、biz_id）</label><textarea data-desc_v2 rows="2"></textarea></div>
     </div></details>
@@ -58,7 +71,9 @@ export function createTemplateForm(host) {
     events = [],
     collections = [],
     start = 0,
-    antiCollision = false;
+    antiCollision = false,
+    partEdited = false,
+    canAddBumper = true;
   const values = () => ({
     ...liveValues(field('live').value === 'custom' ? null : events[Number(field('live').value)], {
       date: field('live-date').value,
@@ -71,6 +86,22 @@ export function createTemplateForm(host) {
   const texts = Object.fromEntries(
     TEXT_FIELDS.map(key => [key, bindTemplateField(field(key), values, {maxLength: LIMITS[key]})]),
   );
+  const tags = createTagInput(field('tag-editor'), preview);
+  const schedulePicker = createSchedulePicker(field('schedule-picker'));
+  const partTitle = bindTemplateField(field('part-title'), values, {
+    maxLength: 80,
+    onChange: () => {
+      partEdited = true;
+    },
+  });
+  const bumperTitle = bindTemplateField(field('bumper-title'), values, {maxLength: 80});
+  for (const input of [field('part-title'), field('bumper-title')])
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault();
+        input.blur();
+      }
+    });
   const recordDate = () => (start ? new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10) : '');
   const appending = () => collections[Number(field('target').value)] || null;
   function preview() {
@@ -80,11 +111,20 @@ export function createTemplateForm(host) {
     for (const control of field('archive').querySelectorAll('input, select, textarea'))
       control.disabled = Boolean(target);
     field('song-label').hidden = !target && !isCollection(texts.title.value);
+    if (!partEdited) partTitle.value = isCollection(texts.title.value) ? field('song').value : texts.title.value;
+    partTitle.refresh();
+    bumperTitle.refresh();
+    field('bumper-row').hidden = !antiCollision;
+    field('add-bumper').hidden = antiCollision || !canAddBumper;
+    field('part-count').textContent = `共 ${antiCollision ? 2 : 1}P`;
+    field('tag-count').textContent = `${tags.value.length}/12`;
     const needs = neededVariables(
       ...TEXT_FIELDS.map(key => texts[key].value),
       field('desc_v2').value,
       field('staff').value,
-      field('tags').value,
+      ...tags.value,
+      partTitle.value,
+      ...(antiCollision ? [bumperTitle.value] : []),
     );
     field('live-label').hidden = !needs.live;
     field('clipper-label').hidden = !needs.clipper;
@@ -96,10 +136,12 @@ export function createTemplateForm(host) {
   }
   function write(draft) {
     for (const key of TEXT_FIELDS) texts[key].value = draft[key] ?? '';
-    for (const key of [...Object.keys(ID_FIELDS), 'tid', 'copyright', 'scheduleAt'])
-      field(key).value = draft[key] ?? '';
+    for (const key of [...Object.keys(ID_FIELDS), 'tid', 'copyright']) field(key).value = draft[key] ?? '';
+    schedulePicker.value = draft.scheduleAt || '';
     for (const key of [...Object.keys(FLAG_FIELDS), 'isOnlySelf']) field(key).checked = Boolean(draft[key]);
-    field('tags').value = draft.tags.join(', ');
+    tags.value = draft.tags;
+    partEdited = false;
+    bumperTitle.value = ANTI_COLLISION.title;
     for (const key of ['staff', 'desc_v2']) field(key).value = draft[key] ? JSON.stringify(draft[key], null, 2) : '';
     preview();
   }
@@ -126,13 +168,25 @@ export function createTemplateForm(host) {
   host.addEventListener('input', preview);
   field('live').onchange = preview;
   field('target').onchange = preview;
+  field('add-bumper').onclick = () => {
+    antiCollision = true;
+    bumperTitle.value = ANTI_COLLISION.title;
+    preview();
+  };
+  field('remove-bumper').onclick = () => {
+    antiCollision = false;
+    preview();
+  };
   return {
+    closePopups: schedulePicker.close,
+    dispose: schedulePicker.dispose,
     // `existing`: this live's song collections already on Bilibili, newest first.
-    configure(items, schedule, name, preserve, {existing = [], song = '', recordStart = 0} = {}) {
+    configure(items, schedule, name, preserve, {existing = [], song = '', recordStart = 0, cosEnabled = true} = {}) {
       const selected = field('template').value;
       // Keep the chosen archive by its BV: the list may have grown or reordered since.
       const chosen = appending()?.bvid;
       start = recordStart;
+      canAddBumper = cosEnabled;
       collections = existing;
       field('target').replaceChildren();
       option(field('target'), 'new', '新稿件');
@@ -180,6 +234,8 @@ export function createTemplateForm(host) {
     },
     // What confirming sends: one song appended to an existing collection, or a new archive.
     fields() {
+      tags.commit();
+      preview();
       const song = field('song').value.trim();
       const target = appending();
       if (target) {
@@ -198,11 +254,11 @@ export function createTemplateForm(host) {
       }
       const draft = {};
       for (const key of TEXT_FIELDS) draft[key] = texts[key].value;
-      draft.scheduleAt = field('scheduleAt').value;
+      draft.scheduleAt = schedulePicker.value;
       for (const key of [...Object.keys(FLAG_FIELDS), 'isOnlySelf']) draft[key] = field(key).checked;
       for (const key of [...Object.keys(ID_FIELDS), 'tid', 'copyright'])
         draft[key] = field(key).value ? Number(field(key).value) : null;
-      draft.tags = tagsFrom(field('tags').value);
+      draft.tags = [...tags.value];
       for (const key of ['staff', 'desc_v2']) {
         if (!field(key).value.trim()) continue;
         try {
@@ -228,10 +284,21 @@ export function createTemplateForm(host) {
         throw error;
       }
       const template = templates.find(item => String(item.id) === field('template').value);
+      const parts = [
+        {title: substitute(partTitle.value, live).trim()},
+        ...(antiCollision ? [{...ANTI_COLLISION, title: substitute(bumperTitle.value, live).trim()}] : []),
+      ];
+      for (const [index, part] of parts.entries()) {
+        assertResolved(part.title);
+        if (!part.title || [...part.title].length > 80) {
+          field(index ? 'bumper-title' : 'part-title').focus();
+          throw new Error(`P${index + 1} 标题必填，最多 80 字`);
+        }
+      }
       return {
         ...fields,
         origin: {live: live.live, clipper: live.clipper, template_name: template?.name ?? '无模板'},
-        parts: [{title: collection ? song : fields.title}, ...(antiCollision ? [ANTI_COLLISION] : [])],
+        parts,
       };
     },
   };

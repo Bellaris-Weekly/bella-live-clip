@@ -79,7 +79,7 @@ function type(element, value) {
   element.value = value;
   element.dispatchEvent(new element.ownerDocument.defaultView.Event('input', {bubbles: true}));
 }
-function fixture(defaults = {account_mid: 7}, items = templates, matched = true, submissions = []) {
+function fixture(defaults = {account_mid: 7}, items = templates, matched = true, submissions = [], settings = {}) {
   const dom = new JSDOM('<!doctype html><div id="host"></div>', {
     runScripts: 'outside-only',
     url: 'https://www.bilibili.com',
@@ -124,6 +124,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
   w.HTMLCanvasElement.prototype.toBlob = callback => callback(new Blob(['jpeg'], {type: 'image/jpeg'}));
   w.eval(code);
   w.fixture.show(root, null);
+  const preferences = new Map();
   const calls = [],
     captured = [],
     removed = [],
@@ -144,6 +145,11 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
   const logs = [];
   const api = w.fixture.createComposer({
     root,
+    get: (key, fallback) => preferences.get(key) ?? fallback,
+    set: (key, value) => {
+      if (settings.storageFails) throw new Error('storage unavailable');
+      preferences.set(key, structuredClone(value));
+    },
     pageUrl: () => 'https://live.bilibili.com/7',
     diagnostics: {
       begin: (action, details) => {
@@ -171,7 +177,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
         if (path.endsWith('/append')) return {bvid: 'BV1KRxx6QEkN', part: 2, parts: 3};
         if (path === '/covers') return {id: `cover-${calls.filter(([p]) => p === '/covers').length}`};
         if (path === '/submissions')
-          return options.method ? {id: 's', bvid: 'BV1234567890', status: 'submitted'} : submissions;
+          return options.method ? settings.result || {id: 's', bvid: 'BV1234567890', status: 'submitted'} : submissions;
       },
     },
     gmRequest: options => {
@@ -240,6 +246,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
     calls,
     logs,
     captured,
+    preferences,
     urls,
     files,
     removed,
@@ -269,7 +276,9 @@ test('composer exports to OPFS while form is open, takes a cover frame inside th
   assert.match(f.field('desc').value, /1970\.1\.2 {2}排期标题.*成员/);
   assert.equal(f.field('live').options.length, 7);
   type(f.field('title'), '投稿标题');
-  f.field('tags').value = '自选';
+  f.root.querySelector('[aria-label="删除标签 模板标签"]').click();
+  f.root.querySelector('[aria-label="添加标签"]').click();
+  type(f.field('tags'), '自选');
   f.api.actions.close();
   assert.equal(f.root.querySelector('form').hidden, true);
   f.api.actions.start();
@@ -379,7 +388,7 @@ test('template switching and free-text live/clipper edits affect only this submi
   f.field('template').dispatchEvent(new f.w.Event('change'));
   assert.equal(f.field('title').value, '自选标题');
   assert.equal(f.field('tid').value, '9');
-  assert.equal(f.field('tags').value, '自选模板');
+  assert.match(f.root.querySelector('[data-tag-list]').textContent, /自选模板/);
   assert.equal(f.field('desc').value, '自选 自选署名 $&');
   // Only the inputs the template's variables need are shown, as in the studio.
   assert.equal(f.field('live-label').hidden, true);
@@ -529,4 +538,252 @@ test('later songs of the live go into its collection without covers or archive f
   assert.ok(logs.some(([, action, , message]) => action === 'clip_confirm_rejected' && /歌名/.test(message)));
   assert.ok(logs.some(([kind, value]) => kind === 'note' && value.part === 2));
   assert.deepEqual(logs.at(-1), ['finish', 'completed']);
+});
+
+test('inline tags keep focus, ignore IME confirmation, deduplicate pasted tags and cap at twelve', async t => {
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  const add = f.root.querySelector('[aria-label="添加标签"]');
+  add.click();
+  const input = f.field('tags');
+  type(input, '中文');
+  const key = (key, options = {}) =>
+    input.dispatchEvent(new f.w.KeyboardEvent('keydown', {key, bubbles: true, cancelable: true, ...options}));
+  key('Enter', {isComposing: true});
+  assert.equal(f.field('tag-count').textContent, '1/12');
+  key('Enter');
+  assert.equal(f.root.activeElement, input);
+  assert.equal(input.hidden, false);
+  assert.equal(input.value, '');
+  assert.equal(f.field('tag-count').textContent, '2/12');
+  type(input, '中文，甲 乙,丙');
+  key(',');
+  assert.equal(f.field('tag-count').textContent, '5/12');
+  type(input, '未保存');
+  key('Escape');
+  assert.equal(f.root.activeElement, add);
+  assert.equal(f.field('tag-count').textContent, '5/12');
+  add.click();
+  type(input, Array.from({length: 12}, (_, i) => `标签${i}`).join(','));
+  key('Enter');
+  assert.equal(f.field('tag-count').textContent, '12/12');
+  assert.equal(add.disabled, true);
+  f.root.querySelector('[aria-label="删除标签 中文"]').click();
+  assert.equal(f.field('tag-count').textContent, '11/12');
+  assert.equal(add.disabled, false);
+  assert.equal(
+    f.calls.some(([path]) => path === '/covers'),
+    false,
+    'editing tags never submits the form',
+  );
+});
+
+test('bumper removal and custom part titles survive hiding and submitting without touching template data', async t => {
+  const f = fixture({account_mid: 7}, [{...collection, payload: {...collection.payload, title: '切片 {live_title}'}}]);
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  assert.equal(f.field('bumper-row').hidden, false);
+  assert.equal(f.field('add-bumper').hidden, true);
+  assert.equal(f.field('part-count').textContent, '共 2P');
+  f.field('part-title').focus();
+  type(f.field('part-title'), '分P {clipper}');
+  f.field('title').focus();
+  type(f.field('title'), '更改稿件标题');
+  assert.equal(f.field('part-title').value, '分P 成员');
+  f.field('remove-bumper').click();
+  f.api.actions.close();
+  f.api.actions.start();
+  assert.equal(f.field('bumper-row').hidden, true);
+  assert.equal(f.field('part-count').textContent, '共 1P');
+  assert.equal(
+    f.calls.some(([path]) => path.includes('presets')),
+    false,
+    'bumper never uploads while configuring',
+  );
+  f.field('confirm').click();
+  f.gate.resolve();
+  await until(() => f.field('result'));
+  const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
+  assert.deepEqual(JSON.parse(JSON.stringify(body.parts)), [{title: '分P 成员', upload_id: 'u'}]);
+  assert.equal(collection.payload.includeAntiCollision, true);
+});
+
+test('manually adding a bumper sends its edited title as a deferred preset, and an empty title blocks confirmation', async t => {
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  f.field('add-bumper').click();
+  assert.equal(f.field('add-bumper').hidden, true);
+  type(f.field('bumper-title'), '');
+  f.field('confirm').click();
+  await until(() => f.field('error')?.textContent.includes('P2 标题'));
+  assert.equal(
+    f.calls.some(([path]) => path === '/covers'),
+    false,
+  );
+  type(f.field('bumper-title'), '尾部防撞');
+  f.field('confirm').click();
+  f.gate.resolve();
+  await until(() => f.field('result'));
+  const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
+  assert.equal(body.parts.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(body.parts[1])), {preset_id: 'anti-collision', title: '尾部防撞'});
+});
+
+test('Beijing quick scheduling is visible outside advanced settings and finishes with continue and studio management', async t => {
+  const now = Date.parse('2026-11-15T00:00:00Z'); // 08:00 in Beijing, regardless of host time zone.
+  const result = {id: 's', status: 'scheduled', submit_at: now / 1000 + 600};
+  const f = fixture({account_mid: 7}, templates, true, [], {result});
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.w.Date.now = () => now;
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  assert.equal(f.field('schedule-picker').closest('details'), null);
+  f.root.querySelector('[data-preset="07:17"]').click();
+  assert.equal(f.field('scheduleAt').value, '2026-11-16T07:17');
+  assert.match(f.root.querySelector('.schedule-trigger').textContent, /明天 07:17/);
+  f.field('schedule-clear').click();
+  assert.equal(f.field('scheduleAt').value, '');
+  f.root.querySelector('[data-preset="10 分钟"]').click();
+  assert.equal(f.field('scheduleAt').value, '2026-11-15T08:10:00');
+  f.field('confirm').click();
+  f.gate.resolve();
+  await until(() => f.field('continue'));
+  assert.equal(f.field('confirm'), null);
+  assert.match(f.field('state').textContent, /已安排在/);
+  assert.match(f.field('scheduled-result').textContent, /投稿记录中查看或取消定时/);
+  const body = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
+  assert.equal(body.submit_at, result.submit_at);
+  assert.equal(body.dtime, null);
+  assert.equal(
+    f.calls.some(([path]) => path === '/submissions/s'),
+    false,
+    'does not poll for a BV before the scheduled time',
+  );
+  f.field('continue').click();
+  assert.equal(f.root.querySelector('form').hidden, true);
+});
+
+test('custom scheduling validates the future window, supports calendar keys, and Escape leaves the saved time unchanged', async t => {
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.w.Date.now = () => Date.parse('2026-11-15T00:00:00Z');
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  f.root.querySelector('[data-preset="11:30"]').click();
+  const trigger = f.root.querySelector('.schedule-trigger');
+  trigger.click();
+  const popup = f.root.querySelector('.schedule-popover');
+  assert.equal(popup.hidden, false);
+  assert.equal(f.root.querySelector('[data-day="2026-11-14"]').disabled, true);
+  f.root.querySelector('[data-day="2026-11-16"]').click();
+  f.root.activeElement.dispatchEvent(
+    new f.w.KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true, cancelable: true}),
+  );
+  assert.equal(f.root.activeElement.dataset.day, '2026-11-17');
+  popup.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Escape', bubbles: true, cancelable: true}));
+  assert.equal(popup.hidden, true);
+  assert.equal(f.field('scheduleAt').value, '2026-11-15T11:30');
+  trigger.click();
+  const hour = f.root.querySelector('[aria-label="小时"]');
+  type(hour, '07');
+  assert.equal(f.field('schedule-apply').disabled, true);
+  type(hour, '12');
+  f.root.querySelector('[aria-label="分钟"]').focus();
+  type(f.root.activeElement, '17');
+  f.root.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+  assert.equal(popup.hidden, true);
+  assert.equal(f.field('scheduleAt').value, '2026-11-15T12:17');
+  assert.equal(
+    f.calls.some(([path]) => path === '/covers'),
+    false,
+    'clock confirmation never submits the archive',
+  );
+  trigger.click();
+  f.field('schedule-cancel').click();
+  assert.equal(f.field('scheduleAt').value, '');
+});
+
+test('cover presets save only style, prevent duplicates, persist, rename and delete while keeping this cover text', async t => {
+  const f = fixture();
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  const find = label => f.root.querySelector(`[aria-label="${label}"]`);
+  assert.equal(find('保存文字预设').disabled, true, 'built-in style is already a preset');
+  f.api.cover.setText({value: '本次封面', color: '#123456', stroke: '#654321', strokeWidth: 0.2, size: 0.12});
+  await until(() => !find('保存文字预设').disabled);
+  find('保存文字预设').click();
+  await until(() => find('预设名称'));
+  type(find('预设名称'), '常用样式');
+  find('预设名称').dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+  await until(() => find('常用样式'));
+  const stored = f.preferences.get('coverTextPresets.v1');
+  assert.equal(stored.length, 1);
+  assert.equal('value' in stored[0].style, false);
+  assert.equal(stored[0].style.strokeWidth, 0.2);
+  assert.equal(find('保存文字预设').disabled, true);
+  find('贝拉应援色').click();
+  assert.equal(f.api.cover.state.value.text.value, '本次封面');
+  assert.equal(f.api.cover.state.value.text.color, '#DB7D74');
+  find('常用样式').click();
+  assert.equal(f.api.cover.state.value.text.color, '#123456');
+  find('管理文字预设').click();
+  await until(() => find('预设名称'));
+  type(find('预设名称'), '新名字');
+  find('预设名称').dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+  await until(() => find('新名字'));
+  find('管理文字预设').click();
+  await until(() => find('删除文字预设'));
+  find('删除文字预设').click();
+  await until(() => !find('新名字'));
+  assert.equal(f.preferences.get('coverTextPresets.v1').length, 0);
+  assert.equal(f.api.cover.state.value.text.value, '本次封面');
+  assert.equal(
+    f.calls.some(([path]) => path === '/covers'),
+    false,
+  );
+});
+
+test('cover preset storage failure keeps the editor and unsaved style available', async t => {
+  const f = fixture({account_mid: 7}, templates, true, [], {storageFails: true});
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  f.api.cover.setText({color: '#112233'});
+  const find = label => f.root.querySelector(`[aria-label="${label}"]`);
+  await until(() => !find('保存文字预设').disabled);
+  find('保存文字预设').click();
+  await until(() => find('预设名称'));
+  type(find('预设名称'), '未保存');
+  find('预设名称').dispatchEvent(new f.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+  await until(() => f.root.querySelector('.cover-notice')?.textContent.includes('无法保存预设'));
+  assert.ok(find('预设名称'));
+  assert.equal(f.api.cover.presets.value.length, 1);
+  assert.equal(f.api.cover.state.value.text.color, '#112233');
 });
