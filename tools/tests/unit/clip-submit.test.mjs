@@ -567,3 +567,56 @@ test('a scheduled submission is done once the studio accepts it, without waiting
   assert.equal(f.job.state().done, true);
   assert.equal(f.job.state().result.status, 'scheduled');
 });
+
+test('scheduled append retries only its frozen record and never falls back to a BV or new submission', async () => {
+  const calls = [];
+  const f = jobFixture({
+    client: {
+      request: async (path, options) => {
+        calls.push([path, structuredClone(options)]);
+        throw new Error('目标定时稿已取消或已开始投稿');
+      },
+    },
+  });
+  const work = f.job.start();
+  const selected = {append: {mid: 7, submissionId: 'new-job', bvid: 'BVold'}, title: '新歌'};
+  await f.job.confirm(selected);
+  selected.append.submissionId = 'other-job';
+  f.uploaded.resolve('upload-id');
+  await work;
+  await f.job.retry();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][0], '/submissions/new-job/append');
+  assert.deepEqual(calls[1], calls[0]);
+  assert.equal(f.job.state().done, false);
+  assert.equal(f.cleaned(), 0);
+});
+
+test('a definitely unavailable scheduled target unlocks selection and reuses the uploaded video', async () => {
+  const calls = [];
+  const f = jobFixture({
+    client: {
+      request: async (path, options) => {
+        calls.push([path, options]);
+        if (calls.length === 1)
+          throw Object.assign(new Error('目标已取消'), {status: 409, code: 'submission_target_unavailable'});
+        return {id: 'selected-draft', status: 'scheduled', submit_at: 1900000000, part: 2};
+      },
+    },
+  });
+  const work = f.job.start();
+  await f.job.confirm({append: {mid: 7, submissionId: 'cancelled-draft'}, title: '新歌'});
+  f.uploaded.resolve('retained-upload');
+  await work;
+  assert.equal(f.job.state().sent, false);
+  assert.equal(f.job.state().confirmed, false);
+  assert.equal(f.job.state().needsTarget, true);
+  assert.equal(f.cleaned(), 0);
+  assert.equal(calls.length, 1);
+  await f.job.confirm({append: {mid: 7, submissionId: 'selected-draft'}, title: '新歌'});
+  assert.equal(calls[1][0], '/submissions/selected-draft/append');
+  assert.equal(calls[1][1].body.upload_id, 'retained-upload');
+  assert.notEqual(calls[0][1].body.request_id, calls[1][1].body.request_id);
+  assert.equal(f.job.state().done, true);
+  assert.equal(f.cleaned(), 1);
+});

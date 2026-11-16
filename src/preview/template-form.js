@@ -103,7 +103,9 @@ export function createTemplateForm(host) {
       }
     });
   const recordDate = () => (start ? new Date((start + 8 * 3600) * 1000).toISOString().slice(0, 10) : '');
-  const appending = () => collections[Number(field('target').value)] || null;
+  const appending = () =>
+    /^\d+$/.test(field('target').value) ? collections[Number(field('target').value)] || null : null;
+  const targetKey = item => (item?.id ? `submission:${item.id}` : item?.bvid ? `archive:${item.bvid}` : null);
   function preview() {
     const target = appending();
     field('archive').hidden = Boolean(target);
@@ -157,9 +159,11 @@ export function createTemplateForm(host) {
     if (!template) draft.tid = null;
     antiCollision = draft.includeAntiCollision;
     write(draft);
-    // A song collection of this live made with the same template is where the next song goes.
+    // Only the newest matching record may supply a default, and only while still scheduled.
+    // Published/cancelled history requires an explicit destination choice.
     const same = collections.findIndex(item => item.template === template?.name);
-    field('target').value = same >= 0 ? String(same) : 'new';
+    field('target').value =
+      same < 0 ? 'new' : collections[same].status === 'scheduled' && collections[same].owned ? String(same) : '';
     preview();
   };
   field('copyright').onchange = () => {
@@ -180,17 +184,24 @@ export function createTemplateForm(host) {
   return {
     closePopups: schedulePicker.close,
     dispose: schedulePicker.dispose,
-    // `existing`: this live's song collections already on Bilibili, newest first.
+    // `existing`: this live's collection records, including unsent/cancelled ones, newest first.
     configure(items, schedule, name, preserve, {existing = [], song = '', recordStart = 0, cosEnabled = true} = {}) {
       const selected = field('template').value;
-      // Keep the chosen archive by its BV: the list may have grown or reordered since.
-      const chosen = appending()?.bvid;
+      const chosen = targetKey(appending());
+      const priorTarget = field('target').value;
       start = recordStart;
       canAddBumper = cosEnabled;
       collections = existing;
       field('target').replaceChildren();
+      option(field('target'), '', '请选择投稿目标');
       option(field('target'), 'new', '新稿件');
-      collections.forEach((item, i) => option(field('target'), String(i), `追加到《${item.title}》`));
+      collections.forEach((item, i) => {
+        const state =
+          {scheduled: '待定时', cancelled: '已取消，需先恢复定时', submitting: '正在投稿', failed: '投稿失败'}[
+            item.status
+          ] || `已投稿 ${item.bvid || ''}`;
+        option(field('target'), String(i), `追加到《${item.title}》（${state}）`);
+      });
       field('target-label').hidden = !collections.length;
       templates = items;
       field('template').replaceChildren();
@@ -227,8 +238,9 @@ export function createTemplateForm(host) {
         field('song').value = song;
         field('template').onchange();
       } else {
-        const kept = collections.findIndex(item => item.bvid === chosen);
-        field('target').value = kept >= 0 ? String(kept) : 'new';
+        const kept = collections.findIndex(item => targetKey(item) === chosen);
+        field('target').value = kept >= 0 ? String(kept) : priorTarget === 'new' ? 'new' : '';
+        if (priorTarget !== 'new') field('target-label').hidden = false;
       }
       preview();
     },
@@ -237,12 +249,22 @@ export function createTemplateForm(host) {
       tags.commit();
       preview();
       const song = field('song').value.trim();
+      if (!field('target').value) throw new Error('请明确选择投稿目标；历史稿件不会自动选中');
       const target = appending();
       if (target) {
+        if (!['scheduled', 'submitted'].includes(target.status))
+          throw new Error('目标稿件已取消或暂不可追加，请在创作台恢复定时，或明确选择其他目标');
+        if (target.status === 'scheduled' && !target.id) throw new Error('定时稿编号缺失，请刷新投稿记录');
+        if (target.status === 'scheduled' && !target.owned)
+          throw new Error('只能追加到自己的待定时稿，请明确选择其他目标');
+        if (target.status === 'submitted' && !target.bvid) throw new Error('目标稿件尚无 BV 号，请刷新投稿记录');
         if (!song) throw new Error('请填写歌名');
         const live = values();
         return {
-          append: {mid: target.mid, bvid: target.bvid},
+          append:
+            target.status === 'scheduled'
+              ? {mid: target.mid, submissionId: target.id}
+              : {mid: target.mid, bvid: target.bvid},
           title: song,
           template_variables: {
             live: live.live,

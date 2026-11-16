@@ -11,6 +11,7 @@ const code = (
       contents: `import {h, render, options} from 'preact';
         import {ComposeSheet} from './src/ui/compose.jsx';
         export {createComposer} from './src/preview/compose.js';
+        export {createTemplateForm} from './src/preview/template-form.js';
         options.debounceRendering = callback => callback();
         export const show = (root, composer) => render(h(ComposeSheet, {composer}), root);`,
       resolveDir: process.cwd(),
@@ -174,7 +175,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
         if (path === '/upload-options') return {cos_enabled: true, max_file_bytes: 100};
         if (path === '/uploads')
           return {id: 'u', url: 'https://upos-test.bilivideo.com/file', auth: 'auth', biz_id: 42, chunk_size: 4};
-        if (path.endsWith('/append')) return {bvid: 'BV1KRxx6QEkN', part: 2, parts: 3};
+        if (path.endsWith('/append')) return settings.appendResult || {bvid: 'BV1KRxx6QEkN', part: 2, parts: 3};
         if (path === '/covers') return {id: `cover-${calls.filter(([p]) => p === '/covers').length}`};
         if (path === '/submissions')
           return options.method ? settings.result || {id: 's', bvid: 'BV1234567890', status: 'submitted'} : submissions;
@@ -456,12 +457,109 @@ const collection = {
   },
 };
 const sent = (title, extra = {}) => ({
+  id: 'old-submission',
+  status: 'submitted',
   bvid: 'BV1KRxx6QEkN',
   account_mid: 7,
   created_at: 100100,
   title,
   details: {origin: {template_name: '歌舞合集'}},
   ...extra,
+});
+
+test('the new scheduled collection wins over yesterday’s published collection without a BV', async t => {
+  const pending = sent('新定时合集『第一首』', {
+    id: 'new-scheduled',
+    bvid: null,
+    status: 'scheduled',
+    created_at: 300000,
+    submit_at: 1900000000,
+    details: {origin: {template_name: '歌舞合集', live: '1970.1.2  排期标题'}},
+  });
+  const f = fixture(
+    {account_mid: 7},
+    [collection],
+    true,
+    [sent('昨天合集『旧歌』', {created_at: 200000, details: pending.details}), pending],
+    {
+      appendResult: {id: pending.id, status: 'scheduled', submit_at: pending.submit_at, part: 2, parts: 3},
+    },
+  );
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  assert.equal(f.field('target').value, '0');
+  assert.match(f.field('target').selectedOptions[0].textContent, /新定时合集.*待定时/);
+  f.field('song').value = '小美满';
+  f.field('confirm').click();
+  f.gate.resolve();
+  await until(() => f.api.view.value.done);
+  const writes = f.calls.filter(([path]) => path.endsWith('/append'));
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], '/submissions/new-scheduled/append');
+  assert.match(f.field('state').textContent, /已加入待定时稿第 2 P/);
+  assert.ok(!f.calls.some(([path]) => path.includes('/archives/')));
+});
+
+test('refresh keeps the selected draft by record ID and a missing target requires a new choice', t => {
+  const f = fixture();
+  const host = f.w.document.createElement('div');
+  const form = f.w.fixture.createTemplateForm(host);
+  t.after(() => {
+    form.dispose();
+    f.api.dispose();
+    f.w.close();
+  });
+  const event = {start: 100000, title: '排期标题', participants: [{id: 'bella'}]};
+  const schedule = {matched: event, recent: [event]};
+  const first = {
+    id: 'first',
+    bvid: null,
+    status: 'scheduled',
+    owned: true,
+    mid: 7,
+    title: '第一份『歌』',
+    template: '歌舞合集',
+  };
+  const second = {...first, id: 'second', title: '第二份『歌』'};
+  form.configure([collection], schedule, '成员', false, {existing: [first, second], song: '新歌'});
+  const target = host.querySelector('[data-target]');
+  target.value = '1';
+  target.dispatchEvent(new f.w.Event('change'));
+  assert.equal(form.fields().append.submissionId, 'second');
+  form.configure([collection], schedule, '成员', true, {existing: [second, first]});
+  assert.equal(target.value, '0');
+  assert.equal(form.fields().append.submissionId, 'second');
+  form.configure([collection], schedule, '成员', true, {existing: [first]});
+  assert.equal(target.value, '');
+  assert.throws(() => form.fields(), /明确选择投稿目标/);
+});
+
+test('a cancelled or processing newest collection never silently selects the old archive', async t => {
+  for (const status of ['cancelled', 'submitting', 'failed']) {
+    const f = fixture({account_mid: 7}, [collection], true, [
+      sent('最新合集『新歌』', {id: 'new', bvid: null, status, created_at: 100200}),
+      sent('旧合集『旧歌』'),
+    ]);
+    t.after(() => {
+      f.api.dispose();
+      f.w.close();
+    });
+    f.api.actions.start();
+    await until(() => !f.field('confirm').disabled);
+    assert.equal(f.field('target').value, '');
+    f.field('song').value = '小美满';
+    f.field('confirm').click();
+    await until(() => f.field('error').textContent.includes('明确选择投稿目标'));
+    f.field('target').value = '0';
+    f.field('target').dispatchEvent(new f.w.Event('change'));
+    f.field('confirm').click();
+    await until(() => f.field('error').textContent.includes('已取消或暂不可追加'));
+    assert.ok(!f.calls.some(([path]) => path.endsWith('/append')));
+  }
 });
 
 test('the first song starts a collection: its name fills 『』, it titles the part, and the bumper follows', async t => {
@@ -504,8 +602,8 @@ test('later songs of the live go into its collection without covers or archive f
   await until(() => !f.field('confirm').disabled);
   // The collection's template wins over another template for the same members, whose title is empty.
   assert.equal(f.field('template').value, '5');
-  assert.equal(f.field('target').value, '0');
-  assert.equal(f.field('archive').hidden, true);
+  assert.equal(f.field('target').value, '');
+  assert.equal(f.field('archive').hidden, false);
   // Switching to an empty-titled template and back to appending must not leave a blocking required field.
   f.field('template').value = '6';
   f.field('template').dispatchEvent(new f.w.Event('change'));

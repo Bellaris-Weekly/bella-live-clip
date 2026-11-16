@@ -13,7 +13,7 @@ export function createSubmissionJob({
 }) {
   const controller = new AbortController(),
     {signal} = controller;
-  const requestId = uuid();
+  let requestId = uuid();
   let fields,
     uploadId,
     request,
@@ -23,11 +23,13 @@ export function createSubmissionJob({
     cancelled = false,
     sent = false,
     done = false,
+    needsTarget = false,
     error;
   const state = () => ({
     sent,
     cancelled,
     done,
+    needsTarget,
     confirmed: Boolean(fields),
     uploaded: Boolean(uploadId),
     result,
@@ -42,7 +44,7 @@ export function createSubmissionJob({
       error = null;
       if (fields.append) {
         // Appends are idempotent per request id; the studio reads the archive afresh, so others' songs are kept.
-        const {mid, bvid} = fields.append;
+        const {mid, bvid, submissionId} = fields.append;
         request ??= {
           request_id: requestId,
           upload_id: uploadId,
@@ -54,11 +56,23 @@ export function createSubmissionJob({
         sent = true;
         emit();
         try {
-          result = await client.request(`/accounts/${mid}/archives/${bvid}/append`, {method: 'POST', body: request});
+          const path = submissionId
+            ? `/submissions/${encodeURIComponent(submissionId)}/append`
+            : `/accounts/${mid}/archives/${bvid}/append`;
+          result = await client.request(path, {method: 'POST', body: request});
           await clean();
           done = true;
         } catch (failure) {
           error = failure;
+          // This explicit studio response guarantees no append was made. Keep the upload and let
+          // the user choose again; ambiguous errors retain the frozen request for safe retries.
+          if (submissionId && failure.status === 409 && failure.code === 'submission_target_unavailable') {
+            needsTarget = true;
+            sent = false;
+            fields = undefined;
+            request = undefined;
+            requestId = uuid();
+          }
         }
         return;
       }
@@ -128,6 +142,7 @@ export function createSubmissionJob({
           ...(value.desc_v2 || []).map(row => row.raw_text),
         );
       fields = structuredClone(value);
+      needsTarget = false;
       emit();
       return send();
     },

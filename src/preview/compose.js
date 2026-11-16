@@ -15,23 +15,28 @@ import {isEditing} from '../ui/shortcuts.js';
 
 const SAME_LIVE_SLACK = 6 * 3600;
 const beijingTime = seconds => new Date((seconds + 8 * 3600) * 1000).toISOString().slice(0, 16).replace('T', ' ');
-// Song collections (title with 『』) of this live on the posting account: songs can go there. A live
+// Include unsent records: filtering by BV alone silently redirects songs to an older archive. A live
 // matched in the schedule is recognised by its {live}; otherwise only archives sent while it was
 // recorded or soon after count, so a later live's collection is never offered for an older recording.
-export function liveCollections(submissions, record, mid, live = '') {
+export function liveCollections(submissions, record, mid, live = '', user = '') {
   const end = (record.end || Date.now() / 1000) + SAME_LIVE_SLACK;
   return submissions
     .filter(
       item =>
-        item.bvid &&
+        (item.bvid || item.id) &&
         item.account_mid === mid &&
         item.created_at >= record.start &&
         item.title.includes('』') &&
         item.details?.origin?.template_name &&
         (live && item.details.origin.live ? sameLive(item.details.origin.live, live) : item.created_at <= end),
     )
+    .sort((a, b) => b.created_at - a.created_at)
     .map(item => ({
+      id: item.id,
       bvid: item.bvid,
+      status: item.status || (item.bvid ? 'submitted' : ''),
+      submitAt: item.submit_at,
+      owned: !user || item.created_by === user,
       mid: item.account_mid,
       title: item.title,
       template: item.details.origin.template_name,
@@ -131,14 +136,16 @@ export function createComposer({
       done: Boolean(state?.done),
       scheduled: state?.result?.status === 'scheduled',
       cancellable: !(state?.sent || state?.done || state?.cancelled),
-      retry: Boolean(state?.error || own.setupError),
+      retry: Boolean((state?.error && !state.needsTarget) || own.setupError),
       retryBusy: Boolean(state?.busy || own.confirming),
-      error: state?.error?.message || own.setupError?.message || own.formError?.message || '',
+      error: state?.error?.detail || state?.error?.message || own.setupError?.message || own.formError?.message || '',
       stage: state?.cancelled
         ? '已取消'
         : state?.done
           ? state.result?.part
-            ? `已追加为第 ${state.result.part} P`
+            ? state.result.status === 'scheduled'
+              ? `已加入待定时稿第 ${state.result.part} P · ${beijingTime(state.result.submit_at)} 投稿`
+              : `已追加为第 ${state.result.part} P`
             : state.result?.status === 'scheduled'
               ? `已安排在 ${beijingTime(state.result.submit_at)} 投稿`
               : '投稿完成'
@@ -242,7 +249,7 @@ export function createComposer({
           collections: submissions.length,
         });
         templateForm.configure(templates, schedule, me.name, preserve && prior?.ready, {
-          existing: liveCollections(submissions, own.record, defaults.account_mid, liveValue(schedule.matched)),
+          existing: liveCollections(submissions, own.record, defaults.account_mid, liveValue(schedule.matched), me.sub),
           song: own.mark?.note?.trim() || '',
           recordStart: own.record.start,
           cosEnabled: options.cos_enabled,
@@ -365,6 +372,7 @@ export function createComposer({
       const chosen = {
         target: fields.append ? 'append' : 'new',
         targetBvid: fields.append?.bvid,
+        targetSubmissionId: fields.append?.submissionId,
         template: fields.origin?.template_name,
         title: fields.title,
         parts: fields.parts?.length,
