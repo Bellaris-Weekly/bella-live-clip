@@ -836,7 +836,7 @@ fieldset {
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  max-width: 1480px;
+  max-width: 760px;
   width: 100%;
   margin: 0 auto;
 }
@@ -893,18 +893,18 @@ fieldset {
   color: hsl(var(--warning-foreground));
 }
 .records {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .record {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   min-height: 0;
-  padding: 8px 10px 8px 8px;
+  padding: 8px 14px 8px 8px;
   border-radius: var(--r-md);
   background: hsl(var(--card));
   box-shadow: var(--shadow-raised);
@@ -971,6 +971,11 @@ fieldset {
   font-size: 12px;
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
+}
+.record-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .record.is-live .record-meta {
   color: hsl(var(--primary-container-foreground) / 0.75);

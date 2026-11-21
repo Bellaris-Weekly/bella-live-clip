@@ -45,33 +45,35 @@ function RecordRow({record, disabled, onOpen}) {
             {parts.weekday} {parts.hour}:{parts.minute}
           </span>
           <span>{length}</span>
-          {record.schedule?.type && <span class="badge">{record.schedule.type}</span>}
-          {people.length > 0 && (
-            <span class="people">
-              {people.map(person => (
-                <span
-                  key={person.name}
-                  class="person"
-                  title={person.name}
-                  role="img"
-                  aria-label={person.name}
-                  style={{'--member-color': person.color}}
-                >
-                  <Icon name="person" />
-                  {person.avatar && (
-                    <img
-                      src={person.avatar}
-                      alt=""
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      onError={event => event.currentTarget.remove()}
-                    />
-                  )}
-                </span>
-              ))}
-            </span>
-          )}
         </span>
+      </span>
+      <span class="record-side">
+        {record.schedule?.type && <span class="badge">{record.schedule.type}</span>}
+        {people.length > 1 && (
+          <span class="people">
+            {people.map(person => (
+              <span
+                key={person.name}
+                class="person"
+                title={person.name}
+                role="img"
+                aria-label={person.name}
+                style={{'--member-color': person.color}}
+              >
+                <Icon name="person" />
+                {person.avatar && (
+                  <img
+                    src={person.avatar}
+                    alt=""
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={event => event.currentTarget.remove()}
+                  />
+                )}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
     </button>
   );

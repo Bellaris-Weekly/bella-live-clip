@@ -61,7 +61,7 @@ export async function runCardChecks(app, query, preloadProbe) {
     if (!query.has('schedule-error')) {
       assert(cards[0].querySelectorAll('.person').length === 3, '团播头像数量错误');
       assert(cards[3].querySelectorAll('.person').length === 2, '双播头像数量错误');
-      assert(cards[2].querySelectorAll('.person').length === 1, '单播头像数量错误');
+      assert(cards[2].querySelectorAll('.person').length === 0, '单播显示了自己的头像');
       checks.push('团播、双播、单播头像数量');
     }
     root.querySelector('[data-member="xinyi"]').click();
