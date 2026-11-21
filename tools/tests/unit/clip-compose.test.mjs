@@ -28,7 +28,8 @@ const code = (
         name: 'media-fixture',
         setup(build) {
           build.onLoad({filter: /src\/media\/export.js$/}, () => ({
-            contents: `export async function exportSelection(api, record, groups, selection, options) {
+            contents: `export async function readExportDimensions() { return {fileWidth: 2560, fileHeight: 1440}; }
+    export async function exportSelection(api, record, groups, selection, options) {
       window.exports.push({record, selection, precise: options.precise, danmaku: options.danmaku});
       const destination = await options.createFile();
       window.destinations.push(destination);
@@ -290,6 +291,7 @@ test('composer exports to OPFS while form is open, takes a cover frame inside th
   assert.equal(f.calls.filter(([path, options]) => path === '/submissions' && options.method).length, 0);
   f.gate.resolve();
   await until(() => f.field('state').textContent === '投稿完成');
+  assert.ok(f.logs.some(([kind, value]) => kind === 'note' && value.fileWidth === 2560 && value.fileHeight === 1440));
   const submitted = f.calls.find(([path, options]) => path === '/submissions' && options.method)[1].body;
   assert.equal(submitted.mark_id, 'mark');
   assert.equal(submitted.cover_id, 'cover-1');

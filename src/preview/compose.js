@@ -287,7 +287,7 @@ export function createComposer({
                 const plan = new RecordingPlan(mediaApi, own.streams, signal);
                 const groups = await plan.loadPart(own.segmentIndex, signal);
                 temporary = await createTemporaryMedia({storage, signal});
-                const {exportSelection} = await import('../media/export.js');
+                const {exportSelection, readExportDimensions} = await import('../media/export.js');
                 await exportSelection(mediaApi, own.record, groups, own.selection, {
                   signal,
                   precise: own.mode !== 'copy',
@@ -308,9 +308,13 @@ export function createComposer({
                   }),
                 });
                 signal.throwIfAborted();
-                own.file = await temporary.handle.getFile();
+                const file = await temporary.handle.getFile();
+                // A diagnostic read failure must not interrupt an otherwise valid upload.
+                const dimensions = await readExportDimensions(file).catch(() => ({}));
+                signal.throwIfAborted();
+                own.file = file;
                 own.export = 1;
-                own.log.note({fileBytes: own.file.size});
+                own.log.note({fileBytes: file.size, ...dimensions});
                 // The finished clip, playable on the page before it is sent.
                 own.preview = URL.createObjectURL(own.file);
                 render(own);

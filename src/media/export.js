@@ -13,6 +13,18 @@ import {createProgressGate} from '../shared/progress-gate.js';
 
 const SELECTION_DOWNLOAD_CONCURRENCY = 8;
 
+// Read the finalized MP4 track header from the same File that will be uploaded.
+export async function readExportDimensions(file) {
+  const input = new Input({source: new BlobSource(file), formats: [MP4]});
+  try {
+    const video = await input.getPrimaryVideoTrack();
+    if (!video) return {};
+    return {fileWidth: await video.getCodedWidth(), fileHeight: await video.getCodedHeight()};
+  } finally {
+    input.dispose();
+  }
+}
+
 // The caller owns the Input so HLS and Blob inputs use the same conversion path.
 export async function convertInput(
   input,

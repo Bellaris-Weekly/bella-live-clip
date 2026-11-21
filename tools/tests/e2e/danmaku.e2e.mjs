@@ -16,6 +16,7 @@ test(
   {timeout: 300000},
   async () => {
     const real = Boolean(process.env.DANMAKU_REAL_DIR);
+    const qhd = !real && process.env.DANMAKU_TEST_1440P === '1';
     const directory = real ? process.env.DANMAKU_REAL_DIR : await mkdtemp(path.join(tmpdir(), 'bella-danmaku-'));
     const artifacts = process.env.DANMAKU_ARTIFACT_DIR ?? directory;
     await mkdir(artifacts, {recursive: true});
@@ -31,7 +32,11 @@ test(
           '-f',
           'lavfi',
           '-i',
-          'color=c=0x123456:size=640x360:rate=30:duration=8',
+          qhd
+            ? 'testsrc2=size=2560x1440:rate=60:duration=8,drawbox=x=0:y=0:w=iw:h=ih/4:c=0x123456:t=fill[base];' +
+              'color=black:size=128x32:rate=60:duration=8,drawgrid=w=2:h=32:t=1:c=white[lines];' +
+              '[base][lines]overlay=x=64:y=1300'
+            : 'color=c=0x123456:size=640x360:rate=30:duration=8',
           '-f',
           'lavfi',
           '-i',
@@ -40,6 +45,7 @@ test(
           'libx264',
           '-preset',
           'ultrafast',
+          ...(qhd ? ['-b:v', '11M'] : []),
           '-g',
           '60',
           '-bf',
@@ -138,10 +144,15 @@ test(
       }
       await page.goto(`http://127.0.0.1:${server.address().port}/`);
       await page.addScriptTag({url: '/page.js'});
-      const result = await page.evaluate(args => window.exportDanmaku(args), {meta, real});
+      const result = await page.evaluate(args => window.exportDanmaku(args), {meta, real, qhd});
       assert.equal(result.sawBurn, true);
-      assert.equal(result.width, real ? 1920 : 640);
-      assert.equal(result.height, real ? 1080 : 360);
+      assert.deepEqual([result.width, result.height], result.sourceDimensions);
+      if (!real) assert.deepEqual(result.sourceDimensions, qhd ? [2560, 1440] : [640, 360]);
+      if (qhd) assert.ok(result.stripeContrast > 160, `Single-pixel stripe contrast: ${result.stripeContrast}`);
+      for (const frame of result.snapshots) {
+        assert.equal(frame.width, result.width);
+        assert.equal(frame.height, result.height);
+      }
       assert.equal(result.audioCodec, 'aac');
       assert.ok(result.audioPackets > 50);
       assert.equal(result.audioPayloadsPreserved, true);

@@ -1,8 +1,8 @@
 import {Input, BlobSource, MP4, VideoSampleSink, EncodedPacketSink} from 'mediabunny';
 import {loadEmotes} from '../../../src/danmaku/emotes.js';
-import {exportSelection} from '../../../src/media/export.js';
+import {exportSelection, readExportDimensions} from '../../../src/media/export.js';
 
-window.exportDanmaku = async ({meta, real = false, cancel = false}) => {
+window.exportDanmaku = async ({meta, real = false, qhd = false, cancel = false}) => {
   const base = location.origin;
   const segments = meta.segments.map(item => ({url: `${base}/${item.file}`, duration: item.duration}));
   const map = meta.map ? {url: `${base}/${meta.map}`} : null;
@@ -64,6 +64,7 @@ window.exportDanmaku = async ({meta, real = false, cancel = false}) => {
     const frames = new VideoSampleSink(video);
     const snapshots = [];
     let overlayPixels = 0,
+      stripeContrast,
       animationFrames = 0;
     for (const time of real ? [0, 5, 10, 19] : [0, 1, 2]) {
       const sample = await frames.getSample(time);
@@ -72,6 +73,13 @@ window.exportDanmaku = async ({meta, real = false, cancel = false}) => {
       canvas.height = sample.displayHeight;
       sample.draw(canvas.getContext('2d'), 0, 0);
       sample.close();
+      if (qhd && time === 0) {
+        // The QHD fixture has alternating single-pixel white/black columns below the comments.
+        const {data} = canvas.getContext('2d').getImageData(80, 1310, 64, 1);
+        let total = 0;
+        for (let i = 4; i < data.length; i += 4) total += Math.abs(data[i] - data[i - 4]);
+        stripeContrast = total / 63;
+      }
       if (!real && time === 0) {
         const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, Math.floor(canvas.height / 4)).data;
         for (let i = 0; i < pixels.length; i += 4)
@@ -90,10 +98,15 @@ window.exportDanmaku = async ({meta, real = false, cancel = false}) => {
     const digest = async data => [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].join(',');
     const originals = new Set();
     const init = map ? await (await fetch(map.url)).arrayBuffer() : null;
+    let sourceDimensions;
     for (const segment of segments) {
       const bytes = await (await fetch(segment.url)).arrayBuffer();
       const original = new Input({source: new BlobSource(new Blob(init ? [init, bytes] : [bytes])), formats: [MP4]});
       try {
+        if (!sourceDimensions) {
+          const sourceVideo = await original.getPrimaryVideoTrack();
+          sourceDimensions = [await sourceVideo.getCodedWidth(), await sourceVideo.getCodedHeight()];
+        }
         const source = await original.getPrimaryAudioTrack();
         for await (const packet of new EncodedPacketSink(source).packets()) originals.add(await digest(packet.data));
       } finally {
@@ -107,20 +120,23 @@ window.exportDanmaku = async ({meta, real = false, cancel = false}) => {
       audioPayloadsPreserved &&= originals.has(await digest(packet.data));
     }
     await fetch('/artifact/result.mp4', {method: 'POST', body: file});
+    const {fileWidth, fileHeight} = await readExportDimensions(file);
     const result = {
       sawBurn,
+      stripeContrast,
       overlayPixels,
       animationFrames,
       audioPayloadsPreserved,
       duration: await input.computeDuration(),
-      width: await video.getCodedWidth(),
-      height: await video.getCodedHeight(),
+      width: fileWidth,
+      height: fileHeight,
       audioCodec: await audio.getCodec(),
       audioPackets: packets.length,
       bytes: file.size,
       totalSeconds: (encodedEnd - started) / 1000,
       encodeSeconds: (encodedEnd - encodingStarted) / 1000,
       snapshots,
+      sourceDimensions,
     };
     const names = [];
     for await (const name of root.keys()) names.push(name);

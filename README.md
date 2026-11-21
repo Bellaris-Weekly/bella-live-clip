@@ -102,4 +102,6 @@ if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
 
 1080p 流程复测：`STREAMING_TEST_1080P=1 node --test --test-name-pattern="encoding begins" tools/tests/e2e/streaming.e2e.mjs`。默认流水线回归使用较小素材以缩短运行时间。
 
+运行 `DANMAKU_TEST_1440P=1 node --test tools/tests/e2e/danmaku.e2e.mjs`，可用 2560×1440、60 fps 素材核对弹幕导出前后的视频轨尺寸，以及成品解码后的画面尺寸。
+
 弹幕阶段测量：`onProgress` 和导出结果包含本地 `metrics`，记录首包延迟、取帧等待、弹幕准备、合成、编码提交、合封和写盘。各阶段会重叠，不能直接相加；`encodeSubmit` 含编码队列等待，`sampleWait` 含上游素材等待，均不代表纯 CPU 耗时。硬件偏好也不代表实际硬件使用情况。
