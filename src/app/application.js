@@ -30,6 +30,7 @@ import {bindPageProgress} from '../ui/page-progress.js';
 import {parseSubmissionUrl} from '../domain/submission.js';
 import {createSubmissionPlayer} from '../media/submission-player.js';
 import {RecordingPlan} from '../media/recording-plan.js';
+import {measureRecordingStream, recordingStreams} from '../media/recording-streams.js';
 import {locateSegment} from '../media/playlist.js';
 import {createPlayer} from '../media/preview-player.js';
 import {createDanmakuPreview} from '../danmaku/preview.js';
@@ -170,7 +171,14 @@ export function createApp({
       updateExportSummary();
     },
     selectSegment: index => {
-      if (index !== segmentIndex) selectSegment(index);
+      if (index === segmentIndex) return;
+      if (segments[index].end > segments[index].start) return selectSegment(index);
+      void job(async signal => {
+        const parts = [...recordStreams];
+        parts[index] = await measureRecordingStream(parts, index, record, playlists.request, signal);
+        applyStreams(parts);
+        if (segments[index].end > segments[index].start) selectSegment(index);
+      });
     },
     togglePlayback: () => activePlayback()?.toggle(),
     playSelection: () => player.playSelection(),
@@ -282,7 +290,13 @@ export function createApp({
     return {...storyboard.reader, dispose() {}};
   }
   const playlists = sharePlaylists(mediaRequest);
-  const mediaApi = {request: playlists.request};
+  const mediaApi = {
+    request: playlists.request,
+    async clips(owner, start, end, signal) {
+      const parts = await api.clips(owner, start, end, signal);
+      return recordingStreams(owner, parts, playlists.request, signal, recordStreams);
+    },
+  };
   const danmakuPreview = createDanmakuPreview({
     video,
     canvas: $('danmakuPreview'),
@@ -375,7 +389,7 @@ export function createApp({
     },
   });
   const updater = createRecordingUpdater({
-    api,
+    api: mediaApi,
     onUpdate: applyStreams,
     canRefresh: () =>
       ready &&
@@ -396,7 +410,7 @@ export function createApp({
       loading: $('videoLoading'),
       still: $('videoStill'),
       frameUrl: t => thumbnails.frameUrl(t),
-      api: {...mediaApi, clips: (...args) => api.clips(...args)},
+      api: mediaApi,
       request: mediaRequest,
       status,
       onStreams: applyStreams,
@@ -687,8 +701,8 @@ export function createApp({
     recordStreams = streams;
     segments = segmentBounds(record, streams, total);
     thumbnails.load(record, streams, {defer: true, onFrames: () => player.refreshStill?.()});
-    ready = true;
     selectSegment(record.live ? segments.length - 1 : 0);
+    ready = true;
     player.refreshStill?.();
     $('editPage').focus({preventScroll: true});
     updater.start(record);

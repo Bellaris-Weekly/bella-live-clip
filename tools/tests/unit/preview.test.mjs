@@ -89,6 +89,23 @@ function playerFixture(clips, options = {}) {
   return {player, video, loading, instances, shown, presentFrame: time => frameCallback(0, {mediaTime: time})};
 }
 
+test('无可用录像时停止加载提示，刷新后可以打开恢复的分段', async () => {
+  const streams = [{start_time: 1013, end_time: 1098, stream: 'body'}];
+  let attempts = 0;
+  const {player, loading, instances} = playerFixture(async () => {
+    if (!attempts++) throw new Error('这场暂时没有可下载的录像分段，请稍后刷新。');
+    return streams;
+  });
+  const record = {start: 1000, end: 1100},
+    signal = new AbortController().signal;
+  await assert.rejects(player.load(record, signal), /没有可下载的录像分段/);
+  assert.equal(loading.hidden, true);
+  assert.equal((await player.load(record, signal)).total, 100);
+  player.seek(13);
+  assert.equal(instances.at(-1).url, 'body');
+  player.destroy();
+});
+
 test('播放时钟持续推进进度，裁剪预览不覆盖原位，暂停和销毁停止更新', async () => {
   const times = [],
     frames = new Map();

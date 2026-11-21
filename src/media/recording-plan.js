@@ -96,7 +96,11 @@ export class RecordingPlan {
   async load(signal) {
     this.signal?.throwIfAborted();
     signal?.throwIfAborted();
-    this.pending ??= Promise.all(this.streams.map((_, index) => this.part(index, false)))
+    // An interior zero has no selectable range until its playlist is measured.
+    // Background estimates and marks may still use all the other parts.
+    this.pending ??= Promise.all(
+      this.streams.map((part, index) => (part.end_time === part.start_time ? [] : this.part(index, false))),
+    )
       .then(groups => groups.flat())
       .catch(error => {
         this.pending = null;

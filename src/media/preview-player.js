@@ -402,7 +402,8 @@ export function createPlayer({
     recoveries = 0;
     renewed = false;
     // Prefer the loaded stream so a time on a shared boundary does not reload the previous one.
-    const contains = p => time >= p.start_time - record.start && time <= p.end_time - record.start;
+    const contains = p =>
+      p.end_time > p.start_time && time >= p.start_time - record.start && time <= p.end_time - record.start;
     const found = streams[index] && contains(streams[index]) ? index : streams.findIndex(contains);
     if (found < 0) {
       target = NaN;
@@ -539,7 +540,7 @@ export function createPlayer({
         (part, i) =>
           !Number.isFinite(part.start_time) ||
           !Number.isFinite(part.end_time) ||
-          part.end_time <= part.start_time ||
+          part.end_time < part.start_time ||
           typeof part.stream !== 'string' ||
           !part.stream ||
           (i > 0 && part.start_time < next[i - 1].end_time) ||
@@ -547,8 +548,7 @@ export function createPlayer({
       )
     )
       return null;
-    const changed =
-      record.live && (next.length !== streams.length || next.some((part, i) => part.end_time !== streams[i].end_time));
+    const changed = next.length !== streams.length || next.some((part, i) => part.end_time !== streams[i].end_time);
     streams = next;
     return {streams, total: availableTotal(), changed};
   }
@@ -580,15 +580,20 @@ export function createPlayer({
       record = nextRecord;
       waiting('正在加载…');
       showStill(record.poster);
-      const [library, nextStreams] = await Promise.all([
-        HlsClass ?? loadHls(),
-        api.clips(record, 0, requestedEnd(), signal),
-      ]);
-      HlsClass = library;
-      signal.throwIfAborted();
-      if (token !== generation) throw new DOMException('已切换场次', 'AbortError');
-      streams = nextStreams;
-      return {streams, total: availableTotal()};
+      try {
+        const [library, nextStreams] = await Promise.all([
+          HlsClass ?? loadHls(),
+          api.clips(record, 0, requestedEnd(), signal),
+        ]);
+        signal.throwIfAborted();
+        if (token !== generation) throw new DOMException('已切换场次', 'AbortError');
+        HlsClass = library;
+        streams = nextStreams;
+        return {streams, total: availableTotal()};
+      } catch (error) {
+        if (token === generation) loading.hidden = true;
+        throw error;
+      }
     },
     extend,
     seek,
