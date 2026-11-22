@@ -47,7 +47,7 @@ function Mini({store}) {
   return <extras.ui.MiniMarks marks={extras.marks} onExpand={extras.expand} bindWindow={extras.bindMiniWindow} />;
 }
 
-function Header({store, actions, loggedOut, feedback}) {
+function Header({store, actions, preview, loggedOut, feedback}) {
   const page = store.page.value,
     record = store.record.value,
     version = store.version.value;
@@ -74,6 +74,7 @@ function Header({store, actions, loggedOut, feedback}) {
       ) : (
         <h1>贝报切片助手</h1>
       )}
+      {preview && <span class="badge info">Preview</span>}
       <span class="head-meta">{editing ? store.recordMeta.value : ''}</span>
       {editing && (
         <button
@@ -241,7 +242,7 @@ function Panel({store, actions, preview, members, studioUrl, feedback}) {
       aria-label="贝报切片助手"
       data-logged-out={loggedOut ? '' : undefined}
     >
-      <Header store={store} actions={actions} loggedOut={loggedOut} feedback={feedback} />
+      <Header store={store} actions={actions} preview={preview} loggedOut={loggedOut} feedback={feedback} />
       <div id="body">
         {preview && <LoginGate studioUrl={studioUrl} hidden={!loggedOut} />}
         <div class="pages" hidden={loggedOut}>

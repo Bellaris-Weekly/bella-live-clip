@@ -247,6 +247,20 @@ test('the header follows the page and the version link renders from its state', 
   assert.equal(f.root.querySelector('[aria-label="返回场次列表"]'), null);
 });
 
+test('Preview is labeled beside the library name and editor title, including before login', () => {
+  for (const preview of [false, true]) {
+    const f = mount({preview});
+    const labelAfter = selector => f.root.querySelector(`#header ${selector} + .badge`)?.textContent;
+    assert.equal(labelAfter('h1'), preview ? 'Preview' : undefined);
+    f.store.record.value = live;
+    f.store.page.value = 'edit';
+    assert.equal(labelAfter('.crumb'), preview ? 'Preview' : undefined);
+    assert.equal(f.$('recordTitle').textContent, live.title);
+  }
+  const loggedOut = mount({preview: true, state: {identity: null}});
+  assert.equal(loggedOut.root.querySelector('#header h1 + .badge').textContent, 'Preview');
+});
+
 test('settings sheet is hidden until opened; preview-only controls and the login gate follow the build and identity', () => {
   const pub = mount();
   assert.equal(pub.root.querySelector('.sheet-layer').hidden, true);
