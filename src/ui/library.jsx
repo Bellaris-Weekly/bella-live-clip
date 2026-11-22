@@ -1,6 +1,7 @@
 import {Icon} from './icon.jsx';
-import {MEMBERS} from '../domain/records.js';
-import {formatDate, formatTime} from '../shared/format.js';
+import {MEMBERS, hasSchedule} from '../domain/records.js';
+import {librarySessions} from '../domain/sessions.js';
+import {formatDate, formatLength} from '../shared/format.js';
 
 const DATE_PARTS = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
@@ -12,26 +13,49 @@ const DATE_PARTS = new Intl.DateTimeFormat('zh-CN', {
   hourCycle: 'h23',
 });
 
-function RecordRow({record, disabled, onOpen}) {
-  const parts = Object.fromEntries(
-    DATE_PARTS.formatToParts(new Date(record.start * 1000)).map(part => [part.type, part.value]),
+const dateParts = seconds =>
+  Object.fromEntries(DATE_PARTS.formatToParts(new Date(seconds * 1000)).map(part => [part.type, part.value]));
+const lengthText = record => (record.live ? '直播中' : formatLength(record.end - record.start));
+
+function RecordingParts({session, disabled, onOpen}) {
+  return (
+    <div class="recording-parts" role="group" aria-label="多段录像">
+      <span class="recording-parts-label">多段录像：</span>
+      {session.parts.map(part => {
+        const {hour, minute} = dateParts(part.start);
+        return (
+          <button
+            key={part.key}
+            type="button"
+            class={`recording-part${part === session.main ? ' is-main' : ''}`}
+            disabled={disabled}
+            onClick={() => onOpen(part)}
+          >
+            {hour}:{minute} · {lengthText(part)}
+          </button>
+        );
+      })}
+    </div>
   );
+}
+
+function RecordRow({session, disabled, onOpen}) {
+  const record = session.main;
+  const parts = dateParts(session.start);
   const people = record.schedule?.participants || [];
-  const color = MEMBERS.find(member => member.room === Number(record.room))?.color;
-  const length = record.live ? '直播中' : formatTime(record.end - record.start);
+  const length = record.live ? '直播中' : formatLength(session.length);
   return (
     <button
       type="button"
-      class={`record${record.live ? ' is-live' : ''}`}
-      style={color ? {'--member': color} : undefined}
+      class="record"
       data-record-key={record.key}
       disabled={disabled}
-      onClick={onOpen}
-      aria-label={[formatDate(record.start), record.title, record.schedule?.type, ...people.map(p => p.name), length]
+      onClick={() => onOpen(record)}
+      aria-label={[formatDate(session.start), record.title, record.schedule?.type, ...people.map(p => p.name), length]
         .filter(Boolean)
         .join(' · ')}
     >
-      <time class="record-date" dateTime={new Date(record.start * 1000).toISOString()}>
+      <time class="record-date" dateTime={new Date(session.start * 1000).toISOString()}>
         <b>{parts.day}</b>
         <small>{parts.month}月</small>
       </time>
@@ -47,46 +71,63 @@ function RecordRow({record, disabled, onOpen}) {
           <span>{length}</span>
         </span>
       </span>
-      <span class="record-side">
-        {record.schedule?.type && <span class="badge">{record.schedule.type}</span>}
-        {people.length > 1 && (
-          <span class="people">
-            {people.map(person => (
-              <span
-                key={person.name}
-                class="person"
-                title={person.name}
-                role="img"
-                aria-label={person.name}
-                style={{'--member-color': person.color}}
-              >
-                <Icon name="person" />
-                {person.avatar && (
-                  <img
-                    src={person.avatar}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={event => event.currentTarget.remove()}
-                  />
-                )}
-              </span>
-            ))}
-          </span>
-        )}
-      </span>
+      {hasSchedule(record.room) && (
+        <span class="record-side">
+          {people.length > 0 && (
+            <span class="people">
+              {people.map(person => (
+                <span
+                  key={person.name}
+                  class="person"
+                  title={person.name}
+                  role="img"
+                  aria-label={person.name}
+                  style={{'--member-color': person.color}}
+                >
+                  <Icon name="person" />
+                  {person.avatar && (
+                    <img
+                      src={person.avatar}
+                      alt=""
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={event => event.currentTarget.remove()}
+                    />
+                  )}
+                </span>
+              ))}
+            </span>
+          )}
+          {record.schedule?.type && <span class="badge">{record.schedule.type}</span>}
+        </span>
+      )}
     </button>
+  );
+}
+
+function SessionCard({session, disabled, onOpen}) {
+  const member = MEMBERS.find(item => item.room === Number(session.main.room));
+  return (
+    <div
+      class={`record-card${session.main.live ? ' is-live' : ''}`}
+      style={member && {'--member': member.color, '--member-dark': member.darkColor || member.color}}
+    >
+      <RecordRow session={session} disabled={disabled} onOpen={onOpen} />
+      {session.parts.length > 1 && <RecordingParts session={session} disabled={disabled} onOpen={onOpen} />}
+    </div>
   );
 }
 
 // Shown only on a first load, before any list (fresh or saved) exists.
 const PLACEHOLDERS = Array.from({length: 8}, (_, index) => (
-  <div key={index} class="record is-placeholder" aria-hidden="true">
-    <span class="record-date" />
-    <span class="record-main">
-      <span class="record-title" />
-      <span class="record-meta" />
-    </span>
+  <div key={index} class="record-card is-placeholder" aria-hidden="true">
+    <div class="record">
+      <span class="record-date" />
+      <span class="record-main">
+        <span class="record-title" />
+        <span class="record-meta" />
+      </span>
+    </div>
   </div>
 ));
 
@@ -141,8 +182,8 @@ export function Library({store, actions, members}) {
         </p>
       )}
       <div class="records" aria-busy={loaded ? undefined : 'true'}>
-        {records.map(record => (
-          <RecordRow key={record.key} record={record} disabled={busy} onOpen={() => actions.openRecord(record)} />
+        {librarySessions(records).map(session => (
+          <SessionCard key={session.parts[0].key} session={session} disabled={busy} onOpen={actions.openRecord} />
         ))}
         {!loaded && !records.length && PLACEHOLDERS}
       </div>

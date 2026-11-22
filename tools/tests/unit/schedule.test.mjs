@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCalendar, matchSchedule, scheduleMonths, ScheduleService} from '../../../src/services/schedule.js';
+import {
+  parseCalendar,
+  matchSchedule,
+  matchSessions,
+  scheduleMonths,
+  ScheduleService,
+} from '../../../src/services/schedule.js';
 
 const calendar = (...events) => ['BEGIN:VCALENDAR', ...events, 'END:VCALENDAR'].join('\r\n');
 const event = ({
@@ -126,7 +132,10 @@ test('enrich copies recordings, preserves original metadata, and fetches avatars
   assert.equal(result.failed, false);
   assert.notEqual(result.records[0], original);
   assert.equal(original.schedule, undefined);
-  assert.deepEqual({...result.records[0], schedule: undefined}, {...original, schedule: undefined});
+  assert.deepEqual(
+    {...result.records[0], schedule: undefined},
+    {...original, session: original.key, schedule: undefined},
+  );
   assert.equal(result.records[0].end - result.records[0].start, 7200);
   assert.deepEqual(
     result.records[0].schedule.participants.map(item => Object.keys(item)),
@@ -231,4 +240,67 @@ test('cancellation is propagated before work, during calendars, and during avata
     await assert.rejects(service.enrich([record()], {signal: controller.signal}), {name: 'AbortError'});
     if (stage === 'before') assert.equal(calls, 0);
   }
+});
+
+const at = clock => Date.parse(`2026-11-18T${clock}:00+08:00`) / 1000;
+const part = (key, from, to, title, extra = {}) => ({
+  key,
+  room: 22625027,
+  start: at(from),
+  end: at(to),
+  title,
+  ...extra,
+});
+const planned = (uid, clock, title) => ({uid, room: 22625027, start: at(clock), title, participants: []});
+function placed(records, events, now) {
+  const sessions = matchSessions(records, new Map([['2026-11', events]]), now);
+  return records.map(item => [sessions.get(item).key, sessions.get(item).event?.uid ?? null]);
+}
+
+test('restarts within three minutes share one session and its event', () => {
+  const title = '【突击】电台电台！',
+    events = [planned('radio', '19:00', '【突击】乃琳突击: 【突击】电台电台！'), planned('song', '19:30', '四季歌回')];
+  const records = [part('a', '19:01', '19:26', title), part('b', '19:28', '22:00', title)];
+  assert.deepEqual(placed(records, events), [
+    ['a', 'radio'],
+    ['a', 'radio'],
+  ]);
+  const apart = [records[0], part('b', '21:00', '22:00', title)];
+  assert.deepEqual(placed(apart, events), [
+    ['a', 'radio'],
+    ['b', null],
+  ]);
+  const otherTitle = [records[0], part('b', '19:28', '22:00', '换了一场')];
+  assert.notEqual(placed(otherTitle, events)[1][0], 'a');
+});
+
+test('a stale title does not join two streams when time and title both point at the next event', () => {
+  const title = '【突击day6】影之刃零开荒';
+  const events = [planned('song', '20:30', '四季歌回'), planned('game', '22:30', '好想玩影之刃零')];
+  const records = [part('a', '20:26', '22:17', title), part('b', '22:19', '23:59', title)];
+  assert.deepEqual(placed(records, events), [
+    ['a', 'song'],
+    ['b', 'game'],
+  ]);
+});
+
+test('an early stream takes a later event only during it, unclaimed, unique and with a similar title', () => {
+  const title = '【GTA6】我有一颗金子般的心';
+  const event = planned('gta', '22:30', '【突击】乃琳突击: 【GTA6】我有着金子般的心');
+  const early = [part('a', '20:20', '20:53', title), part('b', '20:53', '23:35', title)];
+  assert.deepEqual(placed(early, [event]), [
+    ['a', 'gta'],
+    ['a', 'gta'],
+  ]);
+  assert.equal(placed([part('a', '20:20', '22:00', title)], [event])[0][1], null, 'ended before the event');
+  assert.equal(placed([part('a', '20:20', '23:35', '【突击】唱歌给你听')], [event])[0][1], null, 'unrelated title');
+  assert.equal(placed(early, [event, planned('again', '23:00', 'GTA6 继续')])[0][1], null, 'two candidates');
+  const claimed = [part('a', '20:20', '23:35', title), part('c', '22:40', '23:50', '【3D】别的')];
+  assert.deepEqual(placed(claimed, [event]), [
+    ['a', null],
+    ['c', 'gta'],
+  ]);
+  const onAir = [part('a', '20:20', '20:30', title, {live: true})];
+  assert.equal(placed(onAir, [event], at('22:00'))[0][1], null, 'not reached yet');
+  assert.equal(placed(onAir, [event], at('22:31'))[0][1], 'gta');
 });

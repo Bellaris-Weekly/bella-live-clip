@@ -22,6 +22,7 @@ export const MEMBERS = Object.freeze([
     uid: 672342685,
     room: 22625027,
     color: '#576690',
+    darkColor: '#93a5d8',
     face: 'https://i1.hdslb.com/bfs/face/d7dac0d2c7a42b1ef9b018c2186092f5cd650a97.jpg',
   },
   {
@@ -30,6 +31,7 @@ export const MEMBERS = Object.freeze([
     uid: '3537115310721181',
     room: 30849777,
     color: '#c93773',
+    darkColor: '#ec76a7',
     face: 'https://i1.hdslb.com/bfs/face/994a4c66de1803e0a9e2fb3f72e0e5adaf84e486.jpg',
   },
   {
@@ -38,9 +40,14 @@ export const MEMBERS = Object.freeze([
     uid: '3537115310721781',
     room: 30858592,
     color: '#7252c0',
+    darkColor: '#ab91ee',
     face: 'https://i1.hdslb.com/bfs/face/2e1b50dcc480c6f34f8eb183edf34a8a458006d8.jpg',
   },
 ]);
+
+// Only these members' streams are in the published schedule.
+export const SCHEDULE_MEMBERS = MEMBERS.filter(member => ['bella', 'diana', 'eileen'].includes(member.id));
+export const hasSchedule = room => SCHEDULE_MEMBERS.some(member => member.room === Number(room));
 
 // A poster is decoration: anything but a platform image is simply not shown.
 function imageUrl(value) {

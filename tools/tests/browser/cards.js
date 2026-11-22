@@ -33,7 +33,7 @@ export async function runCardChecks(app, query, preloadProbe) {
       cards.every(
         (c, i) =>
           c.querySelector('.record-meta > span:nth-of-type(2)').textContent ===
-          (query.has('live-library') && i === 0 ? '直播中' : query.has('timeline') ? '01:22:56' : '00:00:24'),
+          (query.has('live-library') && i === 0 ? '直播中' : query.has('timeline') ? '1小时23分' : '不到1分钟'),
       ),
       '没有使用实际时长',
     );
@@ -61,7 +61,7 @@ export async function runCardChecks(app, query, preloadProbe) {
     if (!query.has('schedule-error')) {
       assert(cards[0].querySelectorAll('.person').length === 3, '团播头像数量错误');
       assert(cards[3].querySelectorAll('.person').length === 2, '双播头像数量错误');
-      assert(cards[2].querySelectorAll('.person').length === 0, '单播显示了自己的头像');
+      assert(cards[2].querySelectorAll('.person').length === 1, '单播头像数量错误');
       checks.push('团播、双播、单播头像数量');
     }
     root.querySelector('[data-member="xinyi"]').click();

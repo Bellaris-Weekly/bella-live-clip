@@ -166,7 +166,7 @@ test('library lists records, disables them and member switches while busy, and o
   assert.equal(f.$('currentVideo'), null);
   f.store.records.value = [
     {...live, key: 'a'},
-    {...live, key: 'b', start: 5},
+    {...live, key: 'b', title: '另一场', start: 5},
   ];
   f.store.currentVideo.value = true;
   assert.deepEqual(
@@ -259,6 +259,43 @@ test('Preview is labeled beside the library name and editor title, including bef
   }
   const loggedOut = mount({preview: true, state: {identity: null}});
   assert.equal(loggedOut.root.querySelector('#header h1 + .badge').textContent, 'Preview');
+});
+
+test('a restarted live is one card that lists every recording and opens the longest, or the one on air', () => {
+  const f = mount();
+  const at = minute => Date.parse('2026-11-18T10:38:00Z') / 1000 + minute * 60;
+  const schedule = {type: '突击', participants: [{name: '乃琳'}]};
+  const part = (key, from, to, extra = {}) => ({
+    ...live,
+    key,
+    room: 22625027,
+    start: at(from),
+    end: at(to),
+    schedule,
+    ...extra,
+  });
+  const records = [part('last', 42, 223), part('short', 40, 42), part('first', 0, 40)];
+  f.store.records.value = records;
+  assert.equal(f.$$('.record').length, 1);
+  assert.equal(f.root.querySelector('.recording-parts-label').textContent, '多段录像：');
+  assert.deepEqual(
+    f.$$('.recording-part').map(button => button.textContent),
+    ['18:38 · 40分钟', '19:18 · 2分钟', '19:20 · 3小时1分'],
+  );
+  assert.match(f.root.querySelector('.record-meta').textContent, /18:38.*3小时43分/);
+  // A single participant keeps their avatar; the type stays rightmost.
+  assert.equal(f.$$('.record-side .person').length, 1);
+  assert.equal(f.root.querySelector('.record-side').lastElementChild.textContent, '突击');
+  f.root.querySelector('.record').click();
+  assert.equal(f.calls.at(-1)[1].key, 'last');
+  f.$$('.recording-part')[0].click();
+  assert.equal(f.calls.at(-1)[1].key, 'first');
+  f.store.records.value = [part('on-air', 42, 43, {live: true}), records[2]];
+  assert.match(f.$$('.recording-part').at(-1).textContent, /直播中/);
+  f.root.querySelector('.record').click();
+  assert.equal(f.calls.at(-1)[1].key, 'on-air');
+  f.store.records.value = [records[0]];
+  assert.equal(f.$$('.recording-part').length, 0);
 });
 
 test('settings sheet is hidden until opened; preview-only controls and the login gate follow the build and identity', () => {

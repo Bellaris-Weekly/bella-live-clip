@@ -19,12 +19,12 @@ test('直播编号原样保留，不经过浮点数', () => {
 });
 
 test('成员配置与回放转换保留 UID、直播间和姓名', () => {
-  for (const [id, uid, room, name, color] of [
-    ['xinyi', '3537115310721181', 30849777, '心宜', '#c93773'],
-    ['sinuo', '3537115310721781', 30858592, '思诺', '#7252c0'],
+  for (const [id, uid, room, name, color, darkColor] of [
+    ['xinyi', '3537115310721181', 30849777, '心宜', '#c93773', '#ec76a7'],
+    ['sinuo', '3537115310721781', 30858592, '思诺', '#7252c0', '#ab91ee'],
   ]) {
     const member = MEMBERS.find(item => item.id === id);
-    assert.deepEqual({...member, face: undefined}, {id, uid, room, name, color, face: undefined});
+    assert.deepEqual({...member, face: undefined}, {id, uid, room, name, color, darkColor, face: undefined});
     assert.ok(avatarUrl(member.face));
     assert.deepEqual(
       recordFromReplay(

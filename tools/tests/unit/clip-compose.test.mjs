@@ -226,6 +226,7 @@ function fixture(defaults = {account_mid: 7}, items = templates, matched = true,
         return {image, time: clip.start, key: 'record'};
       },
       isSubmission: () => false,
+      related: async record => [record, ...(settings.earlier || [])],
       whole: () => false,
       snapshot: () => ({
         record: {key: 'record', title: '直播标题', room: 7, start: 100000},
@@ -538,6 +539,19 @@ test('refresh keeps the selected draft by record ID and a missing target require
   form.configure([collection], schedule, '成员', true, {existing: [first]});
   assert.equal(target.value, '');
   assert.throws(() => form.fields(), /明确选择投稿目标/);
+});
+
+test('after a restart, the collection made during the earlier recording is still offered', async t => {
+  const earlier = [{key: 'earlier', title: '直播标题', room: 7, start: 99000, end: 99900}];
+  const f = fixture({account_mid: 7}, [collection], true, [sent('合集『第一首』', {created_at: 99500})], {earlier});
+  t.after(() => {
+    f.api.dispose();
+    f.w.close();
+  });
+  f.api.actions.start();
+  await until(() => !f.field('confirm').disabled);
+  assert.equal(f.field('target-label').hidden, false);
+  assert.match(f.field('target').textContent, /第一首/);
 });
 
 test('a cancelled or processing newest collection never silently selects the old archive', async t => {

@@ -735,6 +735,15 @@ fieldset {
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
+/* The smallest panel has room for the Preview badge or the brand mark, not both. */
+@container (width < 400px) {
+  #header:has(> .badge) {
+    gap: 6px;
+  }
+  #header:has(> .badge) > .brand-mark {
+    display: none;
+  }
+}
 #version {
   flex: none;
   padding: 2px 8px;
@@ -897,6 +906,22 @@ fieldset {
   flex-direction: column;
   gap: 6px;
 }
+.record-card {
+  border-radius: var(--r-md);
+  background: hsl(var(--card));
+  box-shadow: var(--shadow-raised);
+  animation: rise var(--spring-smooth-duration) var(--spring-smooth) backwards;
+}
+/* Only the main row opens the card's default recording, so only it lights the card up. */
+.record-card:has(.record:hover:not(:disabled)) {
+  box-shadow:
+    var(--shadow-raised),
+    0 0 0 2px hsl(var(--primary) / 0.35);
+}
+.record-card.is-live {
+  background: hsl(var(--primary-container));
+  color: hsl(var(--primary-container-foreground));
+}
 .record {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
@@ -906,24 +931,16 @@ fieldset {
   min-height: 0;
   padding: 8px 14px 8px 8px;
   border-radius: var(--r-md);
-  background: hsl(var(--card));
-  box-shadow: var(--shadow-raised);
+  background: transparent;
+  color: inherit;
   text-align: left;
   font-weight: 400;
-  animation: rise var(--spring-smooth-duration) var(--spring-smooth) backwards;
 }
 .record:hover:not(:disabled) {
-  background: hsl(var(--card));
-  box-shadow:
-    var(--shadow-raised),
-    0 0 0 2px hsl(var(--primary) / 0.35);
+  background: transparent;
 }
 .record:active:not(:disabled) {
   transform: scale(0.99);
-}
-.record.is-live {
-  background: hsl(var(--primary-container));
-  color: hsl(var(--primary-container-foreground));
 }
 .record-date {
   display: flex;
@@ -935,7 +952,7 @@ fieldset {
   background: hsl(var(--input));
   line-height: 1.1;
 }
-.record.is-live .record-date {
+.record-card.is-live .record-date {
   background: hsl(var(--card) / 0.6);
 }
 .record-date b {
@@ -943,6 +960,9 @@ fieldset {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: var(--member, inherit);
+}
+:host([data-theme='dark']) .record-date b {
+  color: var(--member-dark, inherit);
 }
 .record-date small {
   font-size: 10px;
@@ -972,35 +992,83 @@ fieldset {
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
+.record-meta > span + span::before {
+  content: '·';
+  margin-right: 8px;
+}
+/* A fixed column: titles keep their width when the schedule arrives, and the type never moves. */
 .record-side {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 112px;
 }
-.record.is-live .record-meta {
-  color: hsl(var(--primary-container-foreground) / 0.75);
+.record-side .badge {
+  justify-content: center;
+  min-width: 44px;
 }
-.record.is-placeholder {
+.recording-parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 0 14px 8px 64px;
+}
+.recording-parts-label {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.recording-part {
+  min-height: 24px;
+  padding: 0 9px;
+  background: hsl(var(--input));
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.recording-part.is-main,
+.recording-part.is-main:hover:not(:disabled) {
+  background: hsl(var(--primary-container));
+  color: hsl(var(--primary-container-foreground));
+}
+.record-card.is-live .recording-part {
+  background: hsl(var(--card) / 0.6);
+  color: inherit;
+}
+.record-card.is-live .recording-part.is-main {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.record-card.is-live .recording-parts-label,
+.record-card.is-live .record-date small,
+.record-card.is-live .record-meta {
+  color: hsl(var(--primary-container-foreground) / 0.8);
+}
+.record-card.is-live .person {
+  border-color: hsl(var(--primary-container));
+}
+.record-card.is-placeholder {
   box-shadow: none;
   background: hsl(var(--card) / 0.6);
   animation: pulse 1.4s ease-in-out infinite;
 }
-.record.is-placeholder .record-title,
-.record.is-placeholder .record-meta {
+.record-card.is-placeholder .record-title,
+.record-card.is-placeholder .record-meta {
   height: 12px;
   border-radius: 6px;
   background: hsl(var(--input));
 }
-.record.is-placeholder .record-title {
+.record-card.is-placeholder .record-title {
   width: 70%;
 }
-.record.is-placeholder .record-meta {
+.record-card.is-placeholder .record-meta {
   width: 45%;
   margin-top: 6px;
 }
 .people {
   display: flex;
-  margin-left: auto;
 }
 .person {
   position: relative;
@@ -1028,6 +1096,17 @@ fieldset {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+@container (width < 480px) {
+  .record-side {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    width: 60px;
+  }
+  .recording-parts-label {
+    flex-basis: 100%;
+  }
 }
 
 /* ---------- Offline / login ---------- */

@@ -36,6 +36,15 @@ export function formatDuration(seconds) {
   return `${h ? h + '时' : ''}${h || m ? m + '分' : ''}${s.toFixed(1)}秒`;
 }
 
+// How long a stream ran. Read beside its start time, 03:24:37 would pass for a time of day.
+export function formatLength(seconds) {
+  if (seconds < 60) return '不到1分钟';
+  const minutes = Math.round(seconds / 60);
+  const h = Math.floor(minutes / 60),
+    m = minutes % 60;
+  return h ? `${h}小时${m ? `${m}分` : ''}` : `${m}分钟`;
+}
+
 export function formatDate(unix, withSeconds = false) {
   return new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai',

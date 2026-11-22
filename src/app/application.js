@@ -38,7 +38,7 @@ import {createPlayback, bindVideoControls} from '../media/playback.js';
 import {createThumbnails} from '../media/thumbnails.js';
 import {sharePlaylists} from '../services/shared-playlists.js';
 import {estimateRecordingRate, estimateSelectionBytes} from '../media/recording-estimate.js';
-import {MEMBERS, roomIdFromUrl} from '../domain/records.js';
+import {MEMBERS, hasSchedule, roomIdFromUrl} from '../domain/records.js';
 import {clamp} from '../shared/math.js';
 import {formatDuration, formatTimeRange, formatDate, formatBytes, formatTime} from '../shared/format.js';
 
@@ -653,14 +653,30 @@ export function createApp({
       store.exportMode.value = exportMode();
     });
   }
+  // Placing one recording takes its neighbours: it may be a restart, or their event may be taken.
+  // Always holds `selected` itself, so callers can look it up by identity.
+  async function relatedRecords(selected, signal) {
+    const owner = MEMBERS.find(item => item.room === Number(selected.room));
+    if (!owner) return [selected];
+    try {
+      let list = await libraries.load(owner, {signal});
+      // A list read before this stream went on air does not show what it restarted from.
+      if (!list.records.some(item => item.key === selected.key))
+        list = await libraries.load(owner, {refresh: true, signal});
+      return [selected, ...list.records.filter(item => item.key !== selected.key)];
+    } catch {
+      signal.throwIfAborted();
+      return [selected];
+    }
+  }
   function enrichRecordType() {
     if (!record || isSubmission() || record.schedule !== undefined || !isOpen()) return;
     scheduleController?.abort();
     const own = new AbortController();
     scheduleController = own;
     const selected = record;
-    void schedules
-      .enrich([selected], {signal: own.signal})
+    void (hasSchedule(selected.room) ? relatedRecords(selected, own.signal) : Promise.resolve([selected]))
+      .then(records => schedules.enrich(records, {signal: own.signal}))
       .then(result => {
         if (own.signal.aborted || record !== selected || store.page.value !== 'edit') return;
         record = result.records[0];
@@ -1022,6 +1038,7 @@ export function createApp({
         pause: () => player?.pause(),
         captureFrame: selection => captureCover(selection),
         isSubmission,
+        related: relatedRecords,
         whole: () => store.whole.value,
         snapshot: () => ({
           record: {...record},

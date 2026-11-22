@@ -1,4 +1,5 @@
-import {matchSchedule, scheduleMonths} from '../services/schedule.js';
+import {matchSessions, scheduleMonths} from '../services/schedule.js';
+import {scheduleTitle} from '../domain/sessions.js';
 import {parseSchedule} from './schedule.js';
 
 export const TEXT_FIELDS = ['title', 'desc', 'source', 'dynamic'];
@@ -94,22 +95,20 @@ const liveDate = seconds => {
   const date = new Date((seconds + 8 * 3600) * 1000);
   return `${date.getUTCFullYear()}.${date.getUTCMonth() + 1}.${date.getUTCDate()}`;
 };
-// As the studio does: 「【团播】A-SOUL夜谈: 冬日阳光方案」 is titled 「冬日阳光方案」.
-const showTitle = title => title.match(/^【[^】]+】[^:：\n]*[:：]\s*(.+)$/s)?.[1].trim() || title;
 // One live's {live} text, compared without the schedule kind prefix that early versions kept in it.
 export function sameLive(a, b) {
   const key = text => {
     const [date, ...title] = (text || '').split('  ');
-    return `${date}  ${showTitle(title.join('  '))}`.trim();
+    return `${date}  ${scheduleTitle(title.join('  '))}`.trim();
   };
   return Boolean(a && b) && key(a) === key(b);
 }
 export function liveValue(event) {
-  return event ? `${liveDate(event.start)}  ${showTitle(event.title)}` : '';
+  return event ? `${liveDate(event.start)}  ${scheduleTitle(event.title)}` : '';
 }
 // The studio's template variables. Without a schedule event, the date (YYYY-MM-DD) and title are typed in.
 export function liveValues(event, {date = '', title = ''} = {}) {
-  if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: showTitle(event.title)};
+  if (event) return {live: liveValue(event), live_date: liveDate(event.start), live_title: scheduleTitle(event.title)};
   const live_date = date ? date.split('-').map(Number).join('.') : '';
   return {live: [live_date, title].filter(value => value.trim()).join('  '), live_date, live_title: title};
 }
@@ -141,7 +140,7 @@ export function titleWithSong(title, song) {
   return end ? `${title.slice(0, end)}『${song}』${title.slice(end)}` : title;
 }
 
-export async function submissionSchedule(record, schedules, signal, now = Date.now() / 1000) {
+export async function submissionSchedule(record, schedules, signal, now = Date.now() / 1000, records = [record]) {
   const calendars = new Map();
   let failed = false;
   async function read(month) {
@@ -160,8 +159,14 @@ export async function submissionSchedule(record, schedules, signal, now = Date.n
       );
     return calendars.get(month);
   }
-  const matchedCalendars = await Promise.all(scheduleMonths(record.start).map(read));
-  const matched = matchedCalendars.every(Boolean) ? matchSchedule(record, matchedCalendars.flat()) : null;
+  // A restart, or a stream that claims the event first, lies within a day of this recording.
+  const nearby = records.filter(
+    item => Number(item.room) === Number(record.room) && Math.abs(item.start - record.start) < 86400,
+  );
+  const months = [...new Set(nearby.flatMap(item => scheduleMonths(item.start)))];
+  const loaded = await Promise.all(months.map(async month => [month, await read(month)]));
+  const session = matchSessions(nearby, new Map(loaded.filter(([, events]) => events)), now).get(record);
+  const matched = session.event;
   const recent = new Map();
   const month = new Date((now + 8 * 3600) * 1000);
   month.setUTCDate(1);
@@ -176,7 +181,7 @@ export async function submissionSchedule(record, schedules, signal, now = Date.n
     month.setUTCMonth(month.getUTCMonth() - 1);
   }
   signal.throwIfAborted();
-  return {matched, recent: [...recent.values()].sort((a, b) => b.start - a.start).slice(0, 5), failed};
+  return {matched, session, recent: [...recent.values()].sort((a, b) => b.start - a.start).slice(0, 5), failed};
 }
 
 export function submissionFields(draft, values, now = Date.now()) {

@@ -13,7 +13,7 @@ const stubs = {
   'page-progress': 'export const bindPageProgress=()=>()=>{};',
   'export-progress': 'export const renderExportProgress=()=>{};export const limitProgress=render=>render;',
   schedule:
-    'export const matchSchedule=()=>null;export const scheduleMonths=()=>[];export class ScheduleService{async enrich(records){return {records};}}',
+    'export const matchSessions=records=>new Map(records.map(record=>[record,record]));export const scheduleMonths=()=>[];export class ScheduleService{async enrich(records){return {records};}}',
   submission: 'export const createSubmissionService=()=>({load:()=>scenario.loadVideo()});',
   'submission-storyboard': 'export const createSubmissionStoryboard=()=>({});',
   'submission-player': 'export const createSubmissionPlayer=()=>scenario.player;',

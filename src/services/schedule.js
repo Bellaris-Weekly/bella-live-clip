@@ -1,7 +1,7 @@
-import {MEMBERS, roomIdFromUrl} from '../domain/records.js';
+import {SCHEDULE_MEMBERS, hasSchedule, roomIdFromUrl} from '../domain/records.js';
+import {endOf, restartGroups, titlesAlike} from '../domain/sessions.js';
 
 const CALENDAR = 'https://calendar.bk0717.us.ci';
-const SCHEDULE_MEMBERS = MEMBERS.filter(member => ['bella', 'diana', 'eileen'].includes(member.id));
 const WINDOW = 30 * 60;
 const CACHE_TIME = 60 * 60 * 1000;
 
@@ -41,14 +41,14 @@ function parseEvent(fields) {
   } catch {
     return null;
   }
-  if (!SCHEDULE_MEMBERS.some(member => member.room === room)) return null;
+  if (!hasSchedule(room)) return null;
   return {
     uid: fields.UID?.value || null,
     start,
     room,
     type,
     participants,
-    ...(typeof __PREVIEW__ !== 'undefined' && __PREVIEW__ ? {title: decodeText(fields.SUMMARY?.value || '')} : {}),
+    title: decodeText(fields.SUMMARY?.value || ''),
   };
 }
 
@@ -105,6 +105,58 @@ export function matchSchedule(record, events) {
   return ambiguous ? null : nearest;
 }
 
+// The library and submissions both place recordings through this. Restarts share a schedule event.
+// Beyond the time window an event must fall during the stream, be claimed by no other, be the only
+// such event and share words with the title: a wrong one would pick the wrong submission template.
+export function matchSessions(records, calendars, now = Date.now() / 1000) {
+  const byId = new Map();
+  for (const event of [...calendars.values()].flat()) {
+    const id = event.uid || Symbol();
+    if (!byId.has(id)) byId.set(id, event);
+  }
+  const events = [...byId.values()],
+    sessions = [];
+  for (const parts of restartGroups(records, now)) {
+    const complete = parts.every(part => scheduleMonths(part.start).every(month => calendars.has(month)));
+    let session = null;
+    for (const part of parts) {
+      const own = complete ? matchSchedule(part, events) : null;
+      // A title left over from the stream before: time and title both point at the next event.
+      const next =
+        own &&
+        session?.event &&
+        own !== session.event &&
+        titlesAlike(part.title, own.title) &&
+        !titlesAlike(part.title, session.event.title);
+      if (!session || next) {
+        session = {key: part.key, room: Number(part.room), title: part.title, start: part.start, complete, parts: []};
+        sessions.push(session);
+      }
+      session.parts.push(part);
+      session.end = Math.max(session.end ?? -Infinity, endOf(part, now));
+      session.event ??= own;
+    }
+  }
+  const claimed = new Set(sessions.map(session => session.event));
+  const candidates = new Map();
+  for (const session of sessions) {
+    if (session.event || !session.complete) continue;
+    const found = events.filter(
+      event =>
+        event.room === session.room &&
+        event.start >= session.start &&
+        event.start <= session.end &&
+        !claimed.has(event) &&
+        titlesAlike(session.title, event.title),
+    );
+    if (found.length === 1) candidates.set(session, found[0]);
+  }
+  const wanted = [...candidates.values()];
+  for (const [session, event] of candidates)
+    if (wanted.filter(other => other === event).length === 1) session.event = event;
+  return new Map(sessions.flatMap(session => session.parts.map(part => [part, session])));
+}
+
 export class ScheduleService {
   constructor(request) {
     this.request = request;
@@ -146,7 +198,7 @@ export class ScheduleService {
 
   async enrich(records, {signal, refresh = false} = {}) {
     signal?.throwIfAborted();
-    const eligible = records.filter(record => SCHEDULE_MEMBERS.some(member => member.room === Number(record.room)));
+    const eligible = records.filter(record => hasSchedule(record.room));
     const months = [...new Set(eligible.flatMap(record => scheduleMonths(record.start)))];
     const calendars = new Map();
     let failed = false;
@@ -162,23 +214,11 @@ export class ScheduleService {
       }),
     );
     signal?.throwIfAborted();
-    const matches = new Map(
-      eligible.map(record => {
-        const needed = scheduleMonths(record.start);
-        return [
-          record,
-          needed.every(month => calendars.has(month))
-            ? matchSchedule(
-                record,
-                needed.flatMap(month => calendars.get(month)),
-              )
-            : null,
-        ];
-      }),
-    );
+    const sessions = matchSessions(records, calendars);
     const participants = [
       ...new Map(
-        [...matches.values()]
+        [...sessions.values()]
+          .map(session => session.event)
           .filter(Boolean)
           .flatMap(event => event.participants)
           .map(member => [member.id, member]),
@@ -191,9 +231,10 @@ export class ScheduleService {
     return {
       failed,
       records: records.map(record => {
-        const match = matches.get(record);
+        const {key, event: match} = sessions.get(record);
         return {
           ...record,
+          session: key,
           schedule: match
             ? {
                 type: match.type,

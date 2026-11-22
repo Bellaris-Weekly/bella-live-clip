@@ -18,6 +18,7 @@ const beijingTime = seconds => new Date((seconds + 8 * 3600) * 1000).toISOString
 // Include unsent records: filtering by BV alone silently redirects songs to an older archive. A live
 // matched in the schedule is recognised by its {live}; otherwise only archives sent while it was
 // recorded or soon after count, so a later live's collection is never offered for an older recording.
+// `record` spans the whole session, so a collection made before a restart still counts.
 export function liveCollections(submissions, record, mid, live = '', user = '') {
   const end = (record.end || Date.now() / 1000) + SAME_LIVE_SLACK;
   return submissions
@@ -238,7 +239,9 @@ export function createComposer({
           client.request('/me', {signal}),
           client.request('/upload-options', {signal}),
           client.request('/templates', {signal}),
-          submissionSchedule(own.record, schedules, signal),
+          session
+            .related(own.record, signal)
+            .then(records => submissionSchedule(own.record, schedules, signal, Date.now() / 1000, records)),
           client.request('/submissions', {signal}),
         ]);
         signal.throwIfAborted();
@@ -249,9 +252,15 @@ export function createComposer({
           collections: submissions.length,
         });
         templateForm.configure(templates, schedule, me.name, preserve && prior?.ready, {
-          existing: liveCollections(submissions, own.record, defaults.account_mid, liveValue(schedule.matched), me.sub),
+          existing: liveCollections(
+            submissions,
+            schedule.session,
+            defaults.account_mid,
+            liveValue(schedule.matched),
+            me.sub,
+          ),
           song: own.mark?.note?.trim() || '',
-          recordStart: own.record.start,
+          recordStart: schedule.session.start,
           cosEnabled: options.cos_enabled,
         });
         own.uploader = createClipUpload({client, transport});
