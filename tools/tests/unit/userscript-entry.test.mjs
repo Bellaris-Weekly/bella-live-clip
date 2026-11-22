@@ -36,13 +36,13 @@ const {outputFiles} = await build({
   ],
 });
 
-function startContext(pageWindow, sandboxWindow = {}, hostname = 'www.bilibili.com') {
+function startContext(pageWindow, sandboxWindow = {}, hostname = 'www.bilibili.com', pathname = '/') {
   sandboxWindow.top ??= sandboxWindow;
   pageWindow.fetch ??= () => {
     throw new Error('Unexpected page fetch');
   };
   const context = {
-    location: {hostname},
+    location: new URL(`https://${hostname}${pathname}`),
     navigator: {userAgent: 'test'},
     URL,
     AbortController,
@@ -174,4 +174,9 @@ test('live iframe starts only screenshots, while top pages retain the editor', (
   assert.equal(ordinaryFrame.screenshotDocument, undefined);
   assert.equal(ordinaryFrame.appOptions, undefined);
   assert.doesNotMatch(readFileSync(new URL('../../../src/header.txt', import.meta.url), 'utf8'), /^\/\/ @noframes/m);
+});
+
+test('ordinary video pages install the player screenshot action', () => {
+  const video = startContext({}, {}, 'www.bilibili.com', '/video/BV1xx411c7mD/');
+  assert.equal(video.screenshotDocument, video.document);
 });

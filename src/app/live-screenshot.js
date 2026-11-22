@@ -1,4 +1,4 @@
-import {installLiveScreenshot} from '../ui/live-screenshot.js';
+import {FEEDBACK_SELECTOR, installLiveScreenshot} from '../ui/live-screenshot.js';
 
 function selectVideo(root) {
   return (
@@ -21,7 +21,10 @@ function selectVideo(root) {
 }
 
 function getIdentity(document) {
-  const roomId = document.defaultView.location.pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/)?.[1] || '';
+  const {pathname} = document.defaultView.location;
+  const videoId = pathname.match(/^\/video\/(BV[\w]+|av\d+)/i)?.[1];
+  if (videoId) return {videoId};
+  const roomId = pathname.match(/^\/(?:blanc\/)?(\d+)(?:\/|$)/)?.[1] || '';
   const owner = document.querySelector('.room-owner-username')?.textContent?.trim();
   const titleParts = document.title
     .split(' - ')
@@ -36,7 +39,7 @@ export function startLiveScreenshot(document, studio) {
   if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
     const style = document.createElement('style');
     const update = () => {
-      style.textContent = studio.identity() ? '' : '.web-player-icon-feedback {display:none!important}';
+      style.textContent = studio.identity() ? '' : `${FEEDBACK_SELECTOR} {display:none!important}`;
     };
     update();
     studio.subscribe(update);

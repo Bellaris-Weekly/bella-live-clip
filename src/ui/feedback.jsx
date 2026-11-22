@@ -106,7 +106,6 @@ export function FeedbackSheet({store, actions}) {
               }}
             />
           </div>
-          <p class="hint">会一起附上插件版本、浏览器和当前打开的视频或场次，方便排查。</p>
           {error && (
             <p class="inline-error" role="alert">
               {error}

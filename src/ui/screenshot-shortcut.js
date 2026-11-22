@@ -206,7 +206,7 @@ function createScreenshotShortcut({document: doc, clientId, read = () => null, w
       : 0;
   };
   const players = () =>
-    [...doc.querySelectorAll('.web-player-icon-feedback')]
+    [...doc.querySelectorAll('.web-player-icon-feedback, .bpx-player-top-issue')]
       .filter(control => control.querySelector('[data-bella-screenshot-icon]'))
       .map(control => {
         for (let parent = control.parentElement; parent && parent !== doc.body; parent = parent.parentElement) {

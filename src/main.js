@@ -5,6 +5,7 @@ import {createApp} from './app/application.js';
 import {BiliApi, createRequest} from './services/bilibili.js';
 import {createSubmissionRequest} from './services/submission-request.js';
 import {createMediaRequest} from './services/media-request.js';
+import {parseSubmissionUrl} from './domain/submission.js';
 import {startLiveScreenshot} from './app/live-screenshot.js';
 import {SCREENSHOT_PREF_KEY, createScreenshotShortcut} from './ui/screenshot-shortcut.js';
 import {startPageBridge} from './services/page-bridge.js';
@@ -36,7 +37,7 @@ if (typeof __PREVIEW__ !== 'undefined' && __PREVIEW__) {
   }
 }
 
-if (location.hostname === 'live.bilibili.com')
+if (location.hostname === 'live.bilibili.com' || parseSubmissionUrl(location.href))
   startLiveScreenshot(document, typeof __PREVIEW__ !== 'undefined' && __PREVIEW__ ? studio : null);
 
 if (location.hostname === 'studio.bk0717.com') {

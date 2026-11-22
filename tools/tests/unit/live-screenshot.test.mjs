@@ -202,6 +202,30 @@ test('late loading, player replacement and icon redraw do not lose the action or
   assert.equal(second.feedbackClicks(), 0);
 });
 
+test('video feedback keeps its native icon slot across redraws and suppresses the feedback tooltip', async t => {
+  const page = pageFixture(t);
+  const {control, feedbackClicks, video} = page.mount();
+  control.className = 'bpx-player-top-issue';
+  control.innerHTML = '<span class="bpx-player-top-issue-icon"></span>';
+  const slot = control.firstElementChild;
+  let tooltips = 0;
+  control.addEventListener('mouseenter', () => tooltips++);
+  page.install();
+  slot.append(page.document.createElement('span')); // The site finishes loading its feedback icon.
+  await flush();
+  assert.equal(control.firstElementChild, slot);
+  assert.equal(slot.childElementCount, 1);
+  assert.ok(slot.firstElementChild.hasAttribute('data-bella-screenshot-icon'));
+  control.dispatchEvent(new page.window.MouseEvent('mouseenter'));
+  assert.equal(tooltips, 0);
+  control.click();
+  page.finish();
+  await flush();
+  assert.equal(page.frames[0].video, video);
+  assert.equal(feedbackClicks(), 0);
+  assert.equal(page.downloads.length, 1);
+});
+
 test('an embedded player captures in its own document and supports keyboard activation', async t => {
   const page = pageFixture(t, {embedded: true});
   const {control, video} = page.mount(2560, 1440);

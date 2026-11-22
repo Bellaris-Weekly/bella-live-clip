@@ -1,4 +1,4 @@
-const FEEDBACK_SELECTOR = '.web-player-icon-feedback';
+const FEEDBACK_SELECTOR = '.web-player-icon-feedback, .bpx-player-top-issue';
 const INSTALLED_ATTRIBUTE = 'data-bella-live-screenshot-installed';
 const SCREENSHOT_LABEL = '截图';
 const SCAN_DELAY = 200;
@@ -42,7 +42,10 @@ function captureVideoPng(video, rootDocument) {
 function formatScreenshotFileName(date, identity) {
   const pad = (value, length = 2) => String(value).padStart(length, '0');
   const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}_${pad(date.getMilliseconds(), 3)}`;
-  const source = String(identity.streamerName || identity.roomId || '直播间').replace(UNSAFE_NAME, '_');
+  const source = String(identity.videoId || identity.streamerName || identity.roomId || '直播间').replace(
+    UNSAFE_NAME,
+    '_',
+  );
   return `${source}_${stamp}.png`;
 }
 
@@ -73,13 +76,28 @@ function createScreenshotControls({rootDocument, getVideo, getIdentity, download
   };
 
   const enhance = control => {
-    if (!control.querySelector('[data-bella-screenshot-icon]')) control.innerHTML = CAMERA_ICON;
+    // The video player still queries this slot when its toolbar finishes loading.
+    const isVideoControl = control.matches('.bpx-player-top-issue');
+    const slot = isVideoControl ? control.querySelector('.bpx-player-top-issue-icon') : control;
+    if (!slot) return;
+    if (slot.childElementCount !== 1 || !slot.firstElementChild.hasAttribute('data-bella-screenshot-icon')) {
+      slot.innerHTML = CAMERA_ICON;
+      if (isVideoControl) {
+        const icon = slot.firstElementChild;
+        icon.style.margin = '0 auto';
+        icon.style.width = icon.style.height = '100%';
+      }
+    }
     control.title = SCREENSHOT_LABEL;
     control.setAttribute('aria-label', SCREENSHOT_LABEL);
     control.setAttribute('role', 'button');
     control.tabIndex = 0;
     if (controls.has(control)) return;
     controls.add(control);
+    if (isVideoControl) {
+      // Bilibili opens its own feedback tooltip on mouseenter.
+      control.addEventListener('mouseenter', event => event.stopImmediatePropagation(), true);
+    }
     let busy = false;
     const capture = async event => {
       event.preventDefault();
@@ -161,6 +179,7 @@ function installLiveScreenshot({rootDocument, selectVideo, getIdentity, download
 }
 
 export {
+  FEEDBACK_SELECTOR,
   createScreenshotControls,
   captureVideoPng,
   findScreenshotVideo,

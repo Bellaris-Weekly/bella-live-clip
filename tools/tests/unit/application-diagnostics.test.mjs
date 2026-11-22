@@ -78,6 +78,7 @@ function element() {
     replaceChildren(...nodes) {
       this.children = nodes;
     },
+    matches: () => false,
     querySelector: () => null,
     querySelectorAll: () => [],
     get childElementCount() {
