@@ -1,4 +1,13 @@
-import {anchorOf, isCapsule, isSuperChat, scSpeed, SC_WAIT, MEMBER_WAIT, SC_PRIORITY_PRICE} from './super-chat.js';
+import {
+  anchorOf,
+  isCapsule,
+  isSuperChat,
+  scSpeed,
+  memberSpeed,
+  SC_WAIT,
+  MEMBER_WAIT,
+  SC_PRIORITY_PRICE,
+} from './super-chat.js';
 const BLOCKED = new Set(['喜欢主播加关注，点点红包抽礼物', '点点红包，关注主播抽礼物～', '老板大气！点点红包抽礼物']);
 const TICKS = 60;
 const priority = event =>
@@ -39,16 +48,46 @@ export class DanmakuLayout {
     return item.mode === 1 ? this.width - (time - item.started) * item.speed : (this.width - item.width) / 2;
   }
 
-  place(content, mode, now, superChat = false) {
-    const peers = this.active.filter(item => item.mode === mode);
+  speed(content, kind) {
+    if (kind === 'member') return memberSpeed(this.width, this.height);
+    return kind === 'sc' ? scSpeed(this.width) : (this.width + content.width + 100 * this.scale) / 12;
+  }
+
+  conflicts(old, speed, now) {
     const gap = 50 * this.scale;
-    const speed = superChat ? scSpeed(this.width) : (this.width + content.width + 100 * this.scale) / 12;
-    const conflicts = old => {
-      if (mode !== 1) return true;
-      const distance = this.width - (this.x(old, now) + old.width);
-      const remaining = Math.max(0, (this.x(old, now) + old.width + gap) / old.speed);
-      return distance < gap || (speed > old.speed && distance - (speed - old.speed) * remaining < gap);
-    };
+    const distance = this.width - (this.x(old, now) + old.width);
+    const remaining = Math.max(0, (this.x(old, now) + old.width + gap) / old.speed);
+    return distance < gap || (speed > old.speed && distance - (speed - old.speed) * remaining < gap);
+  }
+
+  // A member capsule with no free position takes the one displacing the fewest
+  // ordinary comments; it never overlaps another capsule.
+  displace(content, now) {
+    const peers = this.active.filter(item => item.mode === 1);
+    const speed = this.speed(content, 'member');
+    const margin = 12 * this.scale;
+    const candidates = [margin, ...peers.flatMap(item => [item.top, item.top + item.height + this.scale])].sort(
+      (a, b) => a - b,
+    );
+    let best = null;
+    for (const top of candidates) {
+      if (top < margin || top + content.height > this.height * 0.23) continue;
+      const hit = peers.filter(
+        item =>
+          top < item.top + item.height + this.scale &&
+          item.top < top + content.height + this.scale &&
+          this.conflicts(item, speed, now),
+      );
+      if (hit.some(isCapsule)) continue;
+      if (!best || hit.length < best.victims.length) best = {top, speed, victims: hit};
+    }
+    return best;
+  }
+
+  place(content, mode, now, kind) {
+    const peers = this.active.filter(item => item.mode === mode);
+    const speed = this.speed(content, kind);
+    const conflicts = old => mode !== 1 || this.conflicts(old, speed, now);
     if (mode === 4 && peers.length >= 2) return null;
     const margin = 12 * this.scale;
     const candidates =
@@ -78,8 +117,8 @@ export class DanmakuLayout {
     const pending = [],
       blocked = new Set();
     // Members first, then SCs of at least SC_PRIORITY_PRICE by amount; cheaper
-    // SCs and ordinary comments keep arrival order. Placements are never
-    // preempted, and a blocked queue never holds back another queue.
+    // SCs and ordinary comments keep arrival order. Only members preempt (ordinary
+    // comments), and a blocked queue never holds back another queue.
     const waiting = this.waiting.some(event => priority(event) < 2)
       ? [...this.waiting].sort((a, b) => priority(a) - priority(b) || (priority(a) === 1 ? b.price - a.price : 0))
       : this.waiting;
@@ -100,7 +139,16 @@ export class DanmakuLayout {
         continue;
       }
       const content = this.measure(event);
-      const position = this.place(content, mode, now, capsule);
+      let position = this.place(content, mode, now, queue === 'member' ? 'member' : capsule ? 'sc' : undefined);
+      if (!position && queue === 'member') {
+        position = this.displace(content, now);
+        if (position) {
+          // Displaced ordinary comments are dropped, not re-queued.
+          this.active = this.active.filter(item => !position.victims.includes(item));
+          this.dropped += position.victims.length;
+          position = {top: position.top, speed: position.speed};
+        }
+      }
       if (!position) {
         pending.push(event);
         blocked.add(queue);

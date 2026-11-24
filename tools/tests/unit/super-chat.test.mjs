@@ -6,6 +6,7 @@ import {DanmakuLayout, visibleComment} from '../../../src/danmaku/layout.js';
 import {
   scText,
   scSpeed,
+  memberSpeed,
   SC_WAIT,
   MEMBER_WAIT,
   commentPreroll,
@@ -158,7 +159,8 @@ test('member comments are capsules: matched by UID, first in the queue, always s
     ],
   );
   assert.equal(l.active[0].mode, 1);
-  assert.equal(l.active[0].speed, scSpeed(1920));
+  assert.equal(l.active[0].speed, memberSpeed(1920, 1080));
+  assert.ok(l.active[0].speed <= l.active[2].speed, 'never faster than an ordinary comment');
   assert.equal(visibleComment({...member, text: '喜欢主播加关注，点点红包抽礼物'}), true);
   assert.equal(visibleComment({...member, text: '   \u200c\u200d'}), false);
 });
@@ -272,4 +274,29 @@ test('avatar work is bounded, optional, cooled down on failure and released on c
   cache.close();
   cache.prefetch(events);
   assert.equal(requests, 5);
+});
+
+test('a member capsule appears at once, displacing ordinary comments but never another capsule', () => {
+  const crowd = Array.from({length: 40}, (_, i) => ({...event(undefined, i * 0.01, i), width: 300}));
+  const late = {...event(undefined, 0.5, 99), uid: BELLA};
+  const l = layout([...crowd, late]);
+  l.advance(0.49);
+  const before = l.active.map(item => item.order);
+  l.advance(0.5);
+  const placed = l.active.find(item => item.order === 99);
+  assert.ok(placed, 'placed in the same tick it arrived');
+  assert.equal(placed.started, 0.5);
+  const gone = before.filter(order => !l.active.some(item => item.order === order));
+  assert.ok(gone.length > 0);
+  assert.ok(l.dropped >= gone.length);
+  const capsules = layout([
+    {...event(undefined, 0, 0), uid: BELLA},
+    {...event(undefined, 0.1, 1), uid: BELLA},
+  ]);
+  capsules.measure = item => ({width: item.width, height: 120});
+  capsules.advance(0.1);
+  assert.deepEqual(
+    capsules.active.map(item => item.order),
+    [0],
+  );
 });

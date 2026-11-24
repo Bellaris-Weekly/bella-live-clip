@@ -13,14 +13,22 @@ export const SC_WAIT = 5;
 export const avatarSize = fontSize => fontSize * 2.2;
 // Cheaper SCs (mostly ¥2) keep the capsule but queue like ordinary comments.
 export const SC_PRIORITY_PRICE = 30;
-// Members can only fit two bands at once; wait longer rather than drop.
+// Members are placed at once, displacing ordinary comments; they wait (at most
+// this long) only while every position is blocked by other capsules.
 export const MEMBER_WAIT = 10;
 export const scSpeed = width => (200 * width) / 1920;
+// Member capsules use the slowest ordinary speed, so they never outrun a comment.
+export const memberSpeed = (width, height) => (width + (100 * height) / 1080) / 12;
 export const scMaxWidth = fontSize => 48 * fontSize;
 export const commentPreroll = (width, height) =>
   Math.max(
     15,
-    Math.ceil((width + scMaxWidth((40 * height) / 1080) + (50 * height) / 1080) / scSpeed(width) + MEMBER_WAIT + 1),
+    Math.ceil(
+      (width + scMaxWidth((40 * height) / 1080) + (50 * height) / 1080) /
+        Math.min(scSpeed(width), memberSpeed(width, height)) +
+        MEMBER_WAIT +
+        1,
+    ),
   );
 
 const graphemes = new Intl.Segmenter('zh', {granularity: 'grapheme'});
